@@ -14,6 +14,9 @@ import com.tau.nexus_note.datamodels.NodeSchemaEditState
 import com.tau.nexus_note.datamodels.SchemaDefinitionItem
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.codex.schema.SchemaData
+import com.tau.nexus_note.datamodels.CodexPropertyDataTypes
+import com.tau.nexus_note.doc_parser.StandardSchemas
+import com.tau.nexus_note.doc_parser.DocumentNode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,16 +24,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 
 /**
-
-Centralizes all database logic and state for an open Codex.
-
-This class owns the database connection and the primary data flows.
-
-ViewModels will observe these flows and call methods on this repository
-
-to perform actions.
+ * Centralizes all database logic and state for an open Codex.
+ * This class owns the database connection and the primary data flows.
  */
 class CodexRepository(
     private val dbService: SqliteDbService,
@@ -38,7 +36,6 @@ class CodexRepository(
 ) {
 
     // --- Central State Flows ---
-// These flows hold the entire dataset, primarily for the graph visualization.
     private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
 
@@ -52,31 +49,50 @@ class CodexRepository(
     private val _errorFlow = MutableStateFlow<String?>(null)
     val errorFlow = _errorFlow.asStateFlow()
 
-// --- Public API ---
+    // --- Public API ---
 
     fun clearError() {
         _errorFlow.value = null
     }
 
     /**
-
-    (FIXED)
-
-    This is now a suspend function that completes ALL work before returning.
+     * Helper to prevent UI lag by truncating long labels.
+     * Strategy: Keep total length around 15 chars, respecting word boundaries.
+     * If the first word itself is > 15 chars, it gets truncated.
      */
-    suspend fun refreshAll() {
-// Now these calls will suspend and execute in order
-        refreshSchema()
-        refreshNodes() // Loads all nodes for the graph
-        refreshEdges() // Loads all edges for the graph
+    private fun truncateDisplayLabel(text: String): String {
+        val limit = 20
+        val trimmed = text.trim()
+        // If it's already short enough, return as is
+        if (trimmed.length <= limit) return trimmed
+
+        val words = trimmed.split(Regex("\\s+"))
+        val builder = StringBuilder()
+
+        for (word in words) {
+            // Check if adding this word exceeds the limit
+            // builder.length includes the trailing space from previous iterations
+            if (builder.length + word.length > limit) {
+                // If we already have content, return it with ellipsis
+                if (builder.isNotEmpty()) {
+                    return builder.toString().trim() + "..."
+                }
+                // If builder is empty, it means the *first* word is > 15 chars.
+                // Hard truncate the word to prevent layout issues.
+                return word.take(limit) + "..."
+            }
+            builder.append(word).append(" ")
+        }
+        return builder.toString().trim()
     }
 
-    /**
+    suspend fun refreshAll() {
+        refreshSchema()
+        refreshNodes()
+        refreshEdges()
+    }
 
-    (FIXED) This is now a suspend function and executes on the IO dispatcher.
-     */
     suspend fun refreshSchema() = withContext(Dispatchers.IO) {
-// No more repositoryScope.launch
         try {
             val dbSchemas = dbService.database.appDatabaseQueries.selectAllSchemas().executeAsList()
             val nodeSchemas = mutableListOf<SchemaDefinitionItem>()
@@ -86,12 +102,10 @@ class CodexRepository(
                 val properties = dbSchema.properties_json
 
                 if (dbSchema.type == "NODE") {
-                    // FIX: connections_json is now NOT NULL, but we'll treat it as null in the data model
                     nodeSchemas.add(
                         SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, null)
                     )
                 } else if (dbSchema.type == "EDGE") {
-                    // connections_json is NOT NULL, it will be "[]" or "[...]"
                     val connections = dbSchema.connections_json
                     edgeSchemas.add(
                         SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, connections)
@@ -99,29 +113,19 @@ class CodexRepository(
                 }
             }
             _schema.value = SchemaData(nodeSchemas, edgeSchemas)
-
-
         } catch (e: Exception) {
             _errorFlow.value = "Error refreshing schema: ${e.message}"
             _schema.value = SchemaData(emptyList(), emptyList())
         }
     }
 
-    /**
-
-    (FIXED) This is now a suspend function and executes on the IO dispatcher.
-
-    It assumes refreshSchema() has already completed.
-
-    This loads all nodes into the stateflow for the graph.
-     */
     suspend fun refreshNodes() = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
 
         if (_schema.value == null) {
             _errorFlow.value = "Error refreshing nodes: Schema was not loaded first."
             _nodeList.value = emptyList()
-            return@withContext // Abort if schema isn't loaded
+            return@withContext
         }
 
         try {
@@ -129,7 +133,6 @@ class CodexRepository(
             _nodeList.value = dbNodes.mapNotNull { dbNode ->
                 val nodeSchema = schemaMap[dbNode.schema_id]
                 if (nodeSchema == null) {
-                    println("Warning: Found node with unknown schema ID ${dbNode.schema_id}")
                     null
                 } else {
                     NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id)
@@ -141,14 +144,6 @@ class CodexRepository(
         }
     }
 
-    /**
-
-    (FIXED) This is now a suspend function and executes on the IO dispatcher.
-
-    It assumes refreshSchema() and refreshNodes() have already completed.
-
-    This loads all edges into the stateflow for the graph.
-     */
     suspend fun refreshEdges() = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
         val nodeMap = _nodeList.value.associateBy { it.id }
@@ -156,7 +151,7 @@ class CodexRepository(
         if (_schema.value == null) {
             _errorFlow.value = "Error refreshing edges: Schema was not loaded first."
             _edgeList.value = emptyList()
-            return@withContext // Abort
+            return@withContext
         }
 
         try {
@@ -167,32 +162,20 @@ class CodexRepository(
                 val dstNode = nodeMap[dbEdge.to_node_id]
 
                 if (schema == null || srcNode == null || dstNode == null) {
-                    println("Warning: Skipping edge ${dbEdge.id} due to missing schema or node link.")
                     null
                 } else {
                     EdgeDisplayItem(dbEdge.id, schema.name, srcNode, dstNode, schema.id)
                 }
             }
-
-
         } catch (e: Exception) {
             _errorFlow.value = "Error refreshing edges: ${e.message}"
             _edgeList.value = emptyList()
         }
     }
 
-// --- NEW: Pagination-specific functions ---
-
-    /**
-
-    Fetches a single page of nodes for the list view.
-
-    This is a suspend function and does not update the main state flow.
-     */
     suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
         if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing nodes: Schema was not loaded first."
             return@withContext emptyList()
         }
 
@@ -201,31 +184,21 @@ class CodexRepository(
             dbNodes.mapNotNull { dbNode ->
                 val nodeSchema = schemaMap[dbNode.schema_id]
                 if (nodeSchema == null) {
-                    println("Warning: Found node with unknown schema ID ${dbNode.schema_id}")
                     null
                 } else {
                     NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id)
                 }
             }
         } catch (e: Exception) {
-            _errorFlow.value = "Error fetching paginated nodes: ${e.message}"
             emptyList()
         }
     }
 
-    /**
-
-    Fetches a single page of edges for the list view.
-
-    This is a suspend function and does not update the main state flow.
-     */
     suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
-// We must use the full node list to correctly link src/dst
         val nodeMap = _nodeList.value.associateBy { it.id }
 
         if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing edges: Schema was not loaded first."
             return@withContext emptyList()
         }
 
@@ -237,23 +210,17 @@ class CodexRepository(
                 val dstNode = nodeMap[dbEdge.to_node_id]
 
                 if (schema == null || srcNode == null || dstNode == null) {
-                    println("Warning: Skipping edge ${dbEdge.id} due to missing schema or node link.")
                     null
                 } else {
                     EdgeDisplayItem(dbEdge.id, schema.name, srcNode, dstNode, schema.id)
                 }
             }
-
-
         } catch (e: Exception) {
-            _errorFlow.value = "Error fetching paginated edges: ${e.message}"
             emptyList()
         }
     }
 
-// --- END: Pagination-specific functions ---
-
-// --- Schema CRUD ---
+    // --- Schema CRUD ---
 
     fun getSchemaDependencyCount(schemaId: Long): Long {
         return try {
@@ -262,7 +229,7 @@ class CodexRepository(
             nodeCount + edgeCount
         } catch (e: Exception) {
             _errorFlow.value = "Error checking schema dependencies: ${e.message}"
-            -1L // Indicate error
+            -1L
         }
     }
 
@@ -270,7 +237,7 @@ class CodexRepository(
         repositoryScope.launch {
             try {
                 dbService.database.appDatabaseQueries.deleteSchemaById(schemaId)
-                refreshAll() // Deleting schema cascades, refresh everything
+                refreshAll()
             } catch (e: Exception) {
                 _errorFlow.value = "Error deleting schema: ${e.message}"
             }
@@ -284,7 +251,7 @@ class CodexRepository(
                     type = "NODE",
                     name = state.tableName,
                     properties_json = state.properties,
-                    connections_json = emptyList() // <-- FIX: Pass emptyList() instead of null
+                    connections_json = emptyList()
                 )
                 refreshSchema()
             } catch (e: Exception) {
@@ -316,7 +283,7 @@ class CodexRepository(
                     id = state.originalSchema.id,
                     name = state.currentName,
                     properties_json = state.properties,
-                    connections_json = emptyList() // <-- FIX: Pass emptyList() instead of null
+                    connections_json = emptyList()
                 )
                 refreshSchema()
                 refreshNodes()
@@ -329,7 +296,6 @@ class CodexRepository(
     fun updateEdgeSchema(state: EdgeSchemaEditState) {
         repositoryScope.launch {
             try {
-
                 dbService.database.appDatabaseQueries.updateSchema(
                     id = state.originalSchema.id,
                     name = state.currentName,
@@ -342,32 +308,28 @@ class CodexRepository(
                 _errorFlow.value = "Error updating edge schema: ${e.message}"
             }
         }
-
-
     }
 
-// --- Node CRUD ---
+    // --- Node CRUD ---
 
     fun createNode(state: NodeCreationState) {
         repositoryScope.launch {
             if (state.selectedSchema == null) return@launch
             try {
                 val displayKey = state.selectedSchema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node"
+                val rawLabel = state.properties[displayKey] ?: "Node"
+                val displayLabel = truncateDisplayLabel(rawLabel)
 
                 dbService.database.appDatabaseQueries.insertNode(
                     schema_id = state.selectedSchema.id,
                     display_label = displayLabel,
                     properties_json = state.properties
                 )
-                refreshNodes() // Refresh the full node list
-                // The paginated list will be refreshed by the user (or by a pull-to-refresh)
+                refreshNodes()
             } catch (e: Exception) {
                 _errorFlow.value = "Error creating node: ${e.message}"
             }
         }
-
-
     }
 
     fun getNodeEditState(itemId: Long): NodeEditState? {
@@ -381,68 +343,46 @@ class CodexRepository(
         repositoryScope.launch {
             try {
                 val displayKey = state.schema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node ${state.id}"
+                val rawLabel = state.properties[displayKey] ?: "Node ${state.id}"
+                val displayLabel = truncateDisplayLabel(rawLabel)
 
                 dbService.database.appDatabaseQueries.updateNodeProperties(
                     id = state.id,
                     display_label = displayLabel,
                     properties_json = state.properties
                 )
-                // Create the updated display item
+
                 val updatedItem = NodeDisplayItem(
                     id = state.id,
                     label = state.schema.name,
                     displayProperty = displayLabel,
                     schemaId = state.schema.id
                 )
-                // Perform in-memory update of the full node flow
+
                 _nodeList.update { currentList ->
                     currentList.map { node ->
-                        if (node.id == updatedItem.id) {
-                            updatedItem // Swap with the updated item
-                        } else {
-                            node // Keep the others
-                        }
+                        if (node.id == updatedItem.id) updatedItem else node
                     }
                 }
-                // Note: The paginated list will be updated on its next refresh
             } catch (e: Exception) {
                 _errorFlow.value = "Error updating node: ${e.message}"
             }
         }
-
-
     }
 
-    /**
-
-    Deletes a node and its cascading edges.
-
-    This implementation is optimized to perform an in-memory update
-
-    for the node list and only re-query the edge list.
-     */
     fun deleteNode(itemId: Long) {
         repositoryScope.launch {
             try {
-// 1. Delete node from DB (this will cascade delete edges)
                 dbService.database.appDatabaseQueries.deleteNodeById(itemId)
-
-                // 2. Update full node list from in-memory
                 _nodeList.update { it.filterNot { node -> node.id == itemId } }
-
-                // 3. Refresh only edges, which were affected by the cascade
                 refreshEdges()
-                // Note: The paginated list will be updated on its next refresh
             } catch (e: Exception) {
                 _errorFlow.value = "Error deleting node: ${e.message}"
             }
-
-
         }
     }
 
-// --- Edge CRUD ---
+    // --- Edge CRUD ---
 
     fun createEdge(state: EdgeCreationState) {
         repositoryScope.launch {
@@ -454,8 +394,7 @@ class CodexRepository(
                     to_node_id = state.dst.id,
                     properties_json = state.properties
                 )
-                refreshEdges() // Refresh the full edge list
-// The paginated list will be refreshed by the user
+                refreshEdges()
             } catch (e: Exception) {
                 _errorFlow.value = "Error creating edge: ${e.message}"
             }
@@ -472,43 +411,140 @@ class CodexRepository(
     fun updateEdge(state: EdgeEditState) {
         repositoryScope.launch {
             try {
-
                 dbService.database.appDatabaseQueries.updateEdgeProperties(
                     id = state.id,
                     properties_json = state.properties
                 )
-                // Note: The paginated list will be updated on its next refresh
             } catch (e: Exception) {
                 _errorFlow.value = "Error updating edge: ${e.message}"
             }
         }
-
-
     }
 
-    /**
-
-    Deletes an edge.
-
-    This implementation is optimized to perform an in-memory update
-
-    and avoid any subsequent database reads.
-     */
     fun deleteEdge(itemId: Long) {
         repositoryScope.launch {
             try {
-// 1. Delete edge from DB
                 dbService.database.appDatabaseQueries.deleteEdgeById(itemId)
-
-                // 2. Update full edge list in-memory.
                 _edgeList.update { it.filterNot { edge -> edge.id == itemId } }
-                // Note: The paginated list will be updated on its next refresh
-
             } catch (e: Exception) {
                 _errorFlow.value = "Error deleting edge: ${e.message}"
             }
-
-
         }
+    }
+
+    suspend fun saveInMemoryDbToFile(filePath: String) = withContext(Dispatchers.IO) {
+        try {
+            dbService.driver.execute(
+                identifier = null,
+                sql = "VACUUM INTO ?",
+                parameters = 1
+            ) {
+                bindString(0, filePath)
+            }
+        } catch (e: Exception) {
+            throw Exception("Failed to save database: ${e.message}")
+        }
+    }
+
+    suspend fun bootstrapDocumentSchemas() = withContext(Dispatchers.IO) {
+        val schemaDefinitions = mapOf(
+            StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, "name", "extension", "frontmatter"),
+            StandardSchemas.DOC_NODE_SECTION to listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL),
+            StandardSchemas.DOC_NODE_PARAGRAPH to listOf(StandardSchemas.PROP_CONTENT),
+            StandardSchemas.DOC_NODE_HEADING to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LEVEL),
+            StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, "fenceChar"),
+            StandardSchemas.DOC_NODE_QUOTE to listOf(StandardSchemas.PROP_CONTENT),
+            StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_IS_FOLDABLE, "isCollapsed"),
+            StandardSchemas.DOC_NODE_LIST to listOf(StandardSchemas.PROP_LIST_TYPE, StandardSchemas.PROP_TIGHT),
+            StandardSchemas.DOC_NODE_LIST_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_TASK, StandardSchemas.PROP_IS_COMPLETE, StandardSchemas.PROP_MARKER),
+            StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_ALIGNMENT),
+            StandardSchemas.DOC_NODE_CELL to listOf(StandardSchemas.PROP_CONTENT, "isHeader", StandardSchemas.PROP_ROW, StandardSchemas.PROP_COL),
+            StandardSchemas.DOC_NODE_THEMATIC_BREAK to listOf(StandardSchemas.PROP_MARKER, StandardSchemas.PROP_CONTENT),
+            StandardSchemas.DOC_NODE_HTML to listOf(StandardSchemas.PROP_CONTENT)
+        )
+
+        val edgeDefinitions = listOf(
+            StandardSchemas.EDGE_CONTAINS,
+            StandardSchemas.EDGE_NEXT,
+            StandardSchemas.EDGE_HAS_ITEM,
+            StandardSchemas.EDGE_CELL_AT,
+            StandardSchemas.EDGE_LINKS_TO,
+            StandardSchemas.EDGE_EMBEDS
+        )
+
+        try {
+            schemaDefinitions.forEach { (name, props) ->
+                dbService.database.appDatabaseQueries.insertSchema(
+                    type = "NODE",
+                    name = name,
+                    properties_json = props.map {
+                        // Ensure "name" is the display property for Documents, alongside Content/Title for others
+                        val isDisplay = it == StandardSchemas.PROP_CONTENT ||
+                                it == StandardSchemas.PROP_TITLE ||
+                                it == "name"
+                        SchemaProperty(it, CodexPropertyDataTypes.TEXT, isDisplay)
+                    },
+                    connections_json = emptyList()
+                )
+            }
+
+            edgeDefinitions.forEach { name ->
+                val props = if(name == StandardSchemas.EDGE_CELL_AT) {
+                    listOf(
+                        SchemaProperty(StandardSchemas.PROP_ROW, CodexPropertyDataTypes.NUMBER, true),
+                        SchemaProperty(StandardSchemas.PROP_COL, CodexPropertyDataTypes.NUMBER, true)
+                    )
+                } else if (name == StandardSchemas.EDGE_HAS_ITEM) {
+                    listOf(SchemaProperty(StandardSchemas.PROP_MARKER, CodexPropertyDataTypes.TEXT, true))
+                } else {
+                    emptyList()
+                }
+
+                dbService.database.appDatabaseQueries.insertSchema(
+                    type = "EDGE",
+                    name = name,
+                    properties_json = props,
+                    connections_json = emptyList()
+                )
+            }
+
+            refreshSchema()
+        } catch (e: Exception) {
+            println("Schema bootstrap warning (might already exist): ${e.message}")
+        }
+    }
+
+    suspend fun insertDocumentNode(node: DocumentNode): Long = withContext(Dispatchers.IO) {
+        val schema = _schema.value?.nodeSchemas?.find { it.name == node.schemaName }
+            ?: throw IllegalStateException("Schema '${node.schemaName}' not found. Did you run bootstrap?")
+
+        val propsMap = node.toPropertiesMap()
+        val displayKey = schema.properties.firstOrNull { it.isDisplayProperty }?.name
+        val rawLabel = propsMap[displayKey] ?: node.schemaName
+
+        // Apply truncation logic here.
+        // Since properties_json (propsMap) has the full data, this is safe.
+        val displayLabel = truncateDisplayLabel(rawLabel)
+
+        dbService.database.appDatabaseQueries.transactionWithResult {
+            dbService.database.appDatabaseQueries.insertNode(
+                schema_id = schema.id,
+                display_label = displayLabel,
+                properties_json = propsMap
+            )
+            dbService.database.appDatabaseQueries.lastInsertRowId().executeAsOne()
+        }
+    }
+
+    suspend fun insertDocumentEdge(edgeName: String, fromId: Long, toId: Long, properties: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
+        val schema = _schema.value?.edgeSchemas?.find { it.name == edgeName }
+            ?: throw IllegalStateException("Edge Schema '$edgeName' not found.")
+
+        dbService.database.appDatabaseQueries.insertEdge(
+            schema_id = schema.id,
+            from_node_id = fromId,
+            to_node_id = toId,
+            properties_json = properties
+        )
     }
 }

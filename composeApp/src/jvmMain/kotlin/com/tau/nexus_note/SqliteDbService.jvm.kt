@@ -12,7 +12,11 @@ import com.tau.nexusnote.db.SchemaDefinition
 import java.io.File
 
 actual class SqliteDbService actual constructor() {
-    private var driver: SqlDriver? = null
+
+    private var _driver: SqlDriver? = null
+
+    actual val driver: SqlDriver
+        get() = _driver ?: throw IllegalStateException("Driver not initialized. Call initialize() first.")
 
     // Store the database in a private, nullable backing field
     private var _database: AppDatabase? = null
@@ -35,7 +39,8 @@ actual class SqliteDbService actual constructor() {
         }
 
         // Setup driver
-        driver = JdbcSqliteDriver("jdbc:sqlite:$path")
+        _driver = JdbcSqliteDriver("jdbc:sqlite:$path")
+        val driver = _driver!! // local var for use below
 
         if (!dbExists) { // Only create the schema if the database is new
             AppDatabase.Schema.create(driver!!)
@@ -43,7 +48,7 @@ actual class SqliteDbService actual constructor() {
 
         // Assign to the private backing field, providing all necessary adapters
          _database = AppDatabase(
-            driver = driver!!,
+            driver = driver,
             SchemaDefinitionAdapter = SchemaDefinition.Adapter(
                 properties_jsonAdapter = schemaPropertyAdapter,
                 connections_jsonAdapter = connectionPairAdapter

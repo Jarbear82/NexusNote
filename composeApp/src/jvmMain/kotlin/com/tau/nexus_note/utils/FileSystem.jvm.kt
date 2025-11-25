@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import java.io.File
 import java.io.IOException
 import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 /**
  * JVM implementation for getting the user's home directory.
@@ -101,5 +102,56 @@ actual fun deleteFile(path: String) {
     } catch (e: Exception) {
         // Throw an IOException so the ViewModel can catch it and show an error
         throw IOException("Error deleting codex at: $path", e)
+    }
+}
+
+/**
+ * JVM implementation for reading a text file.
+ */
+actual fun readTextFile(path: String): String {
+    return File(path).readText()
+}
+
+/**
+ * JVM implementation for the file picker using JFileChooser.
+ */
+@Composable
+actual fun FilePicker(
+    show: Boolean,
+    fileExtensions: List<String>,
+    allowMultiple: Boolean,
+    onResult: (List<String>) -> Unit
+) {
+    LaunchedEffect(show) {
+        if (show) {
+            val fileChooser = JFileChooser().apply {
+                fileSelectionMode = JFileChooser.FILES_ONLY
+                isMultiSelectionEnabled = allowMultiple
+                dialogTitle = "Select File(s)"
+
+                if (fileExtensions.isNotEmpty()) {
+                    val description = fileExtensions.joinToString(", ") { it.uppercase() }
+                    val filter = FileNameExtensionFilter(
+                        description,
+                        *fileExtensions.toTypedArray()
+                    )
+                    addChoosableFileFilter(filter)
+                    fileFilter = filter
+                    isAcceptAllFileFilterUsed = false
+                }
+            }
+
+            val result = fileChooser.showOpenDialog(null)
+            if (result == JFileChooser.APPROVE_OPTION) {
+                val files = if (allowMultiple) {
+                    fileChooser.selectedFiles.map { it.absolutePath }
+                } else {
+                    listOf(fileChooser.selectedFile.absolutePath)
+                }
+                onResult(files)
+            } else {
+                onResult(emptyList()) // User cancelled
+            }
+        }
     }
 }

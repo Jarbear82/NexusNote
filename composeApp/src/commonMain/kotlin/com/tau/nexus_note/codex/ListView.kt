@@ -115,7 +115,8 @@ fun ListView(
                 val filteredNodes = paginatedNodes.filter {
                     it.label.contains(nodeSearchText, ignoreCase = true) ||
                             it.displayProperty.contains(nodeSearchText, ignoreCase = true)
-                }
+                }.distinctBy { it.id } // FIX: Ensure uniqueness
+
                 items(filteredNodes, key = { it.id }) { node ->
                     val isSelected = primarySelectedItem == node || secondarySelectedItem == node
                     val colorInfo = labelToColor(node.label)
@@ -172,7 +173,8 @@ fun ListView(
                     it.label.contains(edgeSearchText, ignoreCase = true) ||
                             it.src.displayProperty.contains(edgeSearchText, ignoreCase = true) ||
                             it.dst.displayProperty.contains(edgeSearchText, ignoreCase = true)
-                }
+                }.distinctBy { it.id } // FIX: Ensure uniqueness
+
                 items(filteredEdges, key = { it.id }) { edge ->
                     val isSelected = primarySelectedItem == edge.src && secondarySelectedItem == edge.dst
                     val colorInfo = labelToColor(edge.label)

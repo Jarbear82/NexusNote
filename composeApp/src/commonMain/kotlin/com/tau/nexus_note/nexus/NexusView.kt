@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -24,12 +25,14 @@ import com.tau.nexus_note.MainViewModel
 import com.tau.nexus_note.ui.components.CodexAlertDialog
 import com.tau.nexus_note.ui.components.CodexListItem
 import com.tau.nexus_note.utils.labelToColor
+import com.tau.nexus_note.utils.FilePicker
 
 @Composable
 fun NexusView(viewModel: MainViewModel) {
     val codices by viewModel.codices.collectAsState()
     val baseDirectory by viewModel.codexBaseDirectory.collectAsState()
     val showBaseDirPicker by viewModel.showBaseDirPicker.collectAsState()
+    val showImportPicker by viewModel.showImportFilePicker.collectAsState()
 
     // --- State for inline creation ---
     val newCodexName by viewModel.newCodexName.collectAsState()
@@ -37,6 +40,13 @@ fun NexusView(viewModel: MainViewModel) {
     val codexToDelete by viewModel.codexToDelete.collectAsState()
 
     // --- Dialogs ---
+
+    FilePicker(
+        show = showImportPicker,
+        fileExtensions = listOf("md", "markdown", "txt"),
+        allowMultiple = true,
+        onResult = { viewModel.onImportFilesSelected(it) }
+    )
 
     DirectoryPicker(
         show = showBaseDirPicker,
@@ -149,6 +159,19 @@ fun NexusView(viewModel: MainViewModel) {
             ) {
                 Text("Create and Open")
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            OutlinedButton(
+                onClick = { viewModel.onImportDocumentsClicked() }
+            ) {
+                Icon(Icons.Default.FileOpen, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Import")
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
             Button(
                 onClick = { viewModel.openInMemoryTerminal() },
             ) {

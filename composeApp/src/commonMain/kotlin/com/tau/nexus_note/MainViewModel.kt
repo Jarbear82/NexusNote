@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import com.tau.nexus_note.doc_parser.MarkdownParser
+import com.tau.nexus_note.utils.readTextFile
 
 enum class Screen {
     NEXUS,
@@ -58,6 +60,9 @@ class MainViewModel {
             _appSettings.value = newSettings
         }
     )
+
+    private val _showImportFilePicker = MutableStateFlow(false)
+    val showImportFilePicker = _showImportFilePicker.asStateFlow()
 
     fun clearError() {
         _errorFlow.value = null
@@ -301,6 +306,50 @@ class MainViewModel {
     fun onDispose() {
         // This will be called from the main App composable's onDispose
         _codexViewModel.value?.onCleared()
+    }
+
+    // --- Import Documents ---
+    fun onImportDocumentsClicked() {
+        _showImportFilePicker.value = true
+    }
+
+    fun onImportFilesSelected(paths: List<String>) {
+        _showImportFilePicker.value = false
+        if (paths.isEmpty()) return
+
+        viewModelScope.launch {
+            try {
+                // 1. Initialize In-Memory DB
+                clearCodexName()
+                _codexViewModel.value?.onCleared()
+                val newService = SqliteDbService()
+                newService.initialize(":memory:")
+
+                // 2. Setup Repository & Parser
+                val tempRepo = CodexRepository(newService, viewModelScope)
+                val parser = MarkdownParser(tempRepo)
+
+                // 3. Bootstrap Schemas
+                tempRepo.bootstrapDocumentSchemas()
+
+                // 4. Parse Files
+                // We assume all selected are MD for now, but can check extension
+                paths.forEach { path ->
+                    val content = withContext(Dispatchers.IO) { readTextFile(path) }
+                    parser.parse(path, content, tempRepo)
+                }
+
+                // 5. Finalize Setup
+                tempRepo.refreshAll()
+                _codexViewModel.value = CodexViewModel(newService, appSettings)
+                _openedCodexItem.value = null // It's in-memory
+                _selectedScreen.value = Screen.CODEX
+
+            } catch (e: Exception) {
+                _errorFlow.value = "Import failed: ${e.message}"
+                e.printStackTrace()
+            }
+        }
     }
 }
 

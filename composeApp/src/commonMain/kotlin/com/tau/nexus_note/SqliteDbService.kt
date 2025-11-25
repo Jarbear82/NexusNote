@@ -1,8 +1,10 @@
 package com.tau.nexus_note
 
+import app.cash.sqldelight.db.SqlDriver
 import com.tau.nexus_note.db.AppDatabase
 expect class SqliteDbService() {
     val database: AppDatabase
+    val driver: SqlDriver
 
     /**
      * Initializes the .sqlite file at the given path.

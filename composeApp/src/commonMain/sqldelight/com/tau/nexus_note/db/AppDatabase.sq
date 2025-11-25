@@ -112,3 +112,6 @@ SELECT * FROM Edge LIMIT ? OFFSET ?;
 
 countAllEdges:
 SELECT COUNT(*) FROM Edge;
+
+lastInsertRowId:
+SELECT last_insert_rowid();
