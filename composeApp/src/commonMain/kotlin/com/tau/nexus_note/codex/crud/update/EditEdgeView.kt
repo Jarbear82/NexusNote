@@ -18,18 +18,17 @@ fun EditEdgeView(
     state: EdgeEditState,
     onPropertyChange: (String, String) -> Unit,
     onSave: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    codexPath: String
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Edit Edge: ${state.schema.name}")
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Using onSurfaceVariant for secondary, "muted" text
             Text(
                 "From: ${state.src.label} (${state.src.displayProperty})",
                 style = MaterialTheme.typography.bodyMedium,
@@ -55,7 +54,8 @@ fun EditEdgeView(
                     CodexPropertyInput(
                         property = schemaProperty,
                         currentValue = state.properties[schemaProperty.name] ?: "",
-                        onValueChange = { value -> onPropertyChange(schemaProperty.name, value) }
+                        onValueChange = { value -> onPropertyChange(schemaProperty.name, value) },
+                        codexPath = codexPath
                     )
                 }
             }

@@ -18,25 +18,25 @@ fun EditNodeView(
     state: NodeEditState,
     onPropertyChange: (String, String) -> Unit,
     onSave: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    codexPath: String
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Edit Node: ${state.schema.name}")
 
         Text("Properties", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Iterate over schema properties
             state.schema.properties.forEach { schemaProperty ->
                 CodexPropertyInput(
                     property = schemaProperty,
                     currentValue = state.properties[schemaProperty.name] ?: "",
-                    onValueChange = { value -> onPropertyChange(schemaProperty.name, value) }
+                    onValueChange = { value -> onPropertyChange(schemaProperty.name, value) },
+                    codexPath = codexPath
                 )
             }
         }

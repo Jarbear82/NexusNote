@@ -15,7 +15,6 @@ import com.tau.nexus_note.ui.components.CodexPropertyInput
 import com.tau.nexus_note.ui.components.CodexSectionHeader
 import com.tau.nexus_note.ui.components.FormActionRow
 
-
 @Composable
 fun CreateEdgeView(
     edgeCreationState: EdgeCreationState,
@@ -25,18 +24,17 @@ fun CreateEdgeView(
     onDstSelected: (NodeDisplayItem) -> Unit,
     onPropertyChanged: (String, String) -> Unit,
     onCreateClick: () -> Unit,
-    onCancelClick: () -> Unit
+    onCancelClick: () -> Unit,
+    codexPath: String
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Edge")
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Schema Dropdown
             CodexDropdown(
                 label = "Select Schema",
                 options = edgeCreationState.schemas,
@@ -45,7 +43,6 @@ fun CreateEdgeView(
                 displayTransform = { it.name }
             )
 
-            // --- Connection Pair Dropdown ---
             edgeCreationState.selectedSchema?.let {
                 Spacer(modifier = Modifier.height(8.dp))
                 CodexDropdown(
@@ -57,9 +54,7 @@ fun CreateEdgeView(
                 )
             }
 
-            // --- Source/Destination/Properties ---
             edgeCreationState.selectedConnection?.let { conn ->
-                // Source Node Dropdown
                 Spacer(modifier = Modifier.height(8.dp))
                 val srcNodes = edgeCreationState.availableNodes.filter { it.label == conn.src }
                 CodexDropdown(
@@ -70,7 +65,6 @@ fun CreateEdgeView(
                     displayTransform = { "${it.label} : ${it.displayProperty}" }
                 )
 
-                // Destination Node Dropdown
                 Spacer(modifier = Modifier.height(8.dp))
                 val dstNodes = edgeCreationState.availableNodes.filter { it.label == conn.dst }
                 CodexDropdown(
@@ -81,13 +75,13 @@ fun CreateEdgeView(
                     displayTransform = { "${it.label} : ${it.displayProperty}" }
                 )
 
-                // Properties
                 Spacer(modifier = Modifier.height(8.dp))
                 edgeCreationState.selectedSchema?.properties?.forEach { property ->
                     CodexPropertyInput(
                         property = property,
                         currentValue = edgeCreationState.properties[property.name] ?: "",
-                        onValueChange = { onPropertyChanged(property.name, it) }
+                        onValueChange = { onPropertyChanged(property.name, it) },
+                        codexPath = codexPath
                     )
                 }
             }

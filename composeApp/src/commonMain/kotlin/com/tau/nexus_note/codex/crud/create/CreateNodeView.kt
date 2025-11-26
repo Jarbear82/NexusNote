@@ -19,12 +19,12 @@ fun CreateNodeView(
     onSchemaSelected: (SchemaDefinitionItem) -> Unit,
     onPropertyChanged: (String, String) -> Unit,
     onCreateClick: () -> Unit,
-    onCancelClick: () -> Unit
+    onCancelClick: () -> Unit,
+    codexPath: String
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Node")
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -40,13 +40,13 @@ fun CreateNodeView(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Iterate over properties
             if (nodeCreationState.selectedSchema != null) {
                 nodeCreationState.selectedSchema.properties.forEach { property ->
                     CodexPropertyInput(
                         property = property,
                         currentValue = nodeCreationState.properties[property.name] ?: "",
-                        onValueChange = { onPropertyChanged(property.name, it) }
+                        onValueChange = { onPropertyChanged(property.name, it) },
+                        codexPath = codexPath
                     )
                 }
             }

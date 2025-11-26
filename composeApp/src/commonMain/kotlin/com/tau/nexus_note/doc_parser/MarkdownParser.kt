@@ -178,7 +178,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val edgeActions = mutableListOf<suspend (Long) -> Unit>()
 
         // --- 1. Handle Tags ---
-        // We use findAll + StringBuilder to allow calling suspend functions (insertDocumentNode)
         val tagMatches = tagRegex.findAll(text).toList()
         val sb = StringBuilder()
         var lastIndex = 0
@@ -187,9 +186,16 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             // Append text before the match
             sb.append(text, lastIndex, match.range.first)
 
-            // Suspend call: Find or Insert Tag Node
             val tagName = match.groupValues[1]
-            val tagId = repository.insertDocumentNode(TagNode(name = tagName))
+
+            // Check if tag exists to prevent duplicates
+            val existingTagId = repository.findNodeByLabel(StandardSchemas.DOC_NODE_TAG, tagName)
+
+            val tagId = if (existingTagId != null) {
+                existingTagId
+            } else {
+                repository.insertDocumentNode(TagNode(name = tagName))
+            }
 
             // Queue Edge Creation (Block -> Tag)
             edgeActions.add { blockId ->
@@ -262,8 +268,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
         for (child in node.children) {
             if (child.type == GFMElementTypes.HEADER) {
-                // FIX: Try to find a nested ROW. If not found, assume the HEADER node IS the row.
-                // This handles different AST variations where headers might not be wrapped.
                 val headerRow = child.children.find { it.type == GFMElementTypes.ROW }
                 headers = if (headerRow != null) {
                     extractRowCells(headerRow, rawText)
@@ -273,7 +277,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             } else if (child.type == GFMElementTypes.ROW) {
                 val cells = extractRowCells(child, rawText)
                 val rowMap = mutableMapOf<String, String>()
-
                 // Map cells to headers by index
                 headers.forEachIndexed { index, header ->
                     val cellValue = cells.getOrNull(index) ?: ""

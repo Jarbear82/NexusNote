@@ -21,11 +21,10 @@ import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun CodexView(viewModel: CodexViewModel) {
-    // Observe state
+    // ... (rest of state collection)
     val schema by viewModel.schemaViewModel.schema.collectAsState()
     val paginatedNodes by viewModel.metadataViewModel.paginatedNodes.collectAsState()
     val paginatedEdges by viewModel.metadataViewModel.paginatedEdges.collectAsState()
-
     val primarySelectedItem by viewModel.metadataViewModel.primarySelectedItem.collectAsState()
     val secondarySelectedItem by viewModel.metadataViewModel.secondarySelectedItem.collectAsState()
     val schemaToDelete by viewModel.schemaViewModel.schemaToDelete.collectAsState()
@@ -33,14 +32,9 @@ fun CodexView(viewModel: CodexViewModel) {
     val editScreenState by viewModel.editCreateViewModel.editScreenState.collectAsState()
     val selectedDataTab by viewModel.selectedDataTab.collectAsState()
     val selectedViewTab by viewModel.selectedViewTab.collectAsState()
-
-    // Layout State
     val isDetailPaneOpen by viewModel.isDetailPaneOpen.collectAsState()
-
     val graphViewModel = viewModel.graphViewModel
     val showDetangleDialog by graphViewModel.showDetangleDialog.collectAsState()
-
-    // Search & Visibility States
     val nodeSearchText by viewModel.metadataViewModel.nodeSearchText.collectAsState()
     val edgeSearchText by viewModel.metadataViewModel.edgeSearchText.collectAsState()
     val nodeSchemaSearchText by viewModel.schemaViewModel.nodeSchemaSearchText.collectAsState()
@@ -72,8 +66,10 @@ fun CodexView(viewModel: CodexViewModel) {
         viewModel.editCreateViewModel.cancelAllEditing()
         viewModel.metadataViewModel.clearSelectedItem()
         viewModel.selectDataTab(DataViewTabs.SCHEMA)
-        // On mobile, this might close the sheet if it was tied to edit state
     }
+
+    // Get the path
+    val codexPath = viewModel.repository.dbPath
 
     Box(modifier = Modifier.fillMaxSize()) {
         TwoPaneLayout(
@@ -165,8 +161,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             }
                         }
                     }
-
-                    // Mobile-only FAB to open the detail pane (Schema list) if closed
+                    // Mobile-only FAB
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                         if (maxWidth <= 700.dp && !isDetailPaneOpen) {
                             FloatingActionButton(
@@ -182,9 +177,9 @@ fun CodexView(viewModel: CodexViewModel) {
             },
             detailContent = {
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    // Dialog handling within the pane context
                     val itemToDelete = schemaToDelete
                     if (itemToDelete != null && selectedDataTab == DataViewTabs.SCHEMA) {
+                        // ... alert dialog code ...
                         val text = if (dependencyCount == 0L) {
                             "Are you sure you want to delete the schema '${itemToDelete.name}'?"
                         } else {
@@ -240,9 +235,11 @@ fun CodexView(viewModel: CodexViewModel) {
                             },
                             onListAllClick = { viewModel.metadataViewModel.listAll() },
                             onListNodesClick = { viewModel.metadataViewModel.listNodes() },
-                            onListEdgesClick = { viewModel.metadataViewModel.listEdges() }
+                            onListEdgesClick = { viewModel.metadataViewModel.listEdges() },
+                            repository = viewModel.repository // Pass repository
                         )
                         DataViewTabs.SCHEMA -> SchemaView(
+                            // ... existing schema view params ...
                             schema = schema,
                             primarySelectedItem = primarySelectedItem,
                             secondarySelectedItem = secondarySelectedItem,
@@ -285,6 +282,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
                             onCancelClick = onCancel,
+                            codexPath = codexPath, // Pass path
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },
@@ -320,7 +318,7 @@ fun CodexView(viewModel: CodexViewModel) {
             }
         )
 
-        // Detangle Dialog (floats over everything)
+        // Detangle Dialog
         if (showDetangleDialog) {
             DetangleSettingsDialog(
                 onDismiss = { graphViewModel.onDismissDetangleDialog() },

@@ -30,6 +30,9 @@ class CodexRepository(
     private val dbService: SqliteDbService,
     private val repositoryScope: CoroutineScope
 ) {
+    // Expose the DB path for media handling
+    val dbPath: String
+        get() = dbService.filePath
 
     private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
@@ -45,26 +48,6 @@ class CodexRepository(
 
     fun clearError() {
         _errorFlow.value = null
-    }
-
-    private fun truncateDisplayLabel(text: String): String {
-        val limit = 20
-        val trimmed = text.trim()
-        if (trimmed.length <= limit) return trimmed
-
-        val words = trimmed.split(Regex("\\s+"))
-        val builder = StringBuilder()
-
-        for (word in words) {
-            if (builder.length + word.length > limit) {
-                if (builder.isNotEmpty()) {
-                    return builder.toString().trim() + "..."
-                }
-                return word.take(limit) + "..."
-            }
-            builder.append(word).append(" ")
-        }
-        return builder.toString().trim()
     }
 
     suspend fun refreshAll() {
@@ -102,13 +85,10 @@ class CodexRepository(
 
     suspend fun refreshNodes() = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
-
         if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing nodes: Schema was not loaded first."
             _nodeList.value = emptyList()
             return@withContext
         }
-
         try {
             val dbNodes = dbService.database.appDatabaseQueries.selectAllNodes().executeAsList()
             _nodeList.value = dbNodes.mapNotNull { dbNode ->
@@ -120,7 +100,6 @@ class CodexRepository(
                 }
             }
         } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing nodes: ${e.message}"
             _nodeList.value = emptyList()
         }
     }
@@ -128,13 +107,10 @@ class CodexRepository(
     suspend fun refreshEdges() = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
         val nodeMap = _nodeList.value.associateBy { it.id }
-
         if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing edges: Schema was not loaded first."
             _edgeList.value = emptyList()
             return@withContext
         }
-
         try {
             val dbEdges = dbService.database.appDatabaseQueries.selectAllEdges().executeAsList()
             _edgeList.value = dbEdges.mapNotNull { dbEdge ->
@@ -149,7 +125,6 @@ class CodexRepository(
                 }
             }
         } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing edges: ${e.message}"
             _edgeList.value = emptyList()
         }
     }
@@ -159,7 +134,6 @@ class CodexRepository(
         if (_schema.value == null) {
             return@withContext emptyList()
         }
-
         return@withContext try {
             val dbNodes = dbService.database.appDatabaseQueries.getNodesPaginated(limit, offset).executeAsList()
             dbNodes.mapNotNull { dbNode ->
@@ -178,11 +152,9 @@ class CodexRepository(
     suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> = withContext(Dispatchers.IO) {
         val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
         val nodeMap = _nodeList.value.associateBy { it.id }
-
         if (_schema.value == null) {
             return@withContext emptyList()
         }
-
         return@withContext try {
             val dbEdges = dbService.database.appDatabaseQueries.getEdgesPaginated(limit, offset).executeAsList()
             dbEdges.mapNotNull { dbEdge ->
@@ -201,17 +173,6 @@ class CodexRepository(
         }
     }
 
-    fun getSchemaDependencyCount(schemaId: Long): Long {
-        return try {
-            val nodeCount = dbService.database.appDatabaseQueries.countNodesForSchema(schemaId).executeAsOne()
-            val edgeCount = dbService.database.appDatabaseQueries.countEdgesForSchema(schemaId).executeAsOne()
-            nodeCount + edgeCount
-        } catch (e: Exception) {
-            _errorFlow.value = "Error checking schema dependencies: ${e.message}"
-            -1L
-        }
-    }
-
     fun deleteSchema(schemaId: Long) {
         repositoryScope.launch {
             try {
@@ -220,6 +181,36 @@ class CodexRepository(
             } catch (e: Exception) {
                 _errorFlow.value = "Error deleting schema: ${e.message}"
             }
+        }
+    }
+
+    fun getSchemaDependencyCount(schemaId: Long): Long {
+        return try {
+            val nodeCount = dbService.database.appDatabaseQueries.countNodesForSchema(schemaId).executeAsOne()
+            val edgeCount = dbService.database.appDatabaseQueries.countEdgesForSchema(schemaId).executeAsOne()
+            nodeCount + edgeCount
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
+    // --- ADDED: Helper to find existing node by label (e.g. for Tags) ---
+    suspend fun findNodeByLabel(schemaName: String, label: String): Long? = withContext(Dispatchers.IO) {
+        // Ensure schema is loaded
+        if (_schema.value == null) refreshSchema()
+        val schema = _schema.value?.nodeSchemas?.find { it.name == schemaName } ?: return@withContext null
+
+        // Try finding in loaded memory list first
+        val memoryMatch = _nodeList.value.find { it.schemaId == schema.id && it.displayProperty == label }
+        if (memoryMatch != null) return@withContext memoryMatch.id
+
+        // Fallback to DB scan (since we don't have a specific query yet)
+        try {
+            val dbNodes = dbService.database.appDatabaseQueries.selectAllNodes().executeAsList()
+            val dbMatch = dbNodes.find { it.schema_id == schema.id && it.display_label == label }
+            return@withContext dbMatch?.id
+        } catch (e: Exception) {
+            return@withContext null
         }
     }
 
@@ -295,7 +286,7 @@ class CodexRepository(
             try {
                 val displayKey = state.selectedSchema.properties.firstOrNull { it.isDisplayProperty }?.name
                 val rawLabel = state.properties[displayKey] ?: "Node"
-                val displayLabel = truncateDisplayLabel(rawLabel)
+                val displayLabel = rawLabel.take(20)
 
                 dbService.database.appDatabaseQueries.insertNode(
                     schema_id = state.selectedSchema.id,
@@ -321,7 +312,7 @@ class CodexRepository(
             try {
                 val displayKey = state.schema.properties.firstOrNull { it.isDisplayProperty }?.name
                 val rawLabel = state.properties[displayKey] ?: "Node ${state.id}"
-                val displayLabel = truncateDisplayLabel(rawLabel)
+                val displayLabel = rawLabel.take(20)
 
                 dbService.database.appDatabaseQueries.updateNodeProperties(
                     id = state.id,
@@ -421,32 +412,22 @@ class CodexRepository(
         }
     }
 
-    // In CodexRepository.kt
-
     suspend fun bootstrapDocumentSchemas() = withContext(Dispatchers.IO) {
         val schemaDefinitions = mapOf(
-            // --- Structural ---
             StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, StandardSchemas.PROP_NAME, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_FRONTMATTER),
             StandardSchemas.DOC_NODE_SECTION to listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL),
-
-            // --- Content ---
             StandardSchemas.DOC_NODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT),
             StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, StandardSchemas.PROP_CAPTION),
             StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_IS_FOLDABLE),
             StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_HEADERS, StandardSchemas.PROP_DATA, StandardSchemas.PROP_CAPTION),
-
-            // --- List Items ---
             StandardSchemas.DOC_NODE_ORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_NUMBER),
             StandardSchemas.DOC_NODE_UNORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_BULLET_CHAR),
             StandardSchemas.DOC_NODE_TASK_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_CHECKED, StandardSchemas.PROP_MARKER),
-
-            // --- Concepts ---
             StandardSchemas.DOC_NODE_TAG to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_NESTED_PATH),
             StandardSchemas.DOC_NODE_URL to listOf(StandardSchemas.PROP_ADDRESS, StandardSchemas.PROP_DOMAIN),
             StandardSchemas.DOC_NODE_ATTACHMENT to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_MIME_TYPE, StandardSchemas.PROP_URI)
         )
 
-        // Define Edges with their properties
         val edgeDefinitions = mapOf(
             StandardSchemas.EDGE_CONTAINS to listOf(SchemaProperty(StandardSchemas.PROP_ORDER, CodexPropertyDataTypes.NUMBER, true)),
             StandardSchemas.EDGE_REFERENCES to listOf(SchemaProperty("alias", CodexPropertyDataTypes.TEXT, true)),
@@ -454,15 +435,27 @@ class CodexRepository(
             StandardSchemas.EDGE_EMBEDS to emptyList()
         )
 
+        // Helper to assign the correct UI type to standard properties
+        fun getTypeForProp(name: String): CodexPropertyDataTypes {
+            return when (name) {
+                StandardSchemas.PROP_HEADERS -> CodexPropertyDataTypes.LIST
+                StandardSchemas.PROP_FRONTMATTER -> CodexPropertyDataTypes.MAP
+                StandardSchemas.PROP_IS_CHECKED, StandardSchemas.PROP_IS_FOLDABLE -> CodexPropertyDataTypes.BOOLEAN
+                StandardSchemas.PROP_LEVEL, StandardSchemas.PROP_NUMBER, StandardSchemas.PROP_ORDER, StandardSchemas.PROP_CREATED_AT -> CodexPropertyDataTypes.NUMBER
+                StandardSchemas.PROP_DATA -> CodexPropertyDataTypes.LONG_TEXT
+                StandardSchemas.PROP_CONTENT -> CodexPropertyDataTypes.MARKDOWN
+                else -> CodexPropertyDataTypes.TEXT
+            }
+        }
+
         try {
             schemaDefinitions.forEach { (name, props) ->
                 dbService.database.appDatabaseQueries.insertSchema(
                     type = "NODE",
                     name = name,
                     properties_json = props.map {
-                        // Use smart display defaults
                         val isDisplay = it == StandardSchemas.PROP_CONTENT || it == StandardSchemas.PROP_TITLE || it == StandardSchemas.PROP_NAME
-                        SchemaProperty(it, CodexPropertyDataTypes.TEXT, isDisplay)
+                        SchemaProperty(it, getTypeForProp(it), isDisplay)
                     },
                     connections_json = emptyList()
                 )
@@ -476,7 +469,6 @@ class CodexRepository(
                     connections_json = emptyList()
                 )
             }
-
             refreshSchema()
         } catch (e: Exception) {
             println("Schema bootstrap warning: ${e.message}")
@@ -490,8 +482,7 @@ class CodexRepository(
         val propsMap = node.toPropertiesMap()
         val displayKey = schema.properties.firstOrNull { it.isDisplayProperty }?.name
         val rawLabel = propsMap[displayKey] ?: node.schemaName
-
-        val displayLabel = truncateDisplayLabel(rawLabel)
+        val displayLabel = rawLabel.take(20)
 
         dbService.database.appDatabaseQueries.transactionWithResult {
             dbService.database.appDatabaseQueries.insertNode(
