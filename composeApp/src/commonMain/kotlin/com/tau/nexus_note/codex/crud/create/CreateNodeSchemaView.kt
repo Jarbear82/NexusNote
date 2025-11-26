@@ -18,6 +18,7 @@ import com.tau.nexus_note.datamodels.NodeSchemaCreationState
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
+import com.tau.nexus_note.ui.components.CodexTextField
 import com.tau.nexus_note.ui.components.FormActionRow
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.toCamelCase
@@ -34,7 +35,6 @@ fun CreateNodeSchemaView(
     onCancel: () -> Unit,
     onCreate: (NodeSchemaCreationState) -> Unit
 ) {
-    // --- Local state for the "Add Property" UI ---
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
     var newIsDisplay by remember { mutableStateOf(false) }
@@ -44,45 +44,37 @@ fun CreateNodeSchemaView(
     Column(modifier = Modifier.padding(density.contentPadding).fillMaxSize()) {
         CodexSectionHeader("Create Node Schema")
 
-        // Scrollable Content
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
+            modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
         ) {
-            // --- Table Name ---
-            OutlinedTextField(
+            CodexTextField(
                 value = state.tableName,
                 onValueChange = { onTableNameChange(it.toPascalCase()) },
                 label = { Text("Table Name") },
                 modifier = Modifier.fillMaxWidth(),
-                isError = state.tableNameError != null,
-                supportingText = { state.tableNameError?.let { Text(it) } },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                isError = state.tableNameError != null
             )
+            if (state.tableNameError != null) {
+                Text(state.tableNameError, color = MaterialTheme.colorScheme.error, fontSize = density.bodyFontSize)
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Add Property Input Row ---
             Text("Properties", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Property Name
-                OutlinedTextField(
+                CodexTextField(
                     value = newPropName,
                     onValueChange = { newPropName = it.toCamelCase() },
                     label = { Text("Name") },
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Property Type using CodexDropdown
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "Type",
@@ -95,7 +87,6 @@ fun CreateNodeSchemaView(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Display Checkbox
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Display", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
                     Checkbox(
@@ -104,33 +95,21 @@ fun CreateNodeSchemaView(
                     )
                 }
 
-                // Add Button
                 IconButton(
                     onClick = {
-                        onAddProperty(
-                            SchemaProperty(
-                                name = newPropName,
-                                type = newPropType,
-                                isDisplayProperty = newIsDisplay
-                            )
-                        )
+                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay))
                         newPropName = ""
                         newPropType = CodexPropertyDataTypes.TEXT
                         newIsDisplay = false
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Add Property",
-                        modifier = Modifier.size(density.iconSize)
-                    )
+                    Icon(Icons.Default.Add, contentDescription = "Add Property", modifier = Modifier.size(density.iconSize))
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // --- Added Properties List ---
             Column(
                 modifier = Modifier
                     .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
@@ -144,30 +123,18 @@ fun CreateNodeSchemaView(
                         trailingContent = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (property.isDisplayProperty) {
-                                    Icon(
-                                        Icons.Default.Visibility,
-                                        contentDescription = "Display Property",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(density.iconSize)
-                                    )
+                                    Icon(Icons.Default.Visibility, "Display", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(density.iconSize))
                                     Spacer(modifier = Modifier.width(16.dp))
                                 }
                                 IconButton(onClick = { onRemoveProperty(index) }) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "Delete Property",
-                                        modifier = Modifier.size(density.iconSize)
-                                    )
+                                    Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(density.iconSize))
                                 }
                             }
                         }
                     )
-                    if (index < state.properties.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
+                    if (index < state.properties.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
-            // Show error if properties are invalid
             state.propertyErrors.values.firstOrNull()?.let { errorMsg ->
                 Text(text = errorMsg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, fontSize = density.bodyFontSize)
             }
@@ -175,13 +142,10 @@ fun CreateNodeSchemaView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- Fixed Actions ---
         FormActionRow(
             primaryLabel = "Create",
             onPrimaryClick = { onCreate(state) },
-            primaryEnabled = state.tableName.isNotBlank()
-                    && state.tableNameError == null
-                    && state.properties.isNotEmpty(),
+            primaryEnabled = state.tableName.isNotBlank() && state.tableNameError == null && state.properties.isNotEmpty(),
             onSecondaryClick = onCancel
         )
     }

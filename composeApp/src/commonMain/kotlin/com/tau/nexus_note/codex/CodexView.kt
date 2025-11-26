@@ -1,6 +1,5 @@
 package com.tau.nexus_note.codex
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -17,11 +16,12 @@ import com.tau.nexus_note.codex.metadata.MetadataView
 import com.tau.nexus_note.codex.schema.SchemaView
 import com.tau.nexus_note.ui.components.CodexAlertDialog
 import com.tau.nexus_note.ui.components.TwoPaneLayout
+import com.tau.nexus_note.ui.components.CodexTab
 import kotlinx.coroutines.flow.collectLatest
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodexView(viewModel: CodexViewModel) {
-    // ... (rest of state collection)
     val schema by viewModel.schemaViewModel.schema.collectAsState()
     val paginatedNodes by viewModel.metadataViewModel.paginatedNodes.collectAsState()
     val paginatedEdges by viewModel.metadataViewModel.paginatedEdges.collectAsState()
@@ -68,7 +68,6 @@ fun CodexView(viewModel: CodexViewModel) {
         viewModel.selectDataTab(DataViewTabs.SCHEMA)
     }
 
-    // Get the path
     val codexPath = viewModel.repository.dbPath
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -80,8 +79,8 @@ fun CodexView(viewModel: CodexViewModel) {
                     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                         PrimaryTabRow(selectedTabIndex = selectedViewTab.value) {
                             ViewTabs.entries.forEach { tab ->
-                                Tab(
-                                    text = { Text(tab.name) },
+                                CodexTab(
+                                    text = tab.name,
                                     selected = selectedViewTab.value == tab.value,
                                     onClick = { viewModel.selectViewTab(tab) }
                                 )
@@ -161,7 +160,6 @@ fun CodexView(viewModel: CodexViewModel) {
                             }
                         }
                     }
-                    // Mobile-only FAB
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                         if (maxWidth <= 700.dp && !isDetailPaneOpen) {
                             FloatingActionButton(
@@ -179,7 +177,6 @@ fun CodexView(viewModel: CodexViewModel) {
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     val itemToDelete = schemaToDelete
                     if (itemToDelete != null && selectedDataTab == DataViewTabs.SCHEMA) {
-                        // ... alert dialog code ...
                         val text = if (dependencyCount == 0L) {
                             "Are you sure you want to delete the schema '${itemToDelete.name}'?"
                         } else {
@@ -198,8 +195,8 @@ fun CodexView(viewModel: CodexViewModel) {
 
                     PrimaryTabRow(selectedTabIndex = selectedDataTab.value) {
                         DataViewTabs.entries.forEach { tab ->
-                            Tab(
-                                text = { Text(tab.name) },
+                            CodexTab(
+                                text = tab.name,
                                 selected = selectedDataTab.value == tab.value,
                                 onClick = { viewModel.selectDataTab(tab) }
                             )
@@ -236,10 +233,9 @@ fun CodexView(viewModel: CodexViewModel) {
                             onListAllClick = { viewModel.metadataViewModel.listAll() },
                             onListNodesClick = { viewModel.metadataViewModel.listNodes() },
                             onListEdgesClick = { viewModel.metadataViewModel.listEdges() },
-                            repository = viewModel.repository // Pass repository
+                            repository = viewModel.repository
                         )
                         DataViewTabs.SCHEMA -> SchemaView(
-                            // ... existing schema view params ...
                             schema = schema,
                             primarySelectedItem = primarySelectedItem,
                             secondarySelectedItem = secondarySelectedItem,
@@ -282,7 +278,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
                             onCancelClick = onCancel,
-                            codexPath = codexPath, // Pass path
+                            codexPath = codexPath,
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },
@@ -318,7 +314,6 @@ fun CodexView(viewModel: CodexViewModel) {
             }
         )
 
-        // Detangle Dialog
         if (showDetangleDialog) {
             DetangleSettingsDialog(
                 onDismiss = { graphViewModel.onDismissDetangleDialog() },

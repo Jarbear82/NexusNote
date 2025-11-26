@@ -7,14 +7,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.tau.nexus_note.ui.components.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
@@ -31,12 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.codex.CodexView
 import com.tau.nexus_note.nexus.NexusView
 import com.tau.nexus_note.settings.SettingsView
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,46 +43,36 @@ import kotlinx.coroutines.launch
 fun MainView(mainViewModel: MainViewModel) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val density = LocalDensityTokens.current
 
     val selectedScreen by mainViewModel.selectedScreen.collectAsState()
     val codexViewModel by mainViewModel.codexViewModel.collectAsState()
-    // Observe the currently opened item for the label
     val openedCodexItem by mainViewModel.openedCodexItem.collectAsState()
 
-    // --- Error Handling Observers ---
+    // Error Handling
     val mainError by mainViewModel.errorFlow.collectAsState()
     val codexError by codexViewModel?.errorFlow?.collectAsState() ?: mutableStateOf(null)
 
     LaunchedEffect(mainError) {
         mainError?.let {
-            scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = it,
-                    withDismissAction = true
-                )
-            }
+            scope.launch { snackbarHostState.showSnackbar(it, withDismissAction = true) }
             mainViewModel.clearError()
         }
     }
 
     LaunchedEffect(codexError) {
         codexError?.let {
-            scope.launch {
-                snackbarHostState.showSnackbar(
-                    message = it,
-                    withDismissAction = true
-                )
-            }
+            scope.launch { snackbarHostState.showSnackbar(it, withDismissAction = true) }
             codexViewModel?.clearError()
         }
     }
-    // --- End Error Handling ---
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
+                modifier = Modifier.height(density.listHeight), // Adapt height
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -96,7 +85,7 @@ fun MainView(mainViewModel: MainViewModel) {
                         Screen.CODEX -> "Codex"
                         Screen.SETTINGS -> "Settings"
                     }
-                    Text(title)
+                    Text(title, fontSize = density.titleFontSize)
                 },
                 actions = { }
             )
@@ -104,29 +93,28 @@ fun MainView(mainViewModel: MainViewModel) {
     ) { contentPadding ->
         Row(modifier = Modifier.padding(contentPadding).fillMaxSize()) {
 
-            NavigationRail {
+            NavigationRail(
+                modifier = Modifier.width(density.navRailWidth)
+            ) {
                 Spacer(Modifier.height(12.dp))
 
                 // Home Item
                 NavigationRailItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Nexus") },
-                    label = { Text("Nexus") },
+                    icon = { Icon(Icons.Default.Home, contentDescription = "Nexus", modifier = Modifier.height(density.iconSize)) },
+                    label = { Text("Nexus", fontSize = density.bodyFontSize) },
                     selected = selectedScreen == Screen.NEXUS,
-                    onClick = {
-                        mainViewModel.closeCodex()
-                    }
+                    onClick = { mainViewModel.closeCodex() }
                 )
 
                 // Codex Item
                 val isCodexLoaded = codexViewModel != null
-                // Use the opened codex name, or fallback to "Codex"
                 val codexLabel = openedCodexItem?.name ?: "Codex"
 
                 NavigationRailItem(
-                    icon = { Icon(Icons.Default.Storage, contentDescription = "Codex") },
-                    label = { Text(codexLabel) },
+                    icon = { Icon(Icons.Default.Storage, contentDescription = "Codex", modifier = Modifier.height(density.iconSize)) },
+                    label = { Text(codexLabel, fontSize = density.bodyFontSize) },
                     selected = selectedScreen == Screen.CODEX,
-                    enabled = isCodexLoaded, // Disable if no codex loaded
+                    enabled = isCodexLoaded,
                     onClick = {
                         if (isCodexLoaded) {
                             mainViewModel.navigateTo(Screen.CODEX)
@@ -136,21 +124,17 @@ fun MainView(mainViewModel: MainViewModel) {
 
                 // Settings Item
                 NavigationRailItem(
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("Settings") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.height(density.iconSize)) },
+                    label = { Text("Settings", fontSize = density.bodyFontSize) },
                     selected = selectedScreen == Screen.SETTINGS,
-                    onClick = {
-                        mainViewModel.navigateTo(Screen.SETTINGS)
-                    }
+                    onClick = { mainViewModel.navigateTo(Screen.SETTINGS) }
                 )
             }
 
             // Content Area
             Box(modifier = Modifier.fillMaxSize()) {
                 when (selectedScreen) {
-                    Screen.NEXUS -> NexusView(
-                        viewModel = mainViewModel
-                    )
+                    Screen.NEXUS -> NexusView(viewModel = mainViewModel)
                     Screen.CODEX -> {
                         val vm = codexViewModel
                         if (vm != null) {
@@ -159,11 +143,7 @@ fun MainView(mainViewModel: MainViewModel) {
                             NexusView(viewModel = mainViewModel)
                         }
                     }
-                    Screen.SETTINGS -> {
-                        SettingsView(
-                            viewModel = mainViewModel.settingsViewModel
-                        )
-                    }
+                    Screen.SETTINGS -> SettingsView(viewModel = mainViewModel.settingsViewModel)
                 }
             }
         }

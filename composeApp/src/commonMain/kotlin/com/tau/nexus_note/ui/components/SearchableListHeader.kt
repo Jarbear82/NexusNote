@@ -9,11 +9,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import com.tau.nexus_note.ui.components.Icon
+import com.tau.nexus_note.ui.components.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -42,51 +41,44 @@ fun SearchableListHeader(
                 modifier = modifier.fillMaxWidth(),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                // Responsive Layout Logic (Stacked on small screens)
-                if (maxWidth < 300.dp) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Stacking logic for small screens
+                val isSmall = maxWidth < 300.dp
+
+                val content = @Composable {
+                    if (isSmall) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
                             fontSize = density.titleFontSize,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
-                        OutlinedTextField(
-                            value = searchText,
-                            onValueChange = onSearchTextChange,
-                            placeholder = { Text("Search...", fontSize = density.bodyFontSize) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(density.iconSize)) },
-                            singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = TextFieldDefaults.colors(
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent
-                            )
-                        )
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    } else {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
                             fontSize = density.titleFontSize,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = searchText,
-                            onValueChange = onSearchTextChange,
-                            placeholder = { Text("Search...", fontSize = density.bodyFontSize) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(density.iconSize)) },
-                            singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
-                            modifier = Modifier.weight(2f),
-                            colors = TextFieldDefaults.colors(
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent
-                            )
+                            // modifier = Modifier.weight(1f)
                         )
                     }
+
+                    CodexTextField(
+                        value = searchText,
+                        onValueChange = onSearchTextChange,
+                        placeholder = { Text("Search...", fontSize = density.bodyFontSize) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(density.iconSize)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = TextFieldDefaults.colors(
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedContainerColor = Color.Transparent
+                        )
+                    )
+                }
+
+                if (isSmall) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { content() }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) { content() }
                 }
             }
         },

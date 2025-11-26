@@ -24,14 +24,14 @@ fun <T> CodexDropdown(
         onExpandedChange = { expanded = !expanded },
         modifier = modifier
     ) {
-        OutlinedTextField(
-            value = selectedOption?.let { displayTransform(it) } ?: label,
+        // Use our new Generic component
+        CodexTextField(
+            value = selectedOption?.let { displayTransform(it) } ?: "",
             onValueChange = {},
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth(),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth()
         )
         ExposedDropdownMenu(
             expanded = expanded,

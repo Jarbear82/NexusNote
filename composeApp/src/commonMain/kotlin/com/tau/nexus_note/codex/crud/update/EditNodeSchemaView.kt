@@ -17,6 +17,7 @@ import com.tau.nexus_note.datamodels.NodeSchemaEditState
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
+import com.tau.nexus_note.ui.components.CodexTextField
 import com.tau.nexus_note.ui.components.FormActionRow
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.toCamelCase
@@ -42,41 +43,29 @@ fun EditNodeSchemaView(
     Column(modifier = Modifier.padding(density.contentPadding).fillMaxSize()) {
         CodexSectionHeader("Edit Node Schema")
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Table Name
-            OutlinedTextField(
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            CodexTextField(
                 value = state.currentName,
                 onValueChange = { onLabelChange(it.toPascalCase()) },
                 label = { Text("Table Name") },
                 modifier = Modifier.fillMaxWidth(),
-                isError = state.currentNameError != null,
-                supportingText = { state.currentNameError?.let { Text(it) } },
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                isError = state.currentNameError != null
             )
+            if (state.currentNameError != null) Text(state.currentNameError, color = MaterialTheme.colorScheme.error)
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Properties", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CodexTextField(
                     value = newPropName,
                     onValueChange = { newPropName = it.toCamelCase() },
                     label = { Text("Name") },
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                    singleLine = true
                 )
-
                 Spacer(modifier = Modifier.width(8.dp))
-
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "Type",
@@ -86,60 +75,36 @@ fun EditNodeSchemaView(
                         displayTransform = { it.displayName }
                     )
                 }
-
                 Spacer(modifier = Modifier.width(8.dp))
-
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Display", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
-                    Checkbox(
-                        checked = newIsDisplay,
-                        onCheckedChange = { newIsDisplay = it }
-                    )
+                    Checkbox(checked = newIsDisplay, onCheckedChange = { newIsDisplay = it })
                 }
-
                 IconButton(
                     onClick = {
-                        onAddProperty(
-                            SchemaProperty(
-                                name = newPropName,
-                                type = newPropType,
-                                isDisplayProperty = newIsDisplay
-                            )
-                        )
+                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay))
                         newPropName = ""
                         newPropType = CodexPropertyDataTypes.TEXT
                         newIsDisplay = false
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Property", modifier = Modifier.size(density.iconSize))
+                    Icon(Icons.Default.Add, "Add Property", modifier = Modifier.size(density.iconSize))
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // --- Existing Properties List ---
-            Column(
-                modifier = Modifier
-                    .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                    .fillMaxWidth()
-            ) {
+            Column(modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small).fillMaxWidth()) {
                 state.properties.forEachIndexed { index, property ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        OutlinedTextField(
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        CodexTextField(
                             value = property.name,
-                            onValueChange = {
-                                onPropertyChange(index, property.copy(name = it.toCamelCase()))
-                            },
+                            onValueChange = { onPropertyChange(index, property.copy(name = it.toCamelCase())) },
                             label = { Text("Name") },
                             modifier = Modifier.weight(1f),
                             isError = state.propertyErrors.containsKey(index) || property.name.isBlank(),
-                            supportingText = { state.propertyErrors[index]?.let { Text(it) } },
-                            singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                            singleLine = true
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Box(modifier = Modifier.weight(1f)) {
@@ -152,25 +117,13 @@ fun EditNodeSchemaView(
                             )
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Checkbox(
-                                checked = property.isDisplayProperty,
-                                onCheckedChange = {
-                                    onPropertyChange(index, property.copy(isDisplayProperty = it))
-                                }
-                            )
+                            Checkbox(checked = property.isDisplayProperty, onCheckedChange = { onPropertyChange(index, property.copy(isDisplayProperty = it)) })
                         }
                         IconButton(onClick = { onRemoveProperty(index) }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete Property",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(density.iconSize)
-                            )
+                            Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(density.iconSize))
                         }
                     }
-                    if (index < state.properties.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
+                    if (index < state.properties.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
         }

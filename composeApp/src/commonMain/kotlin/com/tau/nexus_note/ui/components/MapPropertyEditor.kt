@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.components.CodexTextField
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.PropertySerialization
 
@@ -25,29 +26,24 @@ fun MapPropertyEditor(
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = density.bodyFontSize)
-
         Spacer(Modifier.height(4.dp))
 
         entries.forEachIndexed { index, (key, value) ->
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                CodexTextField(
                     value = key,
                     onValueChange = { newKey ->
                         val newMap = map.toMutableMap()
-                        newMap.remove(key) // Remove old key
-                        newMap[newKey] = value // Add new key
+                        newMap.remove(key)
+                        newMap[newKey] = value
                         onValueChange(PropertySerialization.serializeMap(newMap))
                     },
                     placeholder = { Text("Key", fontSize = density.bodyFontSize) },
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                    singleLine = true
                 )
                 Spacer(Modifier.width(4.dp))
-                OutlinedTextField(
+                CodexTextField(
                     value = value,
                     onValueChange = { newValue ->
                         val newMap = map.toMutableMap()
@@ -56,8 +52,7 @@ fun MapPropertyEditor(
                     },
                     placeholder = { Text("Value", fontSize = density.bodyFontSize) },
                     modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                    singleLine = true
                 )
                 IconButton(onClick = {
                     val newMap = map.toMutableMap()

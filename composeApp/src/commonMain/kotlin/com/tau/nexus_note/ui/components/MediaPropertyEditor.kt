@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.components.CodexTextField
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.FilePicker
 import com.tau.nexus_note.utils.copyFileToMediaDir
@@ -45,18 +46,14 @@ fun MediaPropertyEditor(
     )
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            OutlinedTextField(
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            CodexTextField(
                 value = currentValue,
-                onValueChange = {}, // Read only
+                onValueChange = {},
                 label = { Text(label) },
                 modifier = Modifier.weight(1f),
                 readOnly = true,
-                singleLine = true,
-                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
+                singleLine = true
             )
             Spacer(Modifier.width(8.dp))
             Button(
@@ -70,12 +67,7 @@ fun MediaPropertyEditor(
             }
         }
         if (codexPath == ":memory:") {
-            Text(
-                "Media upload unavailable in memory mode.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                fontSize = density.bodyFontSize
-            )
+            Text("Media upload unavailable in memory mode.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, fontSize = density.bodyFontSize)
         }
     }
 }
