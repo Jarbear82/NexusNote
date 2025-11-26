@@ -4,6 +4,7 @@ import com.tau.nexus_note.CodexRepository
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
@@ -234,6 +235,10 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             MarkdownElementTypes.PARAGRAPH -> BlockNode(text.trim())
 
+            // Add support for Code Blocks
+            MarkdownElementTypes.CODE_FENCE -> parseCodeFence(node, rawText)
+            MarkdownElementTypes.CODE_BLOCK -> parseIndentedCodeBlock(node, rawText)
+
             // Return null for containers to let walkTree handle recursion
             MarkdownElementTypes.ORDERED_LIST -> null
             MarkdownElementTypes.UNORDERED_LIST -> null
@@ -260,6 +265,31 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             else -> null
         }
+    }
+
+    private fun parseCodeFence(node: ASTNode, rawText: String): CodeBlockNode {
+        var language = ""
+        val contentBuilder = StringBuilder()
+
+        for (child in node.children) {
+            when (child.type) {
+                MarkdownTokenTypes.FENCE_LANG -> {
+                    language = child.getTextInNode(rawText).toString().trim()
+                }
+                MarkdownTokenTypes.CODE_FENCE_CONTENT, MarkdownTokenTypes.TEXT -> {
+                    contentBuilder.append(child.getTextInNode(rawText))
+                }
+                MarkdownTokenTypes.EOL -> {
+                    contentBuilder.append(child.getTextInNode(rawText))
+                }
+            }
+        }
+        // Trim surrounding whitespace/newlines often left by the fence markers
+        return CodeBlockNode(contentBuilder.toString().trim(), language)
+    }
+
+    private fun parseIndentedCodeBlock(node: ASTNode, rawText: String): CodeBlockNode {
+        return CodeBlockNode(node.getTextInNode(rawText).toString().trim(), "")
     }
 
     private fun parseTable(node: ASTNode, rawText: String): TableNode {
