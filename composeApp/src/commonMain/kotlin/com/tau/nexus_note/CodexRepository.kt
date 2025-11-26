@@ -26,16 +26,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-/**
- * Centralizes all database logic and state for an open Codex.
- * This class owns the database connection and the primary data flows.
- */
 class CodexRepository(
     private val dbService: SqliteDbService,
     private val repositoryScope: CoroutineScope
 ) {
 
-    // --- Central State Flows ---
     private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
 
@@ -45,40 +40,26 @@ class CodexRepository(
     private val _edgeList = MutableStateFlow<List<EdgeDisplayItem>>(emptyList())
     val edgeList = _edgeList.asStateFlow()
 
-    // --- Error State Flow ---
     private val _errorFlow = MutableStateFlow<String?>(null)
     val errorFlow = _errorFlow.asStateFlow()
-
-    // --- Public API ---
 
     fun clearError() {
         _errorFlow.value = null
     }
 
-    /**
-     * Helper to prevent UI lag by truncating long labels.
-     * Strategy: Keep total length around 15 chars, respecting word boundaries.
-     * If the first word itself is > 15 chars, it gets truncated.
-     */
     private fun truncateDisplayLabel(text: String): String {
         val limit = 20
         val trimmed = text.trim()
-        // If it's already short enough, return as is
         if (trimmed.length <= limit) return trimmed
 
         val words = trimmed.split(Regex("\\s+"))
         val builder = StringBuilder()
 
         for (word in words) {
-            // Check if adding this word exceeds the limit
-            // builder.length includes the trailing space from previous iterations
             if (builder.length + word.length > limit) {
-                // If we already have content, return it with ellipsis
                 if (builder.isNotEmpty()) {
                     return builder.toString().trim() + "..."
                 }
-                // If builder is empty, it means the *first* word is > 15 chars.
-                // Hard truncate the word to prevent layout issues.
                 return word.take(limit) + "..."
             }
             builder.append(word).append(" ")
@@ -220,8 +201,6 @@ class CodexRepository(
         }
     }
 
-    // --- Schema CRUD ---
-
     fun getSchemaDependencyCount(schemaId: Long): Long {
         return try {
             val nodeCount = dbService.database.appDatabaseQueries.countNodesForSchema(schemaId).executeAsOne()
@@ -310,8 +289,6 @@ class CodexRepository(
         }
     }
 
-    // --- Node CRUD ---
-
     fun createNode(state: NodeCreationState) {
         repositoryScope.launch {
             if (state.selectedSchema == null) return@launch
@@ -381,8 +358,6 @@ class CodexRepository(
             }
         }
     }
-
-    // --- Edge CRUD ---
 
     fun createEdge(state: EdgeCreationState) {
         repositoryScope.launch {
@@ -455,7 +430,10 @@ class CodexRepository(
             StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, "fenceChar"),
             StandardSchemas.DOC_NODE_QUOTE to listOf(StandardSchemas.PROP_CONTENT),
             StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_IS_FOLDABLE, "isCollapsed"),
-            StandardSchemas.DOC_NODE_LIST to listOf(StandardSchemas.PROP_LIST_TYPE, StandardSchemas.PROP_TIGHT),
+
+            // FIX: Add PROP_CONTENT to LIST so it has a display property for Unordered Lists
+            StandardSchemas.DOC_NODE_LIST to listOf(StandardSchemas.PROP_LIST_TYPE, StandardSchemas.PROP_TIGHT, StandardSchemas.PROP_CONTENT),
+
             StandardSchemas.DOC_NODE_LIST_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_TASK, StandardSchemas.PROP_IS_COMPLETE, StandardSchemas.PROP_MARKER),
             StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_ALIGNMENT),
             StandardSchemas.DOC_NODE_CELL to listOf(StandardSchemas.PROP_CONTENT, "isHeader", StandardSchemas.PROP_ROW, StandardSchemas.PROP_COL),
@@ -478,7 +456,7 @@ class CodexRepository(
                     type = "NODE",
                     name = name,
                     properties_json = props.map {
-                        // Ensure "name" is the display property for Documents, alongside Content/Title for others
+                        // Ensure "name" is display for Documents, Content/Title/ListContent for others
                         val isDisplay = it == StandardSchemas.PROP_CONTENT ||
                                 it == StandardSchemas.PROP_TITLE ||
                                 it == "name"
@@ -522,8 +500,6 @@ class CodexRepository(
         val displayKey = schema.properties.firstOrNull { it.isDisplayProperty }?.name
         val rawLabel = propsMap[displayKey] ?: node.schemaName
 
-        // Apply truncation logic here.
-        // Since properties_json (propsMap) has the full data, this is safe.
         val displayLabel = truncateDisplayLabel(rawLabel)
 
         dbService.database.appDatabaseQueries.transactionWithResult {

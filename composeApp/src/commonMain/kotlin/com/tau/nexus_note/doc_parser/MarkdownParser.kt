@@ -15,7 +15,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     override val supportedExtensions = listOf("md", "markdown")
 
     private val flavour = GFMFlavourDescriptor()
-    // 2. Use the Aliased Class
     private val parser = IntelliJMarkdownParser(flavour)
 
     // Regex for Obsidian features
@@ -36,8 +35,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             frontmatterRegex.find(content)?.let { match ->
                 val yamlContent = match.groupValues[1]
-                // In a real app, parse YAML to JSON here.
-                // For now, we store the raw YAML string.
                 frontmatterJson = "{ \"raw\": \"$yamlContent\" }"
                 bodyContent = content.substring(match.range.last + 1)
             }
@@ -53,7 +50,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 frontmatterJson = frontmatterJson
             )
 
-            // TODO: Insert Root Node into DB and get its ID
             val rootId = repository.insertDocumentNode(rootNode)
 
             // 3. Parse AST (GFM Base)
@@ -97,8 +93,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 val nodeId = repository.insertDocumentNode(docNode)
 
                 // LINK TO PARENT
-                // If stack is empty, parent is Root. Else parent is top of stack.
-                // FIX: Handle nullable dbId safely
                 val stackTop = if (ctx.sectionStack.isNotEmpty()) ctx.sectionStack.peek() else null
                 val parentId = stackTop?.dbId ?: ctx.parentId
 
@@ -110,7 +104,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 }
 
                 // Push with ID
-                // FIX: 'copy' works here because docNode is smart-cast to SectionNode
                 ctx.sectionStack.push(docNode.copy(dbId = nodeId))
                 ctx.previousBlockId = nodeId
 
@@ -133,18 +126,16 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 // 3. Process Inlines (Links/Embeds) for Leaf Nodes
                 if (docNode is ParagraphNode) {
                     extractInlineLinks(docNode.content)
-                } else if (docNode is ListItemNode) {
-                    extractInlineLinks(docNode.content)
                 }
+                // Removed ListItemNode inline extraction because ListItemNode is no longer a graph node
             }
         }
 
         // 4. Handle Children (Recursion)
-        if (docNode is CalloutNode || docNode is QuoteNode || docNode is ListNode || docNode is TableNode) {
-            // For container blocks, we dive deeper
-            val childCtx = ctx.copy(parentId = 0L /* placeholder, logic mostly relies on stack/previousId */)
+        // NOTE: We REMOVED ListNode from here. Lists now self-contain their items.
+        if (docNode is CalloutNode || docNode is QuoteNode || docNode is TableNode) {
+            val childCtx = ctx.copy(parentId = 0L)
             node.children.forEach { child ->
-                // Filter out generic tokens like newlines/formatting chars for cleaner graph
                 if (isStructuralNode(child)) {
                     walkTree(child, childCtx)
                 }
@@ -187,17 +178,16 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 }
             }
 
-            // --- LISTS ---
-            MarkdownElementTypes.UNORDERED_LIST -> ListNode("bullet", true)
-            MarkdownElementTypes.ORDERED_LIST -> ListNode("ordered", true)
-
-            MarkdownElementTypes.LIST_ITEM -> {
-                val isTask = text.contains(Regex("^\\[[ xX]\\]"))
-                val isComplete = text.contains(Regex("^\\[[xX]\\]"))
-                val cleanContent = text.replace(Regex("^([-*+]|\\d+\\.)\\s+(\\[[ xX]\\]\\s+)?"), "")
-
-                ListItemNode(cleanContent, isTask, isComplete)
+            // --- LISTS (UPDATED) ---
+            MarkdownElementTypes.UNORDERED_LIST -> {
+                val items = extractListItems(node, rawText)
+                ListNode("bullet", true, items)
             }
+            MarkdownElementTypes.ORDERED_LIST -> {
+                val items = extractListItems(node, rawText)
+                ListNode("ordered", true, items)
+            }
+            // We no longer handle LIST_ITEM individually as a DocNode
 
             // --- TABLES ---
             GFMElementTypes.TABLE -> TableNode("[]")
@@ -211,18 +201,27 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
-    private fun extractInlineLinks(content: String /*, sourceNodeId: Long */) {
-        // 1. Obsidian WikiLinks [[Link]]
+    /**
+     * Helper to extract text from all direct list item children.
+     */
+    private fun extractListItems(listNode: ASTNode, rawText: String): List<String> {
+        return listNode.children
+            .filter { it.type == MarkdownElementTypes.LIST_ITEM }
+            .map { itemNode ->
+                val text = itemNode.getTextInNode(rawText).toString()
+                // Remove the marker (bullet or number) at the start
+                text.replace(Regex("^\\s*([-*+]|\\d+\\.)\\s+"), "").trim()
+            }
+    }
+
+    private fun extractInlineLinks(content: String) {
         wikiLinkRegex.findAll(content).forEach { match ->
             val linkTarget = match.groupValues[1]
-            val alias = match.groupValues[2]
-            // repository.createEdge(StandardSchemas.EDGE_LINKS_TO, sourceNodeId, linkTarget)
+            // repository.createEdge...
         }
-
-        // 2. Obsidian Embeds ![[Image.png]]
         embedRegex.findAll(content).forEach { match ->
             val target = match.groupValues[1]
-            // repository.createEdge(StandardSchemas.EDGE_EMBEDS, sourceNodeId, target)
+            // repository.createEdge...
         }
     }
 

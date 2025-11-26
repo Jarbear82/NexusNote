@@ -40,13 +40,27 @@ data class SectionNode(
 
 data class ListNode(
     val type: String, // "ordered", "bullet"
-    val tight: Boolean
+    val tight: Boolean,
+    val items: List<String>
 ) : DocumentNode {
     override val schemaName = StandardSchemas.DOC_NODE_LIST
-    override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_LIST_TYPE to type,
-        StandardSchemas.PROP_TIGHT to tight.toString()
-    )
+    override fun toPropertiesMap(): Map<String, String> {
+        val baseMap = mapOf(
+            StandardSchemas.PROP_LIST_TYPE to type,
+            StandardSchemas.PROP_TIGHT to tight.toString()
+        )
+
+        return if (type == "ordered") {
+            // Ordered lists: Use numbers as keys (1, 2, 3...)
+            baseMap + items.mapIndexed { index, content ->
+                (index + 1).toString() to content
+            }.toMap()
+        } else {
+            // Unordered lists: Single text block with bullets
+            val textBlock = items.joinToString("\n") { "- $it" }
+            baseMap + (StandardSchemas.PROP_CONTENT to textBlock)
+        }
+    }
 }
 
 data class CalloutNode(
@@ -61,7 +75,6 @@ data class CalloutNode(
         StandardSchemas.PROP_TITLE to title,
         StandardSchemas.PROP_IS_FOLDABLE to isFoldable.toString(),
         "isCollapsed" to isCollapsed.toString(),
-        // Callouts must have content property as requested
         StandardSchemas.PROP_CONTENT to title
     )
 }
@@ -129,21 +142,6 @@ data class ThematicBreakNode(
     override fun toPropertiesMap() = mapOf(
         StandardSchemas.PROP_MARKER to marker,
         StandardSchemas.PROP_CONTENT to marker
-    )
-}
-
-data class ListItemNode(
-    val content: String,
-    val isTask: Boolean = false,
-    val isComplete: Boolean = false,
-    val marker: String = "-" // The bullet char or number "1."
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_LIST_ITEM
-    override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_CONTENT to content,
-        StandardSchemas.PROP_IS_TASK to isTask.toString(),
-        StandardSchemas.PROP_IS_COMPLETE to isComplete.toString(),
-        StandardSchemas.PROP_MARKER to marker
     )
 }
 
