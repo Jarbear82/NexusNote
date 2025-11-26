@@ -19,7 +19,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     private val flavour = GFMFlavourDescriptor()
     private val parser = IntelliJMarkdownParser(flavour)
 
-    // JSON instance for serializing table data
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -28,17 +27,18 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
     // Regex for inline concepts
     private val tagRegex = Regex("#([\\w/-]+)")
-    private val wikiLinkRegex = Regex("\\[\\[(.*?)(?:\\|(.*?))?\\]\\]")
 
-    // Stack to manage the Spine (Hierarchy)
+    // Regex for Obsidan-style Embeds: ![[image.png]]
+    private val wikiEmbedRegex = Regex("!\\[\\[(.*?)(?:\\|(.*?))?\\]\\]")
+    // Regex for Standard Markdown Images: ![alt](path)
+    private val mdImageRegex = Regex("!\\[(.*?)\\]\\((.*?)\\)")
+
     private data class SpineContext(
         val nodeId: Long,
         val level: Int,
         var childOrderCounter: Int = 0
     )
 
-    // Temporary storage for edges generated during content processing
-    // These must be executed AFTER the block node is inserted and we have its ID.
     private var currentEdgeActions: List<suspend (Long) -> Unit>? = null
 
     override suspend fun parse(
@@ -47,23 +47,18 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         repository: CodexRepository
     ): Result<Unit> {
         return try {
-            // 1. Create Root Document Node (Level 0)
             val fileName = fileUri.substringAfterLast('/').substringBeforeLast('.')
             val rootNode = DocRootNode(
                 filepath = fileUri,
                 name = fileName,
-                createdAt = 0L // TODO: Get actual file time
+                createdAt = 0L
             )
             val rootId = repository.insertDocumentNode(rootNode)
 
-            // 2. Parse AST
             val parsedTree = parser.buildMarkdownTreeFromString(content)
-
-            // 3. Initialize Spine Stack
             val spineStack = Stack<SpineContext>()
             spineStack.push(SpineContext(rootId, 0))
 
-            // 4. Walk the AST
             walkTree(parsedTree, content, spineStack)
 
             Result.success(Unit)
@@ -78,30 +73,27 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             return
         }
 
-        // --- 1. Map AST to DocumentNode ---
+        // 1. Map AST to DocumentNode
         val docNode = mapAstToDocumentNode(node, rawText)
 
-        // --- 2. Recursion for Containers (Lists) ---
-        // If mapAstToDocumentNode returns null, it might be a container we want to traverse transparently.
+        // 2. Recursion for Containers (Lists, BlockQuotes)
         if (docNode == null) {
-            if (node.type == MarkdownElementTypes.ORDERED_LIST || node.type == MarkdownElementTypes.UNORDERED_LIST) {
-                // Recurse into the list to find the LIST_ITEMs
+            if (node.type == MarkdownElementTypes.ORDERED_LIST ||
+                node.type == MarkdownElementTypes.UNORDERED_LIST ||
+                node.type == MarkdownElementTypes.BLOCK_QUOTE) {
                 node.children.forEach { walkTree(it, rawText, spineStack) }
             }
-            // For other null nodes (whitespace, comments), we stop here.
             return
         }
 
-        // --- 3. Handle Hierarchy (Spine Logic) ---
-        // If it's a Section, pop the stack to find the correct parent
+        // 3. Handle Hierarchy (Spine Logic)
         if (docNode is SectionNode) {
             while (spineStack.isNotEmpty() && spineStack.peek().level >= docNode.level) {
                 spineStack.pop()
             }
         }
 
-        // --- 4. Templating & Rib Extraction (Content Logic) ---
-        // Process content to extract tags/links. This updates `currentEdgeActions`.
+        // 4. Templating & Rib Extraction
         val finalDocNode = when (docNode) {
             is BlockNode -> processBlockContent(docNode)
             is OrderedListItemNode -> processListItemContent(docNode)
@@ -110,19 +102,18 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             else -> docNode
         }
 
-        // --- 5. Insert Node into Graph ---
+        // 5. Insert Node
         val nodeId = repository.insertDocumentNode(finalDocNode)
 
-        // --- 6. Execute Pending Edge Actions (Ribs) ---
-        // Now that we have the node ID, we can link it to the tags/concepts.
+        // 6. Execute Pending Edge Actions
         currentEdgeActions?.let { actions ->
             actions.forEach { action -> action(nodeId) }
-            currentEdgeActions = null // Reset for next node
+            currentEdgeActions = null
         }
 
         val currentParent = spineStack.peek()
 
-        // --- 7. Connect Spine (CONTAINS with Order) ---
+        // 7. Connect Spine
         repository.insertDocumentEdge(
             StandardSchemas.EDGE_CONTAINS,
             currentParent.nodeId,
@@ -131,20 +122,17 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         )
         currentParent.childOrderCounter++
 
-        // --- 8. Update Stack for Recursion ---
+        // 8. Update Stack for Recursion
         if (finalDocNode is SectionNode) {
             spineStack.push(SpineContext(nodeId, finalDocNode.level))
         } else if (finalDocNode is CalloutNode) {
-            spineStack.push(SpineContext(nodeId, 99)) // Arbitrary high level for callout container
+            spineStack.push(SpineContext(nodeId, 99))
+            // Recurse into children (paragraphs inside the quote)
             node.children.forEach { walkTree(it, rawText, spineStack) }
             spineStack.pop()
         }
     }
 
-    /**
-     * Extracts Concepts (Tags) from text, inserts them into the graph,
-     * and returns a new Node with the templated content string.
-     */
     private suspend fun processBlockContent(node: BlockNode): BlockNode {
         val extraction = extractAndLinkConcepts(node.content)
         currentEdgeActions = extraction.edges
@@ -175,49 +163,71 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val edges: List<suspend (Long) -> Unit>
     )
 
-    private suspend fun extractAndLinkConcepts(text: String): ExtractionResult {
-        val edgeActions = mutableListOf<suspend (Long) -> Unit>()
-
-        // --- 1. Handle Tags ---
-        val tagMatches = tagRegex.findAll(text).toList()
+    /**
+     * Helper function to perform Regex replacement with suspending transform logic.
+     * Regex.replace() does not support suspend lambdas, so we implement it manually.
+     */
+    private suspend fun replaceAsync(
+        input: String,
+        regex: Regex,
+        transform: suspend (MatchResult) -> String
+    ): String {
         val sb = StringBuilder()
         var lastIndex = 0
+        val matches = regex.findAll(input)
 
-        for (match in tagMatches) {
-            // Append text before the match
-            sb.append(text, lastIndex, match.range.first)
+        for (match in matches) {
+            sb.append(input, lastIndex, match.range.first)
+            val replacement = transform(match)
+            sb.append(replacement)
+            lastIndex = match.range.last + 1
+        }
+        if (lastIndex < input.length) {
+            sb.append(input, lastIndex, input.length)
+        }
+        return sb.toString()
+    }
 
+    private suspend fun extractAndLinkConcepts(text: String): ExtractionResult {
+        val edgeActions = mutableListOf<suspend (Long) -> Unit>()
+        var processedText = text
+
+        // --- 1. Handle Tags ---
+        processedText = replaceAsync(processedText, tagRegex) { match ->
             val tagName = match.groupValues[1]
-
-            // Check if tag exists to prevent duplicates
             val existingTagId = repository.findNodeByLabel(StandardSchemas.DOC_NODE_TAG, tagName)
+            val tagId = existingTagId ?: repository.insertDocumentNode(TagNode(name = tagName))
 
-            val tagId = if (existingTagId != null) {
-                existingTagId
-            } else {
-                repository.insertDocumentNode(TagNode(name = tagName))
-            }
-
-            // Queue Edge Creation (Block -> Tag)
             edgeActions.add { blockId ->
                 repository.insertDocumentEdge(StandardSchemas.EDGE_TAGGED, blockId, tagId)
             }
-
-            // Append replacement template
-            sb.append("{{tag:$tagId}}")
-
-            lastIndex = match.range.last + 1
-        }
-        // Append remaining text
-        if (lastIndex < text.length) {
-            sb.append(text, lastIndex, text.length)
+            "{{tag:$tagId}}"
         }
 
-        val processedText = sb.toString()
+        // --- 2. Handle WikiLink Embeds: ![[image.png]] ---
+        processedText = replaceAsync(processedText, wikiEmbedRegex) { match ->
+            val filename = match.groupValues[1]
+            val attachId = repository.insertDocumentNode(AttachmentNode(filename = filename, mimeType = "image/auto"))
 
-        // --- 2. Handle WikiLinks (Placeholder) ---
-        // Future: Resolve target doc ID and inject {{link:ID}}
-        // For now, we leave the processed text as is.
+            edgeActions.add { blockId ->
+                repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId)
+            }
+            "{{embed:$attachId}}"
+        }
+
+        // --- 3. Handle Markdown Images: ![alt](path) ---
+        processedText = replaceAsync(processedText, mdImageRegex) { match ->
+            val alt = match.groupValues[1]
+            val path = match.groupValues[2]
+            val filename = path.substringAfterLast('/')
+
+            val attachId = repository.insertDocumentNode(AttachmentNode(filename = filename, path = path, mimeType = "image/auto"))
+
+            edgeActions.add { blockId ->
+                repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId)
+            }
+            "{{embed:$attachId}}"
+        }
 
         return ExtractionResult(processedText, edgeActions)
     }
@@ -235,31 +245,15 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             MarkdownElementTypes.PARAGRAPH -> BlockNode(text.trim())
 
-            // Add support for Code Blocks
             MarkdownElementTypes.CODE_FENCE -> parseCodeFence(node, rawText)
             MarkdownElementTypes.CODE_BLOCK -> parseIndentedCodeBlock(node, rawText)
 
-            // Return null for containers to let walkTree handle recursion
+            MarkdownElementTypes.BLOCK_QUOTE -> parseBlockQuote(node, rawText)
+
             MarkdownElementTypes.ORDERED_LIST -> null
             MarkdownElementTypes.UNORDERED_LIST -> null
 
-            MarkdownElementTypes.LIST_ITEM -> {
-                // Determine specific list item type
-                val trimmed = text.trim()
-                if (trimmed.startsWith("- [ ]") || trimmed.startsWith("- [x]")) {
-                    val isChecked = trimmed.contains("[x]")
-                    // Remove the marker "- [x]"
-                    val content = trimmed.replace(Regex("^- \\[[x ]\\]"), "").trim()
-                    TaskListItemNode(content, isChecked, "- [ ]")
-                } else if (trimmed.matches(Regex("^\\d+\\..*"))) {
-                    val num = trimmed.substringBefore(".").toIntOrNull() ?: 1
-                    val content = trimmed.replace(Regex("^\\d+\\."), "").trim()
-                    OrderedListItemNode(content, num)
-                } else {
-                    val content = trimmed.removePrefix("-").removePrefix("*").removePrefix("+").trim()
-                    UnorderedListItemNode(content, "-")
-                }
-            }
+            MarkdownElementTypes.LIST_ITEM -> parseListItem(text)
 
             GFMElementTypes.TABLE -> parseTable(node, rawText)
 
@@ -267,14 +261,46 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
+    private fun parseBlockQuote(node: ASTNode, rawText: String): DocumentNode? {
+        val fullText = node.getTextInNode(rawText).toString()
+        // Regex to detect Obsidian callout syntax: > [!info] Title
+        val calloutRegex = Regex("^>\\s*\\[!([\\w-]+)\\](.*)", RegexOption.MULTILINE)
+        val match = calloutRegex.find(fullText)
+
+        return if (match != null) {
+            val type = match.groupValues[1]
+            val title = match.groupValues[2].trim()
+            CalloutNode(type, title, isFoldable = true)
+        } else {
+            // Generic Blockquote
+            CalloutNode("quote", "Quote", isFoldable = false)
+        }
+    }
+
+    private fun parseListItem(text: String): DocumentNode {
+        val trimmed = text.trim()
+        return if (trimmed.startsWith("- [ ]") || trimmed.startsWith("- [x]")) {
+            val isChecked = trimmed.contains("[x]")
+            val content = trimmed.replace(Regex("^- \\[[x ]\\]"), "").trim()
+            TaskListItemNode(content, isChecked, "- [ ]")
+        } else if (trimmed.matches(Regex("^\\d+\\..*"))) {
+            val num = trimmed.substringBefore(".").toIntOrNull() ?: 1
+            val content = trimmed.replace(Regex("^\\d+\\."), "").trim()
+            OrderedListItemNode(content, num)
+        } else {
+            val content = trimmed.removePrefix("-").removePrefix("*").removePrefix("+").trim()
+            UnorderedListItemNode(content, "-")
+        }
+    }
+
     private fun parseCodeFence(node: ASTNode, rawText: String): CodeBlockNode {
-        var language = ""
+        var infoString = ""
         val contentBuilder = StringBuilder()
 
         for (child in node.children) {
             when (child.type) {
                 MarkdownTokenTypes.FENCE_LANG -> {
-                    language = child.getTextInNode(rawText).toString().trim()
+                    infoString = child.getTextInNode(rawText).toString().trim()
                 }
                 MarkdownTokenTypes.CODE_FENCE_CONTENT, MarkdownTokenTypes.TEXT -> {
                     contentBuilder.append(child.getTextInNode(rawText))
@@ -284,12 +310,44 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 }
             }
         }
-        // Trim surrounding whitespace/newlines often left by the fence markers
-        return CodeBlockNode(contentBuilder.toString().trim(), language)
+
+        // Parse Language and Filename from Info String
+        // Supports: "kotlin:Main.kt" or "kotlin title='Main.kt'" or "kotlin"
+        val (language, filename) = parseCodeFenceInfo(infoString)
+
+        return CodeBlockNode(
+            content = contentBuilder.toString().trim(),
+            language = language,
+            filename = filename
+        )
+    }
+
+    private fun parseCodeFenceInfo(info: String): Pair<String, String> {
+        if (info.isBlank()) return Pair("", "")
+
+        // Strategy 1: Colon syntax (e.g., "kotlin:Main.kt")
+        if (info.contains(":")) {
+            val parts = info.split(":", limit = 2)
+            return Pair(parts[0].trim(), parts[1].trim())
+        }
+
+        // Strategy 2: Key-value attributes (e.g., kotlin title="Main.kt")
+        // Simple regex to find title="..." or filename="..."
+        val titleRegex = Regex("(?:title|filename)=[\"'](.*?)[\"']")
+        val match = titleRegex.find(info)
+        if (match != null) {
+            val filename = match.groupValues[1]
+            // Language is usually the first word before attributes
+            val language = info.substringBefore(" ").trim()
+            return Pair(language, filename)
+        }
+
+        // Default: Just language
+        return Pair(info.trim(), "")
     }
 
     private fun parseIndentedCodeBlock(node: ASTNode, rawText: String): CodeBlockNode {
-        return CodeBlockNode(node.getTextInNode(rawText).toString().trim(), "")
+        return CodeBlockNode(node.getTextInNode(rawText).toString().trim(), "", "")
     }
 
     private fun parseTable(node: ASTNode, rawText: String): TableNode {
@@ -307,7 +365,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             } else if (child.type == GFMElementTypes.ROW) {
                 val cells = extractRowCells(child, rawText)
                 val rowMap = mutableMapOf<String, String>()
-                // Map cells to headers by index
                 headers.forEachIndexed { index, header ->
                     val cellValue = cells.getOrNull(index) ?: ""
                     rowMap[header] = cellValue
@@ -336,15 +393,10 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
                 builder.append(child.getTextInNode(rawText))
             }
         }
-        rawCells.add(builder.toString()) // Add the final segment
+        rawCells.add(builder.toString())
 
-        // Remove leading/trailing empty segments resulting from outer pipes
-        if (rawCells.isNotEmpty() && rawCells.first().isBlank()) {
-            rawCells.removeAt(0)
-        }
-        if (rawCells.isNotEmpty() && rawCells.last().isBlank()) {
-            rawCells.removeAt(rawCells.lastIndex)
-        }
+        if (rawCells.isNotEmpty() && rawCells.first().isBlank()) rawCells.removeAt(0)
+        if (rawCells.isNotEmpty() && rawCells.last().isBlank()) rawCells.removeAt(rawCells.lastIndex)
 
         return rawCells.map { it.trim() }
     }
@@ -352,7 +404,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     private fun extractHeaderText(raw: String): String = raw.trimStart('#', ' ').trim()
 }
 
-// Simple Stack implementation
 class Stack<T> {
     private val elements = ArrayDeque<T>()
     fun push(item: T) = elements.addLast(item)

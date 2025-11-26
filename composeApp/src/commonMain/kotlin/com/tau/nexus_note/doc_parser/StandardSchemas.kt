@@ -43,6 +43,7 @@ object StandardSchemas {
 
     // Content Specific
     const val PROP_LANGUAGE = "language"
+    const val PROP_FILENAME = "filename"
     const val PROP_CAPTION = "caption"
     const val PROP_CALLOUT_TYPE = "type"       // info, warning
     const val PROP_IS_FOLDABLE = "is_foldable"

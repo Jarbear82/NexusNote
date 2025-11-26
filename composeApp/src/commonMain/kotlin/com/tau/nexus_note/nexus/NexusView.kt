@@ -7,6 +7,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.DriveFolderUpload
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +35,7 @@ fun NexusView(viewModel: MainViewModel) {
     val baseDirectory by viewModel.codexBaseDirectory.collectAsState()
     val showBaseDirPicker by viewModel.showBaseDirPicker.collectAsState()
     val showImportPicker by viewModel.showImportFilePicker.collectAsState()
+    val showImportDirPicker by viewModel.showImportDirPicker.collectAsState()
 
     // --- State for inline creation ---
     val newCodexName by viewModel.newCodexName.collectAsState()
@@ -53,6 +56,13 @@ fun NexusView(viewModel: MainViewModel) {
         title = "Select Codex Storage Directory",
         initialDirectory = baseDirectory,
         onResult = { viewModel.onBaseDirectorySelected(it) }
+    )
+
+    DirectoryPicker(
+        show = showImportDirPicker,
+        title = "Select Vault/Folder to Import",
+        initialDirectory = baseDirectory,
+        onResult = { viewModel.onImportFolderSelected(it) }
     )
 
 
@@ -162,12 +172,23 @@ fun NexusView(viewModel: MainViewModel) {
 
             Spacer(modifier = Modifier.width(8.dp))
 
+            // 2. Split Import into two buttons
             OutlinedButton(
                 onClick = { viewModel.onImportDocumentsClicked() }
             ) {
-                Icon(Icons.Default.FileOpen, contentDescription = null)
+                Icon(Icons.Default.UploadFile, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Import")
+                Text("File")
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            OutlinedButton(
+                onClick = { viewModel.onImportFolderClicked() }
+            ) {
+                Icon(Icons.Default.DriveFolderUpload, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Folder")
             }
 
             Spacer(modifier = Modifier.width(8.dp))
@@ -175,7 +196,7 @@ fun NexusView(viewModel: MainViewModel) {
             Button(
                 onClick = { viewModel.openInMemoryTerminal() },
             ) {
-                Text("Open In-Memory Terminal")
+                Text("Terminal")
             }
         }
     }

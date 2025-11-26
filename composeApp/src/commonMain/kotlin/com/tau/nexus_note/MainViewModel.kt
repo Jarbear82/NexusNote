@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import com.tau.nexus_note.doc_parser.MarkdownParser
+import com.tau.nexus_note.utils.listFilesRecursively
 import com.tau.nexus_note.utils.readTextFile
 
 enum class Screen {
@@ -53,6 +54,9 @@ class MainViewModel {
 
     private val _appSettings = MutableStateFlow(SettingsData.Default)
     val appSettings: StateFlow<SettingsData> = _appSettings.asStateFlow()
+
+    private val _showImportDirPicker = MutableStateFlow(false)
+    val showImportDirPicker = _showImportDirPicker.asStateFlow()
 
     val settingsViewModel = SettingsViewModel(
         settingsFlow = appSettings,
@@ -313,41 +317,86 @@ class MainViewModel {
         _showImportFilePicker.value = true
     }
 
-    fun onImportFilesSelected(paths: List<String>) {
-        _showImportFilePicker.value = false
+    private fun importFiles(paths: List<String>) {
         if (paths.isEmpty()) return
 
         viewModelScope.launch {
             try {
-                // 1. Initialize In-Memory DB
+                // Initialize In-Memory DB
                 clearCodexName()
                 _codexViewModel.value?.onCleared()
                 val newService = SqliteDbService()
                 newService.initialize(":memory:")
 
-                // 2. Setup Repository & Parser
+                // Setup Repository & Parser
                 val tempRepo = CodexRepository(newService, viewModelScope)
                 val parser = MarkdownParser(tempRepo)
 
-                // 3. Bootstrap Schemas
+                // Bootstrap Schemas
                 tempRepo.bootstrapDocumentSchemas()
 
-                // 4. Parse Files
-                // We assume all selected are MD for now, but can check extension
+                // Parse Files
                 paths.forEach { path ->
                     val content = withContext(Dispatchers.IO) { readTextFile(path) }
                     parser.parse(path, content, tempRepo)
                 }
 
-                // 5. Finalize Setup
+                // Finalize
                 tempRepo.refreshAll()
                 _codexViewModel.value = CodexViewModel(newService, appSettings)
-                _openedCodexItem.value = null // It's in-memory
+                _openedCodexItem.value = null
                 _selectedScreen.value = Screen.CODEX
 
             } catch (e: Exception) {
                 _errorFlow.value = "Import failed: ${e.message}"
                 e.printStackTrace()
+            }
+        }
+    }
+
+    // 3. Existing File Picker Handler (Updated)
+    fun onImportFilesSelected(paths: List<String>) {
+        _showImportFilePicker.value = false
+        importFiles(paths)
+    }
+
+    // 4. New Folder Import Handlers
+    fun onImportFolderClicked() {
+        _showImportDirPicker.value = true
+    }
+
+    // 3. Function to handle the result (launching the recursion)
+    fun onImportFolderSelected(path: String?) {
+        _showImportDirPicker.value = false // Close picker
+
+        if (path == null) {
+            println("DEBUG: Folder selection cancelled.")
+            return
+        }
+
+        println("DEBUG: Selected folder: $path")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Search recursively for markdown files
+                // Ensure extensions include the dot!
+                val files = listFilesRecursively(path, listOf(".md", ".markdown", ".txt"))
+
+                if (files.isEmpty()) {
+                    println("DEBUG: No files found in selected folder.")
+                    // Optional: Emit an error or snackbar message here
+                    return@launch
+                }
+
+                // Switch back to Main thread to process the imports
+                withContext(Dispatchers.Main) {
+                    println("DEBUG: Starting import of ${files.size} files...")
+                    importFiles(files)
+                }
+            } catch (e: Exception) {
+                println("ERROR: Failed during folder import: ${e.message}")
+                e.printStackTrace()
+                _errorFlow.value = "Folder import error: ${e.message}"
             }
         }
     }

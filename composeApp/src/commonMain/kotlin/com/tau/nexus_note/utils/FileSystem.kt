@@ -48,3 +48,5 @@ expect fun readTextFile(path: String): String
  * @return The relative path string (e.g., "media/image.png").
  */
 expect fun copyFileToMediaDir(sourcePath: String, dbPath: String): String
+
+expect fun listFilesRecursively(path: String, extensions: List<String>): List<String>

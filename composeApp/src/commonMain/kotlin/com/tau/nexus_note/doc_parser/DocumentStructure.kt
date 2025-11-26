@@ -52,12 +52,14 @@ data class BlockNode(
 data class CodeBlockNode(
     val content: String,
     val language: String,
+    val filename: String = "",
     val caption: String = ""
 ) : DocumentNode {
     override val schemaName = StandardSchemas.DOC_NODE_CODE_BLOCK
     override fun toPropertiesMap() = mapOf(
         StandardSchemas.PROP_CONTENT to content,
         StandardSchemas.PROP_LANGUAGE to language,
+        StandardSchemas.PROP_FILENAME to filename,
         StandardSchemas.PROP_CAPTION to caption
     )
 }
