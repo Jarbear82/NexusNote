@@ -1,11 +1,14 @@
 package com.tau.nexus_note.doc_parser
 
 import com.tau.nexus_note.CodexRepository
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.intellij.markdown.MarkdownElementTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser as IntelliJMarkdownParser
 
 class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
@@ -14,6 +17,13 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
     private val flavour = GFMFlavourDescriptor()
     private val parser = IntelliJMarkdownParser(flavour)
+
+    // JSON instance for serializing table data
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        isLenient = true
+    }
 
     // Regex for inline concepts
     private val tagRegex = Regex("#([\\w/-]+)")
@@ -70,60 +80,64 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         // --- 1. Map AST to DocumentNode ---
         val docNode = mapAstToDocumentNode(node, rawText)
 
-        if (docNode != null) {
-            // --- 2. Handle Hierarchy (Spine Logic) ---
-
-            // If it's a Section, we might need to pop the stack to find the correct parent
-            if (docNode is SectionNode) {
-                while (spineStack.isNotEmpty() && spineStack.peek().level >= docNode.level) {
-                    spineStack.pop()
-                }
-            }
-
-            // --- 3. Templating & Rib Extraction (Content Logic) ---
-            // We process content to extract tags/links. This updates `currentEdgeActions`.
-            val finalDocNode = when (docNode) {
-                is BlockNode -> processBlockContent(docNode)
-                is OrderedListItemNode -> processListItemContent(docNode)
-                is UnorderedListItemNode -> processListItemContent(docNode)
-                is TaskListItemNode -> processListItemContent(docNode)
-                else -> docNode
-            }
-
-            // --- 4. Insert Node into Graph ---
-            val nodeId = repository.insertDocumentNode(finalDocNode)
-
-            // --- 4b. Execute Pending Edge Actions (Ribs) ---
-            // Now that we have the block ID (nodeId), we can link it to the tags/concepts.
-            currentEdgeActions?.let { actions ->
-                actions.forEach { action -> action(nodeId) }
-                currentEdgeActions = null // Reset for next node
-            }
-
-            val currentParent = spineStack.peek()
-
-            // --- 5. Connect Spine (CONTAINS with Order) ---
-            repository.insertDocumentEdge(
-                StandardSchemas.EDGE_CONTAINS,
-                currentParent.nodeId,
-                nodeId,
-                mapOf(StandardSchemas.PROP_ORDER to currentParent.childOrderCounter.toString())
-            )
-            currentParent.childOrderCounter++
-
-            // --- 6. Update Stack for Recursion ---
-            if (finalDocNode is SectionNode) {
-                spineStack.push(SpineContext(nodeId, finalDocNode.level))
-            } else if (finalDocNode is CalloutNode) {
-                spineStack.push(SpineContext(nodeId, 99)) // Arbitrary high level
+        // --- 2. Recursion for Containers (Lists) ---
+        // If mapAstToDocumentNode returns null, it might be a container we want to traverse transparently.
+        if (docNode == null) {
+            if (node.type == MarkdownElementTypes.ORDERED_LIST || node.type == MarkdownElementTypes.UNORDERED_LIST) {
+                // Recurse into the list to find the LIST_ITEMs
                 node.children.forEach { walkTree(it, rawText, spineStack) }
+            }
+            // For other null nodes (whitespace, comments), we stop here.
+            return
+        }
+
+        // --- 3. Handle Hierarchy (Spine Logic) ---
+        // If it's a Section, pop the stack to find the correct parent
+        if (docNode is SectionNode) {
+            while (spineStack.isNotEmpty() && spineStack.peek().level >= docNode.level) {
                 spineStack.pop()
-                return // Skip default recursion
             }
         }
 
-        // --- Recursion for generic containers ---
-        // Note: We don't recurse automatically for everything to keep control over the stack
+        // --- 4. Templating & Rib Extraction (Content Logic) ---
+        // Process content to extract tags/links. This updates `currentEdgeActions`.
+        val finalDocNode = when (docNode) {
+            is BlockNode -> processBlockContent(docNode)
+            is OrderedListItemNode -> processListItemContent(docNode)
+            is UnorderedListItemNode -> processListItemContent(docNode)
+            is TaskListItemNode -> processListItemContent(docNode)
+            else -> docNode
+        }
+
+        // --- 5. Insert Node into Graph ---
+        val nodeId = repository.insertDocumentNode(finalDocNode)
+
+        // --- 6. Execute Pending Edge Actions (Ribs) ---
+        // Now that we have the node ID, we can link it to the tags/concepts.
+        currentEdgeActions?.let { actions ->
+            actions.forEach { action -> action(nodeId) }
+            currentEdgeActions = null // Reset for next node
+        }
+
+        val currentParent = spineStack.peek()
+
+        // --- 7. Connect Spine (CONTAINS with Order) ---
+        repository.insertDocumentEdge(
+            StandardSchemas.EDGE_CONTAINS,
+            currentParent.nodeId,
+            nodeId,
+            mapOf(StandardSchemas.PROP_ORDER to currentParent.childOrderCounter.toString())
+        )
+        currentParent.childOrderCounter++
+
+        // --- 8. Update Stack for Recursion ---
+        if (finalDocNode is SectionNode) {
+            spineStack.push(SpineContext(nodeId, finalDocNode.level))
+        } else if (finalDocNode is CalloutNode) {
+            spineStack.push(SpineContext(nodeId, 99)) // Arbitrary high level for callout container
+            node.children.forEach { walkTree(it, rawText, spineStack) }
+            spineStack.pop()
+        }
     }
 
     /**
@@ -137,7 +151,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     }
 
     private suspend fun processListItemContent(node: DocumentNode): DocumentNode {
-        val text = when(node) {
+        val text = when (node) {
             is OrderedListItemNode -> node.content
             is UnorderedListItemNode -> node.content
             is TaskListItemNode -> node.content
@@ -147,7 +161,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val extraction = extractAndLinkConcepts(text)
         currentEdgeActions = extraction.edges
 
-        return when(node) {
+        return when (node) {
             is OrderedListItemNode -> node.copy(content = extraction.templatedText)
             is UnorderedListItemNode -> node.copy(content = extraction.templatedText)
             is TaskListItemNode -> node.copy(content = extraction.templatedText)
@@ -194,9 +208,9 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
         val processedText = sb.toString()
 
-        // --- 2. Handle WikiLinks ---
-        // (Placeholder implementation: In the future, resolve target doc ID here)
-        // For now, we leave them as text or process similarly if we had a resolver.
+        // --- 2. Handle WikiLinks (Placeholder) ---
+        // Future: Resolve target doc ID and inject {{link:ID}}
+        // For now, we leave the processed text as is.
 
         return ExtractionResult(processedText, edgeActions)
     }
@@ -214,31 +228,92 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             MarkdownElementTypes.PARAGRAPH -> BlockNode(text.trim())
 
-            MarkdownElementTypes.ORDERED_LIST -> null // Skip container, process children
-            MarkdownElementTypes.UNORDERED_LIST -> null // Skip container
+            // Return null for containers to let walkTree handle recursion
+            MarkdownElementTypes.ORDERED_LIST -> null
+            MarkdownElementTypes.UNORDERED_LIST -> null
 
             MarkdownElementTypes.LIST_ITEM -> {
-                if (text.trim().startsWith("- [ ]") || text.trim().startsWith("- [x]")) {
-                    val isChecked = text.contains("[x]")
-                    val content = text.replace(Regex("^- \\[[x ]\\]"), "").trim()
+                // Determine specific list item type
+                val trimmed = text.trim()
+                if (trimmed.startsWith("- [ ]") || trimmed.startsWith("- [x]")) {
+                    val isChecked = trimmed.contains("[x]")
+                    // Remove the marker "- [x]"
+                    val content = trimmed.replace(Regex("^- \\[[x ]\\]"), "").trim()
                     TaskListItemNode(content, isChecked, "- [ ]")
-                } else if (text.trim().matches(Regex("^\\d+\\."))) {
-                    val num = text.trim().substringBefore(".").toIntOrNull() ?: 1
-                    val content = text.replace(Regex("^\\d+\\."), "").trim()
+                } else if (trimmed.matches(Regex("^\\d+\\..*"))) {
+                    val num = trimmed.substringBefore(".").toIntOrNull() ?: 1
+                    val content = trimmed.replace(Regex("^\\d+\\."), "").trim()
                     OrderedListItemNode(content, num)
                 } else {
-                    val content = text.removePrefix("-").removePrefix("*").trim()
+                    val content = trimmed.removePrefix("-").removePrefix("*").removePrefix("+").trim()
                     UnorderedListItemNode(content, "-")
                 }
             }
 
-            GFMElementTypes.TABLE -> {
-                // Placeholder for table parsing
-                TableNode("[]", "[]")
-            }
+            GFMElementTypes.TABLE -> parseTable(node, rawText)
 
             else -> null
         }
+    }
+
+    private fun parseTable(node: ASTNode, rawText: String): TableNode {
+        var headers: List<String> = emptyList()
+        val data = mutableListOf<Map<String, String>>()
+
+        for (child in node.children) {
+            if (child.type == GFMElementTypes.HEADER) {
+                // FIX: Try to find a nested ROW. If not found, assume the HEADER node IS the row.
+                // This handles different AST variations where headers might not be wrapped.
+                val headerRow = child.children.find { it.type == GFMElementTypes.ROW }
+                headers = if (headerRow != null) {
+                    extractRowCells(headerRow, rawText)
+                } else {
+                    extractRowCells(child, rawText)
+                }
+            } else if (child.type == GFMElementTypes.ROW) {
+                val cells = extractRowCells(child, rawText)
+                val rowMap = mutableMapOf<String, String>()
+
+                // Map cells to headers by index
+                headers.forEachIndexed { index, header ->
+                    val cellValue = cells.getOrNull(index) ?: ""
+                    rowMap[header] = cellValue
+                }
+                data.add(rowMap)
+            }
+        }
+
+        return TableNode(
+            headersJson = json.encodeToString(headers),
+            dataJson = json.encodeToString(data),
+            caption = ""
+        )
+    }
+
+    private fun extractRowCells(rowNode: ASTNode, rawText: String): List<String> {
+        val rawCells = mutableListOf<String>()
+        val builder = StringBuilder()
+        val separatorType = GFMTokenTypes.TABLE_SEPARATOR
+
+        for (child in rowNode.children) {
+            if (child.type == separatorType) {
+                rawCells.add(builder.toString())
+                builder.clear()
+            } else {
+                builder.append(child.getTextInNode(rawText))
+            }
+        }
+        rawCells.add(builder.toString()) // Add the final segment
+
+        // Remove leading/trailing empty segments resulting from outer pipes
+        if (rawCells.isNotEmpty() && rawCells.first().isBlank()) {
+            rawCells.removeAt(0)
+        }
+        if (rawCells.isNotEmpty() && rawCells.last().isBlank()) {
+            rawCells.removeAt(rawCells.lastIndex)
+        }
+
+        return rawCells.map { it.trim() }
     }
 
     private fun extractHeaderText(raw: String): String = raw.trimStart('#', ' ').trim()
