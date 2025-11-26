@@ -103,6 +103,21 @@ private fun ThemeSettingsSection(
         onSelected = { viewModel.onThemeModeChange(ThemeMode.valueOf(it)) }
     )
 
+// --- Density Mode Dropdown ---
+    SettingDropdown(
+        label = "UI Density",
+        selected = theme.densityMode.name,
+        options = DensityMode.entries.map { it.name },
+        onSelected = { viewModel.onDensityModeChange(DensityMode.valueOf(it)) }
+    )
+
+// --- Rounded Corners Toggle ---
+    SettingToggle(
+        label = "Use Rounded Corners",
+        checked = theme.useRoundedCorners,
+        onCheckedChange = viewModel::onUseRoundedCornersChange
+    )
+
 // --- Single Accent Color Picker (always visible) ---
     ColorSettingItem(
         label = "Accent Color",

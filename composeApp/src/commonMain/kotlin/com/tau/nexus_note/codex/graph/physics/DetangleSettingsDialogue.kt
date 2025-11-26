@@ -23,11 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlin.math.roundToInt
 
 /**
  * Defines the available static layout algorithms.
- * The descriptions are used in the UI dropdown.
  */
 enum class DetangleAlgorithm(val description: String) {
     FRUCHTERMAN_REINGOLD("Fruchterman-Reingold - General Purpose"),
@@ -55,10 +55,12 @@ fun DetangleSettingsDialog(
     var kkEpsilon by remember { mutableStateOf(1.0f) }
     var kkSpringConstant by remember { mutableStateOf(0.8f) }
 
+    val density = LocalDensityTokens.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
-        title = { Text("Detangle Settings") },
+        title = { Text("Detangle Settings", fontSize = density.titleFontSize) },
         text = {
             Column {
                 // --- Algorithm Selection ---
@@ -72,12 +74,13 @@ fun DetangleSettingsDialog(
                         readOnly = true,
                         label = { Text("Algorithm") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth()
+                        modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth(),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                     )
                     ExposedDropdownMenu(expanded, { expanded = false }) {
                         DetangleAlgorithm.entries.forEach { alg ->
                             DropdownMenuItem(
-                                text = { Text(alg.description) },
+                                text = { Text(alg.description, fontSize = density.bodyFontSize) },
                                 onClick = {
                                     selectedAlgorithm = alg
                                     expanded = false
@@ -92,19 +95,19 @@ fun DetangleSettingsDialog(
                 // --- Tunable Parameters ---
                 when (selectedAlgorithm) {
                     DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> {
-                        Text("Iterations: ${frIterations.toInt()}")
+                        Text("Iterations: ${frIterations.toInt()}", fontSize = density.bodyFontSize)
                         Slider(
                             value = frIterations,
                             onValueChange = { frIterations = it },
                             valueRange = 100f..2000f
                         )
-                        Text("Area: ${String.format("%.1f", frArea)}")
+                        Text("Area: ${String.format("%.1f", frArea)}", fontSize = density.bodyFontSize)
                         Slider(
                             value = frArea,
                             onValueChange = { frArea = it },
                             valueRange = 0.1f..5.0f
                         )
-                        Text("Gravity: ${String.format("%.2f", frGravity)}")
+                        Text("Gravity: ${String.format("%.2f", frGravity)}", fontSize = density.bodyFontSize)
                         Slider(
                             value = frGravity,
                             onValueChange = { frGravity = it },
@@ -113,13 +116,13 @@ fun DetangleSettingsDialog(
                     }
 
                     DetangleAlgorithm.KAMADA_KAWAI -> {
-                        Text("Epsilon (Tolerance): ${String.format("%.1f", kkEpsilon)}")
+                        Text("Epsilon (Tolerance): ${String.format("%.1f", kkEpsilon)}", fontSize = density.bodyFontSize)
                         Slider(
                             value = kkEpsilon,
                             onValueChange = { kkEpsilon = it },
                             valueRange = 0.1f..10.0f
                         )
-                        Text("Spring Constant: ${String.format("%.1f", kkSpringConstant)}")
+                        Text("Spring Constant: ${String.format("%.1f", kkSpringConstant)}", fontSize = density.bodyFontSize)
                         Slider(
                             value = kkSpringConstant,
                             onValueChange = { kkSpringConstant = it },
@@ -128,11 +131,11 @@ fun DetangleSettingsDialog(
                     }
 
                     DetangleAlgorithm.CIRCULAR -> {
-                        Text("Parameters for Circular Layout (Not Implemented)")
+                        Text("Parameters for Circular Layout (Not Implemented)", fontSize = density.bodyFontSize)
                     }
 
                     DetangleAlgorithm.HIERARCHICAL -> {
-                        Text("Parameters for Hierarchical Layout (Not Implemented)")
+                        Text("Parameters for Hierarchical Layout (Not Implemented)", fontSize = density.bodyFontSize)
                     }
                 }
             }
@@ -140,22 +143,21 @@ fun DetangleSettingsDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    // Bundle up parameters based on the selected algorithm
                     val params = when (selectedAlgorithm) {
                         DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> mapOf(
                             "iterations" to frIterations.toInt(),
                             "area" to frArea,
                             "gravity" to frGravity
                         )
-                        // Add other algorithm params here
                         else -> emptyMap()
                     }
                     onDetangle(selectedAlgorithm, params)
-                }
+                },
+                modifier = Modifier.height(density.buttonHeight)
             ) { Text("Detangle") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss, modifier = Modifier.height(density.buttonHeight)) { Text("Cancel") }
         }
     )
 }

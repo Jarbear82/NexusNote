@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
@@ -20,13 +21,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 
-/**
- * A reusable header for lists that includes a title, a search bar,
- * and an optional "Add" button.
- *
- * This header adapts its layout based on the available width using BoxWithConstraints.
- */
 @Composable
 fun SearchableListHeader(
     title: String,
@@ -37,70 +33,57 @@ fun SearchableListHeader(
     modifier: Modifier = Modifier,
     leadingContent: @Composable () -> Unit
 ) {
+    val density = LocalDensityTokens.current
+
     ListItem(
         leadingContent = leadingContent,
         headlineContent = {
-            // This box provides the 'maxWidth' constraint
             BoxWithConstraints(
                 modifier = modifier.fillMaxWidth(),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                // Decide layout based on the maxWidth of the Box.
+                // Responsive Layout Logic (Stacked on small screens)
                 if (maxWidth < 300.dp) {
-                    // SMALL LAYOUT: Stacked
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
+                            fontSize = density.titleFontSize,
                             modifier = Modifier.padding(bottom = 4.dp)
                         )
                         OutlinedTextField(
                             value = searchText,
                             onValueChange = onSearchTextChange,
-                            placeholder = { Text("Search...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            placeholder = { Text("Search...", fontSize = density.bodyFontSize) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(density.iconSize)) },
                             singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
                             modifier = Modifier.fillMaxWidth(),
                             colors = TextFieldDefaults.colors(
                                 unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                focusedLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                focusedContainerColor = Color.Transparent
                             )
                         )
                     }
                 } else {
-                    // LARGE LAYOUT: Original Row
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f) // Title takes 1/3
+                            fontSize = density.titleFontSize,
+                            modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = searchText,
                             onValueChange = onSearchTextChange,
-                            placeholder = { Text("Search...") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                            placeholder = { Text("Search...", fontSize = density.bodyFontSize) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(density.iconSize)) },
                             singleLine = true,
-                            modifier = Modifier.weight(2f), // Search takes 2/3
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
+                            modifier = Modifier.weight(2f),
                             colors = TextFieldDefaults.colors(
                                 unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                unfocusedLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                focusedLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                focusedContainerColor = Color.Transparent
                             )
                         )
                     }
@@ -110,10 +93,12 @@ fun SearchableListHeader(
         trailingContent = {
             if (onAddClick != null) {
                 IconButton(onClick = onAddClick) {
-                    Icon(Icons.Default.Add,
+                    Icon(
+                        Icons.Default.Add,
                         contentDescription = addContentDescription,
-                        tint = MaterialTheme.colorScheme.primary
-                        )
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(density.iconSize)
+                    )
                 }
             }
         }

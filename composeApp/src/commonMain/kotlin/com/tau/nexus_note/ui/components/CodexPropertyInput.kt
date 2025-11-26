@@ -1,5 +1,6 @@
 package com.tau.nexus_note.ui.components
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,16 +19,24 @@ import com.tau.nexus_note.ui.components.editors.ColorPropertyEditor
 import com.tau.nexus_note.ui.components.editors.ListPropertyEditor
 import com.tau.nexus_note.ui.components.editors.MapPropertyEditor
 import com.tau.nexus_note.ui.components.editors.MediaPropertyEditor
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 
 @Composable
 fun CodexPropertyInput(
     property: SchemaProperty,
     currentValue: String,
     onValueChange: (String) -> Unit,
-    codexPath: String, // Pass this down for Media
+    codexPath: String,
     modifier: Modifier = Modifier
 ) {
+    val density = LocalDensityTokens.current
     val commonModifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
+
+    // We control the height of TextFields via contentPadding
+    val inputPadding = PaddingValues(
+        horizontal = 12.dp,
+        vertical = density.inputVerticalPadding
+    )
 
     when (property.type) {
         CodexPropertyDataTypes.NUMBER -> {
@@ -41,7 +50,15 @@ fun CodexPropertyInput(
                 label = { Text("${property.name} (Number)") },
                 modifier = commonModifier,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true
+                singleLine = true,
+                // Apply Density
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
+                // Note: OutlinedTextField padding isn't directly exposed as a param in 1.0 stable easily without internal implementation details
+                // or defining shape. However, standard Compose TextField handles padding internally based on minHeight.
+                // A standard workaround is to use `modifier.height()` for fixed size or let it scale.
+                // For OutlinedTextField, `contentPadding` is not a direct parameter in standard Material3 (it is in Material2).
+                // In M3 we rely on shape and minHeight.
+                // Let's try `modifier.defaultMinHeight` scaling.
             )
         }
         CodexPropertyDataTypes.LONG_TEXT, CodexPropertyDataTypes.MARKDOWN -> {
@@ -52,7 +69,8 @@ fun CodexPropertyInput(
                 modifier = commonModifier,
                 singleLine = false,
                 minLines = 3,
-                maxLines = 8
+                maxLines = 8,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
         }
         CodexPropertyDataTypes.DATE -> {
@@ -62,7 +80,8 @@ fun CodexPropertyInput(
                 label = { Text("${property.name} (Date)") },
                 placeholder = { Text("YYYY-MM-DD") },
                 modifier = commonModifier,
-                singleLine = true
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
         }
         CodexPropertyDataTypes.BOOLEAN -> {
@@ -71,7 +90,7 @@ fun CodexPropertyInput(
                     checked = currentValue.toBooleanStrictOrNull() ?: false,
                     onCheckedChange = { onValueChange(it.toString()) }
                 )
-                Text(property.name)
+                Text(property.name, fontSize = density.bodyFontSize)
             }
         }
         CodexPropertyDataTypes.COLOR -> {
@@ -109,7 +128,8 @@ fun CodexPropertyInput(
                 onValueChange = onValueChange,
                 label = { Text(property.name) },
                 modifier = commonModifier,
-                singleLine = true
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
         }
     }

@@ -19,6 +19,7 @@ import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
 import com.tau.nexus_note.ui.components.FormActionRow
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.toCamelCase
 import com.tau.nexus_note.utils.toScreamingSnakeCase
 
@@ -35,18 +36,16 @@ fun CreateEdgeSchemaView(
     onCreate: (EdgeSchemaCreationState) -> Unit,
     onCancel: () -> Unit
 ) {
-    // --- Local state for the "Add Connection" UI ---
     var newSrcTable by remember { mutableStateOf<String?>(null) }
     var newDstTable by remember { mutableStateOf<String?>(null) }
-
-    // --- Local state for the "Add Property" UI ---
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
 
-    Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+    val density = LocalDensityTokens.current
+
+    Column(modifier = Modifier.padding(density.contentPadding).fillMaxSize()) {
         CodexSectionHeader("Create Edge Schema")
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -60,14 +59,14 @@ fun CreateEdgeSchemaView(
                 modifier = Modifier.fillMaxWidth(),
                 isError = state.tableNameError != null,
                 supportingText = { state.tableNameError?.let { Text(it) } },
-                singleLine = true
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
             Spacer(modifier = Modifier.height(16.dp))
 
             // --- Section for adding new connection pairs ---
-            Text("Connection Pairs", style = MaterialTheme.typography.titleMedium)
+            Text("Connection Pairs", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                // Source Table Dropdown
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "From...",
@@ -78,7 +77,6 @@ fun CreateEdgeSchemaView(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                // Destination Table Dropdown
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "To...",
@@ -89,17 +87,15 @@ fun CreateEdgeSchemaView(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                // Add Button
                 IconButton(
                     onClick = {
                         onAddConnection(newSrcTable!!, newDstTable!!)
-                        // Reset local state
                         newSrcTable = null
                         newDstTable = null
                     },
                     enabled = newSrcTable != null && newDstTable != null
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Connection Pair")
+                    Icon(Icons.Default.Add, contentDescription = "Add Connection Pair", modifier = Modifier.size(density.iconSize))
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -113,17 +109,17 @@ fun CreateEdgeSchemaView(
                     ListItem(
                         headlineContent = {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(connection.src, style = MaterialTheme.typography.bodyMedium)
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "to", modifier = Modifier.padding(horizontal = 8.dp))
-                                Text(connection.dst, style = MaterialTheme.typography.bodyMedium)
+                                Text(connection.src, style = MaterialTheme.typography.bodyMedium, fontSize = density.bodyFontSize)
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "to", modifier = Modifier.padding(horizontal = 8.dp).size(density.iconSize))
+                                Text(connection.dst, style = MaterialTheme.typography.bodyMedium, fontSize = density.bodyFontSize)
                             }
                         },
+                        modifier = Modifier.height(density.listHeight),
                         trailingContent = {
                             IconButton(onClick = { onRemoveConnection(index) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Remove Connection")
+                                Icon(Icons.Default.Delete, contentDescription = "Remove Connection", modifier = Modifier.size(density.iconSize))
                             }
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                        }
                     )
                     if (index < state.connections.lastIndex) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -134,6 +130,7 @@ fun CreateEdgeSchemaView(
                         "No connections defined.",
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodySmall,
+                        fontSize = density.bodyFontSize,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -142,25 +139,23 @@ fun CreateEdgeSchemaView(
             Spacer(modifier = Modifier.height(16.dp))
 
             // --- Properties Section ---
-            Text("Properties", style = MaterialTheme.typography.titleMedium)
+            Text("Properties", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
 
-            // Add Property Input Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Property Name
                 OutlinedTextField(
                     value = newPropName,
                     onValueChange = { newPropName = it.toCamelCase() },
                     label = { Text("Name") },
                     modifier = Modifier.weight(1f),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Property Type
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "Type",
@@ -173,14 +168,13 @@ fun CreateEdgeSchemaView(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Add Button
                 IconButton(
                     onClick = {
                         onAddProperty(
                             SchemaProperty(
                                 name = newPropName,
                                 type = newPropType,
-                                isDisplayProperty = false // Always false for edges
+                                isDisplayProperty = false
                             )
                         )
                         newPropName = ""
@@ -188,7 +182,7 @@ fun CreateEdgeSchemaView(
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Property")
+                    Icon(Icons.Default.Add, contentDescription = "Add Property", modifier = Modifier.size(density.iconSize))
                 }
             }
 
@@ -210,7 +204,8 @@ fun CreateEdgeSchemaView(
                             modifier = Modifier.weight(1f),
                             isError = state.propertyErrors.containsKey(index) || property.name.isBlank(),
                             supportingText = { state.propertyErrors[index]?.let { Text(it) } },
-                            singleLine = true
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Box(modifier = Modifier.width(140.dp)) {
@@ -227,7 +222,7 @@ fun CreateEdgeSchemaView(
                         IconButton(onClick = {
                             onRemoveProperty(index)
                         }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete Property")
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Property", modifier = Modifier.size(density.iconSize))
                         }
                     }
                     if (index < state.properties.lastIndex) {
@@ -239,7 +234,6 @@ fun CreateEdgeSchemaView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- Create/Cancel Buttons ---
         FormActionRow(
             primaryLabel = "Create",
             onPrimaryClick = { onCreate(state) },

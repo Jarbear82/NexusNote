@@ -31,6 +31,20 @@ class SettingsViewModel(
         onUpdateSettings(newSettings)
     }
 
+    fun onDensityModeChange(mode: DensityMode) {
+        val newSettings = settingsFlow.value.copy(
+            theme = settingsFlow.value.theme.copy(densityMode = mode)
+        )
+        onUpdateSettings(newSettings)
+    }
+
+    fun onUseRoundedCornersChange(enabled: Boolean) {
+        val newSettings = settingsFlow.value.copy(
+            theme = settingsFlow.value.theme.copy(useRoundedCorners = enabled)
+        )
+        onUpdateSettings(newSettings)
+    }
+
     fun onResetTheme() {
         // Now just resets to the simple default
         val newSettings = settingsFlow.value.copy(theme = ThemeSettings.Default)

@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.PropertySerialization
 
 @Composable
@@ -19,11 +20,11 @@ fun MapPropertyEditor(
     modifier: Modifier = Modifier
 ) {
     val map = remember(currentValueJson) { PropertySerialization.deserializeMap(currentValueJson) }
-    // Convert to list of pairs for stable editing order
     val entries = map.entries.toList()
+    val density = LocalDensityTokens.current
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = density.bodyFontSize)
 
         Spacer(Modifier.height(4.dp))
 
@@ -40,9 +41,10 @@ fun MapPropertyEditor(
                         newMap[newKey] = value // Add new key
                         onValueChange(PropertySerialization.serializeMap(newMap))
                     },
-                    placeholder = { Text("Key") },
+                    placeholder = { Text("Key", fontSize = density.bodyFontSize) },
                     modifier = Modifier.weight(1f),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                 )
                 Spacer(Modifier.width(4.dp))
                 OutlinedTextField(
@@ -52,16 +54,17 @@ fun MapPropertyEditor(
                         newMap[key] = newValue
                         onValueChange(PropertySerialization.serializeMap(newMap))
                     },
-                    placeholder = { Text("Value") },
+                    placeholder = { Text("Value", fontSize = density.bodyFontSize) },
                     modifier = Modifier.weight(1f),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                 )
                 IconButton(onClick = {
                     val newMap = map.toMutableMap()
                     newMap.remove(key)
                     onValueChange(PropertySerialization.serializeMap(newMap))
                 }) {
-                    Icon(Icons.Default.Delete, "Remove Entry", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Default.Delete, "Remove Entry", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(density.iconSize))
                 }
             }
         }
@@ -69,7 +72,6 @@ fun MapPropertyEditor(
         Button(
             onClick = {
                 val newMap = map.toMutableMap()
-                // Find a unique key name
                 var newKey = "New Key"
                 var counter = 1
                 while (newMap.containsKey(newKey)) {
@@ -79,9 +81,9 @@ fun MapPropertyEditor(
                 newMap[newKey] = ""
                 onValueChange(PropertySerialization.serializeMap(newMap))
             },
-            modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
+            modifier = Modifier.align(Alignment.End).padding(top = 4.dp).height(density.buttonHeight)
         ) {
-            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(density.iconSize))
             Spacer(Modifier.width(4.dp))
             Text("Add Pair")
         }

@@ -18,6 +18,7 @@ import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
 import com.tau.nexus_note.ui.components.FormActionRow
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.toCamelCase
 import com.tau.nexus_note.utils.toPascalCase
 
@@ -32,15 +33,15 @@ fun EditNodeSchemaView(
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
-    // --- Local state for the "Add Property" UI ---
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
     var newIsDisplay by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+    val density = LocalDensityTokens.current
+
+    Column(modifier = Modifier.padding(density.contentPadding).fillMaxSize()) {
         CodexSectionHeader("Edit Node Schema")
 
-        // Scrollable Content
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -54,29 +55,28 @@ fun EditNodeSchemaView(
                 modifier = Modifier.fillMaxWidth(),
                 isError = state.currentNameError != null,
                 supportingText = { state.currentNameError?.let { Text(it) } },
-                singleLine = true
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Add Property Input Row (Unified UI) ---
-            Text("Properties", style = MaterialTheme.typography.titleMedium)
+            Text("Properties", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Property Name
                 OutlinedTextField(
                     value = newPropName,
                     onValueChange = { newPropName = it.toCamelCase() },
                     label = { Text("Name") },
                     modifier = Modifier.weight(1f),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Property Type
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown(
                         label = "Type",
@@ -89,16 +89,14 @@ fun EditNodeSchemaView(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Display Checkbox
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Display", style = MaterialTheme.typography.labelSmall)
+                    Text("Display", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
                     Checkbox(
                         checked = newIsDisplay,
                         onCheckedChange = { newIsDisplay = it }
                     )
                 }
 
-                // Add Button
                 IconButton(
                     onClick = {
                         onAddProperty(
@@ -114,7 +112,7 @@ fun EditNodeSchemaView(
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Property")
+                    Icon(Icons.Default.Add, contentDescription = "Add Property", modifier = Modifier.size(density.iconSize))
                 }
             }
 
@@ -140,7 +138,8 @@ fun EditNodeSchemaView(
                             modifier = Modifier.weight(1f),
                             isError = state.propertyErrors.containsKey(index) || property.name.isBlank(),
                             supportingText = { state.propertyErrors[index]?.let { Text(it) } },
-                            singleLine = true
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Box(modifier = Modifier.weight(1f)) {
@@ -164,7 +163,8 @@ fun EditNodeSchemaView(
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "Delete Property",
-                                tint = MaterialTheme.colorScheme.error
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(density.iconSize)
                             )
                         }
                     }
@@ -177,7 +177,6 @@ fun EditNodeSchemaView(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Fixed Buttons
         FormActionRow(
             primaryLabel = "Save",
             onPrimaryClick = onSave,

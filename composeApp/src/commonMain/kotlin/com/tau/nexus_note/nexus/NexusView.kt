@@ -5,9 +5,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.DriveFolderUpload
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -26,6 +25,7 @@ import com.tau.nexus_note.utils.DirectoryPicker
 import com.tau.nexus_note.MainViewModel
 import com.tau.nexus_note.ui.components.CodexAlertDialog
 import com.tau.nexus_note.ui.components.CodexListItem
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.labelToColor
 import com.tau.nexus_note.utils.FilePicker
 
@@ -37,13 +37,14 @@ fun NexusView(viewModel: MainViewModel) {
     val showImportPicker by viewModel.showImportFilePicker.collectAsState()
     val showImportDirPicker by viewModel.showImportDirPicker.collectAsState()
 
-    // --- State for inline creation ---
     val newCodexName by viewModel.newCodexName.collectAsState()
     val codexNameError by viewModel.codexNameError.collectAsState()
     val codexToDelete by viewModel.codexToDelete.collectAsState()
 
-    // --- Dialogs ---
+    // Density Awareness
+    val density = LocalDensityTokens.current
 
+    // --- Dialogs (File Pickers) ---
     FilePicker(
         show = showImportPicker,
         fileExtensions = listOf("md", "markdown", "txt"),
@@ -65,7 +66,6 @@ fun NexusView(viewModel: MainViewModel) {
         onResult = { viewModel.onImportFolderSelected(it) }
     )
 
-
     codexToDelete?.let { item ->
         CodexAlertDialog(
             title = "Delete Codex?",
@@ -80,28 +80,37 @@ fun NexusView(viewModel: MainViewModel) {
     // --- Main UI ---
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(density.contentPadding),
     ) {
-        // --- Database List ---
+        // --- Database List Header ---
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Existing Codices in: $baseDirectory", style = MaterialTheme.typography.titleMedium)
-            OutlinedButton(onClick = { viewModel.onChangeBaseDirectoryClicked() }) {
+            Text(
+                "Existing Codices in: $baseDirectory",
+                style = MaterialTheme.typography.titleMedium,
+                fontSize = density.titleFontSize
+            )
+            OutlinedButton(
+                onClick = { viewModel.onChangeBaseDirectoryClicked() },
+                modifier = Modifier.height(density.buttonHeight)
+            ) {
                 Text("Change")
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
 
+        // --- List ---
         LazyColumn(modifier = Modifier.weight(1f)) {
             if (codices.isEmpty()) {
                 item {
                     Text(
                         "No codices found in this directory.",
                         modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontSize = density.bodyFontSize
                     )
                 }
             }
@@ -124,7 +133,8 @@ fun NexusView(viewModel: MainViewModel) {
                             Icon(
                                 Icons.Default.Delete,
                                 contentDescription = "Delete Codex",
-                                tint = colorInfo.composeFontColor
+                                tint = colorInfo.composeFontColor,
+                                modifier = Modifier.size(density.iconSize)
                             )
                         }
                     }
@@ -134,13 +144,16 @@ fun NexusView(viewModel: MainViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // --- Create Codex ---
+        // --- Create Codex Section ---
 
         Text(
             "Create New Codex:",
             style = MaterialTheme.typography.titleMedium,
+            fontSize = density.titleFontSize,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedTextField(
             value = newCodexName,
@@ -149,6 +162,7 @@ fun NexusView(viewModel: MainViewModel) {
             singleLine = true,
             placeholder = { Text("MyDatabase") },
             suffix = { Text(".sqlite") },
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize),
             isError = codexNameError != null,
             supportingText = {
                 if (codexNameError != null) {
@@ -158,6 +172,8 @@ fun NexusView(viewModel: MainViewModel) {
             modifier = Modifier.align(Alignment.CenterHorizontally).fillMaxWidth()
         )
 
+        Spacer(modifier = Modifier.height(8.dp))
+
         // --- Actions ---
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -166,17 +182,18 @@ fun NexusView(viewModel: MainViewModel) {
             Button(
                 onClick = { viewModel.onCodexNameConfirmed() },
                 enabled = newCodexName.isNotBlank() && codexNameError == null,
+                modifier = Modifier.height(density.buttonHeight)
             ) {
                 Text("Create and Open")
             }
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 2. Split Import into two buttons
             OutlinedButton(
-                onClick = { viewModel.onImportDocumentsClicked() }
+                onClick = { viewModel.onImportDocumentsClicked() },
+                modifier = Modifier.height(density.buttonHeight)
             ) {
-                Icon(Icons.Default.UploadFile, contentDescription = null)
+                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(density.iconSize))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("File")
             }
@@ -184,9 +201,10 @@ fun NexusView(viewModel: MainViewModel) {
             Spacer(modifier = Modifier.width(8.dp))
 
             OutlinedButton(
-                onClick = { viewModel.onImportFolderClicked() }
+                onClick = { viewModel.onImportFolderClicked() },
+                modifier = Modifier.height(density.buttonHeight)
             ) {
-                Icon(Icons.Default.DriveFolderUpload, contentDescription = null)
+                Icon(Icons.Default.DriveFolderUpload, contentDescription = null, modifier = Modifier.size(density.iconSize))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Folder")
             }
@@ -195,8 +213,9 @@ fun NexusView(viewModel: MainViewModel) {
 
             Button(
                 onClick = { viewModel.openInMemoryTerminal() },
+                modifier = Modifier.height(density.buttonHeight)
             ) {
-                Text("Terminal")
+                Text("In-Memory Codex")
             }
         }
     }

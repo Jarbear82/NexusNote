@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.PropertySerialization
 
 @Composable
@@ -18,15 +19,14 @@ fun ListPropertyEditor(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Parse JSON string to List
     val items = remember(currentValueJson) { PropertySerialization.deserializeList(currentValueJson) }
+    val density = LocalDensityTokens.current
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = density.bodyFontSize)
 
         Spacer(Modifier.height(4.dp))
 
-        // Display Items
         items.forEachIndexed { index, item ->
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
@@ -40,27 +40,27 @@ fun ListPropertyEditor(
                         onValueChange(PropertySerialization.serializeList(newItems))
                     },
                     modifier = Modifier.weight(1f),
-                    singleLine = true
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
                 )
                 IconButton(onClick = {
                     val newItems = items.toMutableList()
                     newItems.removeAt(index)
                     onValueChange(PropertySerialization.serializeList(newItems))
                 }) {
-                    Icon(Icons.Default.Delete, "Remove Item", tint = MaterialTheme.colorScheme.error)
+                    Icon(Icons.Default.Delete, "Remove Item", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(density.iconSize))
                 }
             }
         }
 
-        // Add Button
         Button(
             onClick = {
                 val newItems = items + ""
                 onValueChange(PropertySerialization.serializeList(newItems))
             },
-            modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
+            modifier = Modifier.align(Alignment.End).padding(top = 4.dp).height(density.buttonHeight)
         ) {
-            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(density.iconSize))
             Spacer(Modifier.width(4.dp))
             Text("Add Item")
         }

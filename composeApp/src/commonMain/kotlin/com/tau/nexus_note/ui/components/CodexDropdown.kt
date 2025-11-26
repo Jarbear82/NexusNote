@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -16,6 +17,7 @@ fun <T> CodexDropdown(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val density = LocalDensityTokens.current
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -28,7 +30,8 @@ fun <T> CodexDropdown(
             readOnly = true,
             label = { Text(label) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth()
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable).fillMaxWidth(),
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
         )
         ExposedDropdownMenu(
             expanded = expanded,
@@ -36,7 +39,7 @@ fun <T> CodexDropdown(
         ) {
             options.forEach { option ->
                 DropdownMenuItem(
-                    text = { Text(displayTransform(option)) },
+                    text = { Text(displayTransform(option), fontSize = density.bodyFontSize) },
                     onClick = {
                         onOptionSelected(option)
                         expanded = false

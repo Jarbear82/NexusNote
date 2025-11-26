@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import com.tau.nexus_note.utils.hexToColor
 
 @OptIn(ExperimentalStdlibApi::class)
@@ -20,12 +21,12 @@ fun ColorPropertyEditor(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Default to white if empty or invalid
     val color = if (currentValue.isBlank()) Color.White else hexToColor(currentValue)
     val hex = "#" + color.toArgb().toHexString(HexFormat.UpperCase).substring(2)
+    val density = LocalDensityTokens.current
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(label, style = MaterialTheme.typography.bodySmall, fontSize = density.bodyFontSize)
         Spacer(Modifier.height(4.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -33,7 +34,7 @@ fun ColorPropertyEditor(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(density.buttonHeight) // Use button height for swatch size
                     .background(color)
                     .border(1.dp, MaterialTheme.colorScheme.outline)
             )
@@ -41,14 +42,14 @@ fun ColorPropertyEditor(
             OutlinedTextField(
                 value = hex,
                 onValueChange = { newHex ->
-                    // Basic validation, UI updates if valid hex
                     if (newHex.startsWith("#") && newHex.length <= 9) {
                         onValueChange(newHex)
                     }
                 },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                label = { Text("Hex Code") }
+                label = { Text("Hex Code") },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = density.bodyFontSize)
             )
         }
         Spacer(Modifier.height(4.dp))

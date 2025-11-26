@@ -20,38 +20,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
+import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlin.math.roundToInt
 
 @Composable
 fun GraphSettingsView(
     options: PhysicsOptions,
-    // --- UPDATED ---
-    // Removed all on...Change handlers.
-    // This view is now read-only, as the settings
-    // are changed in the main SettingsView.
-    // --- END UPDATE ---
     onDetangleClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val density = LocalDensityTokens.current
+
     Card(
         modifier = modifier.width(300.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Graph Physics", style = MaterialTheme.typography.titleMedium)
+        Column(modifier = Modifier.padding(density.contentPadding)) {
+            Text("Graph Physics", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
             Spacer(Modifier.height(16.dp))
 
-            // --- UPDATED ---
-            // All SettingSliders are now "read-only" from this view's
-            // perspective. They just display the value.
-            // onValueChange is now an empty lambda.
+            // Read-only sliders
             SettingSlider(
                 label = "Gravity",
                 value = options.gravity,
                 onValueChange = {},
                 range = 0f..2f,
-                enabled = false // Disable the slider
+                enabled = false
             )
 
             SettingSlider(
@@ -97,7 +92,7 @@ fun GraphSettingsView(
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = onDetangleClick,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().height(density.buttonHeight)
             ) {
                 Text("Detangle Graph")
             }
@@ -113,17 +108,17 @@ private fun SettingSlider(
     range: ClosedFloatingPointRange<Float>,
     enabled: Boolean = true
 ) {
+    val density = LocalDensityTokens.current
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(label, fontSize = 14.sp)
+            Text(label, fontSize = density.bodyFontSize)
             Text(
-                // Format to 2 decimal places, or 0 if it's a large number
                 text = if (value > 100) value.roundToInt().toString() else String.format("%.2f", value),
-                fontSize = 12.sp,
+                fontSize = density.bodyFontSize,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
