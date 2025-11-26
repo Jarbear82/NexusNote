@@ -2,33 +2,33 @@ package com.tau.nexus_note.doc_parser
 
 /**
  * Base interface for all nodes in the Document Graph.
- * Used by Parsers to generate a standardized AST before DB insertion.
  */
 sealed interface DocumentNode {
     val schemaName: String
     fun toPropertiesMap(): Map<String, String>
 }
 
-// --- Container Nodes ---
+// --- Structural Nodes ---
 
 data class DocRootNode(
-    val uri: String,
+    val filepath: String,
     val name: String,
-    val extension: String,
+    val createdAt: Long = 0L,
     val frontmatterJson: String = "{}"
 ) : DocumentNode {
     override val schemaName = StandardSchemas.DOC_NODE_DOCUMENT
     override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_URI to uri,
-        "name" to name,
-        "extension" to extension,
-        "frontmatter" to frontmatterJson
+        StandardSchemas.PROP_URI to filepath,
+        StandardSchemas.PROP_NAME to name,
+        StandardSchemas.PROP_CREATED_AT to createdAt.toString(),
+        StandardSchemas.PROP_FRONTMATTER to frontmatterJson
     )
 }
 
 data class SectionNode(
     val title: String,
     val level: Int,
+    // Transient ID used during parsing stack operations, not saved to JSON
     val dbId: Long? = null
 ) : DocumentNode {
     override val schemaName = StandardSchemas.DOC_NODE_SECTION
@@ -38,124 +38,126 @@ data class SectionNode(
     )
 }
 
-data class ListNode(
-    val type: String, // "ordered", "bullet"
-    val tight: Boolean,
-    val items: List<String>
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_LIST
-    override fun toPropertiesMap(): Map<String, String> {
-        val baseMap = mapOf(
-            StandardSchemas.PROP_LIST_TYPE to type,
-            StandardSchemas.PROP_TIGHT to tight.toString()
-        )
+// --- Content Nodes ---
 
-        return if (type == "ordered") {
-            // Ordered lists: Use numbers as keys (1, 2, 3...)
-            baseMap + items.mapIndexed { index, content ->
-                (index + 1).toString() to content
-            }.toMap()
-        } else {
-            // Unordered lists: Single text block with bullets
-            val textBlock = items.joinToString("\n") { "- $it" }
-            baseMap + (StandardSchemas.PROP_CONTENT to textBlock)
-        }
-    }
-}
-
-data class CalloutNode(
-    val type: String, // "info", "warning", etc.
-    val title: String,
-    val isFoldable: Boolean = false,
-    val isCollapsed: Boolean = false
+data class BlockNode(
+    val content: String // This will contain templates like {{tag:123}}
 ) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_CALLOUT
+    override val schemaName = StandardSchemas.DOC_NODE_BLOCK
     override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_CALLOUT_TYPE to type,
-        StandardSchemas.PROP_TITLE to title,
-        StandardSchemas.PROP_IS_FOLDABLE to isFoldable.toString(),
-        "isCollapsed" to isCollapsed.toString(),
-        StandardSchemas.PROP_CONTENT to title
-    )
-}
-
-data class TableNode(
-    val alignmentsJson: String // List<String> serialized, e.g. ["left", "center"]
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_TABLE
-    override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_ALIGNMENT to alignmentsJson
-    )
-}
-
-// --- Content Leaf Nodes ---
-
-data class ParagraphNode(
-    val content: String
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_PARAGRAPH
-    override fun toPropertiesMap() = mapOf(StandardSchemas.PROP_CONTENT to content)
-}
-
-data class HeadingNode(
-    val content: String,
-    val level: Int
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_HEADING
-    override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_CONTENT to content,
-        StandardSchemas.PROP_LEVEL to level.toString()
+        StandardSchemas.PROP_CONTENT to content
     )
 }
 
 data class CodeBlockNode(
     val content: String,
-    val language: String = "",
-    val fenceChar: String = "`"
+    val language: String,
+    val caption: String = ""
 ) : DocumentNode {
     override val schemaName = StandardSchemas.DOC_NODE_CODE_BLOCK
     override fun toPropertiesMap() = mapOf(
         StandardSchemas.PROP_CONTENT to content,
         StandardSchemas.PROP_LANGUAGE to language,
-        "fenceChar" to fenceChar
+        StandardSchemas.PROP_CAPTION to caption
     )
 }
 
-data class QuoteNode(
-    val content: String // Raw content if not parsed into children
+data class CalloutNode(
+    val type: String,
+    val title: String,
+    val isFoldable: Boolean = false
 ) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_QUOTE
-    override fun toPropertiesMap() = mapOf(StandardSchemas.PROP_CONTENT to content)
-}
-
-data class HTMLBlockNode(
-    val content: String
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_HTML
-    override fun toPropertiesMap() = mapOf(StandardSchemas.PROP_CONTENT to content)
-}
-
-data class ThematicBreakNode(
-    val marker: String = "---"
-) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_THEMATIC_BREAK
+    override val schemaName = StandardSchemas.DOC_NODE_CALLOUT
     override fun toPropertiesMap() = mapOf(
-        StandardSchemas.PROP_MARKER to marker,
-        StandardSchemas.PROP_CONTENT to marker
+        StandardSchemas.PROP_CALLOUT_TYPE to type,
+        StandardSchemas.PROP_TITLE to title,
+        StandardSchemas.PROP_IS_FOLDABLE to isFoldable.toString()
     )
 }
 
-data class TableCellNode(
-    val content: String,
-    val isHeader: Boolean,
-    val row: Int,
-    val col: Int
+data class TableNode(
+    val headersJson: String, // List<String>
+    val dataJson: String,    // List<Map<String, String>>
+    val caption: String = ""
 ) : DocumentNode {
-    override val schemaName = StandardSchemas.DOC_NODE_CELL
+    override val schemaName = StandardSchemas.DOC_NODE_TABLE
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_HEADERS to headersJson,
+        StandardSchemas.PROP_DATA to dataJson,
+        StandardSchemas.PROP_CAPTION to caption
+    )
+}
+
+// --- List Items ---
+
+data class OrderedListItemNode(
+    val content: String,
+    val number: Int
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_ORDERED_ITEM
     override fun toPropertiesMap() = mapOf(
         StandardSchemas.PROP_CONTENT to content,
-        "isHeader" to isHeader.toString(),
-        StandardSchemas.PROP_ROW to row.toString(),
-        StandardSchemas.PROP_COL to col.toString()
+        StandardSchemas.PROP_NUMBER to number.toString()
+    )
+}
+
+data class UnorderedListItemNode(
+    val content: String,
+    val bulletChar: String
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_UNORDERED_ITEM
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_CONTENT to content,
+        StandardSchemas.PROP_BULLET_CHAR to bulletChar
+    )
+}
+
+data class TaskListItemNode(
+    val content: String,
+    val isChecked: Boolean,
+    val marker: String
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_TASK_ITEM
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_CONTENT to content,
+        StandardSchemas.PROP_IS_CHECKED to isChecked.toString(),
+        StandardSchemas.PROP_MARKER to marker
+    )
+}
+
+// --- Concept Nodes (Ribs) ---
+
+data class TagNode(
+    val name: String,
+    val nestedPath: String = ""
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_TAG
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_NAME to name,
+        StandardSchemas.PROP_NESTED_PATH to nestedPath
+    )
+}
+
+data class UrlNode(
+    val address: String,
+    val domain: String = ""
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_URL
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_ADDRESS to address,
+        StandardSchemas.PROP_DOMAIN to domain
+    )
+}
+
+data class AttachmentNode(
+    val filename: String,
+    val mimeType: String = "",
+    val path: String = ""
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_ATTACHMENT
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_NAME to filename,
+        StandardSchemas.PROP_MIME_TYPE to mimeType,
+        StandardSchemas.PROP_URI to path
     )
 }

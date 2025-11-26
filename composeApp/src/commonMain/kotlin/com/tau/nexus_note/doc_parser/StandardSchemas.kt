@@ -1,43 +1,65 @@
 package com.tau.nexus_note.doc_parser
 
 object StandardSchemas {
-    // --- Schema Names (Node Types) ---
+    // --- Node Types ---
+    // Structural (Spine)
     const val DOC_NODE_DOCUMENT = "Document"
     const val DOC_NODE_SECTION = "Section"
-    const val DOC_NODE_PARAGRAPH = "Paragraph"
-    const val DOC_NODE_HEADING = "Heading"
-    const val DOC_NODE_CODE_BLOCK = "CodeBlock"
-    const val DOC_NODE_QUOTE = "Quote"
-    const val DOC_NODE_CALLOUT = "Callout"
-    const val DOC_NODE_HTML = "HTMLBlock"
-    const val DOC_NODE_THEMATIC_BREAK = "ThematicBreak"
-    const val DOC_NODE_LIST = "List"
-    const val DOC_NODE_LIST_ITEM = "ListItem"
-    const val DOC_NODE_TABLE = "Table"
-    const val DOC_NODE_CELL = "Cell"
 
-    // --- Edge Names ---
-    const val EDGE_CONTAINS = "CONTAINS"       // Parent -> Child (Nesting)
-    const val EDGE_NEXT = "NEXT"               // Sibling -> Sibling (Reading Order)
-    const val EDGE_HAS_ITEM = "HAS_ITEM"       // List -> ListItem
-    const val EDGE_CELL_AT = "CELL_AT"         // Table -> Cell
-    const val EDGE_LINKS_TO = "LINKS_TO"       // Block -> URL/Document
-    const val EDGE_EMBEDS = "EMBEDS"           // Block -> File
+    // Content (Spine Leaves)
+    const val DOC_NODE_BLOCK = "Block" // Atomic unit of text
+    const val DOC_NODE_CODE_BLOCK = "CodeBlock"
+    const val DOC_NODE_CALLOUT = "Callout"
+    const val DOC_NODE_TABLE = "Table"
+
+    // List Items (Specific Containers)
+    const val DOC_NODE_ORDERED_ITEM = "OrderedListItem"
+    const val DOC_NODE_UNORDERED_ITEM = "UnorderedListItem"
+    const val DOC_NODE_TASK_ITEM = "TaskListItem"
+
+    // Concept Nodes (Rib Hubs)
+    const val DOC_NODE_TAG = "Tag"
+    const val DOC_NODE_ATTACHMENT = "Attachment"
+    const val DOC_NODE_URL = "URL"
+
+    // --- Edge Types ---
+    const val EDGE_CONTAINS = "CONTAINS"       // Spine: Parent -> Child (Strict Hierarchy)
+    const val EDGE_REFERENCES = "REFERENCES"   // Rib: Block -> Doc/Section/Block/URL (WikiLinks)
+    const val EDGE_TAGGED = "TAGGED"           // Rib: Doc/Block -> Tag
+    const val EDGE_EMBEDS = "EMBEDS"           // Rib: Block -> Attachment
 
     // --- Property Keys ---
-    const val PROP_CONTENT = "content"         // The raw text or HTML
-    const val PROP_URI = "uri"
+    // Common
+    const val PROP_CONTENT = "content"         // Templated text for Blocks
+    const val PROP_NAME = "name"
+    const val PROP_URI = "filepath"            // Changed from uri to match design
+    const val PROP_CREATED_AT = "created_at"
+
+    // Structural
     const val PROP_TITLE = "title"
-    const val PROP_LEVEL = "level"             // Int: 1-6
-    const val PROP_LANGUAGE = "language"       // Code block language
-    const val PROP_LIST_TYPE = "listType"      // "ordered", "bullet"
-    const val PROP_TIGHT = "tight"             // Boolean
-    const val PROP_MARKER = "marker"           // "1.", "-", "[x]"
-    const val PROP_IS_TASK = "isTask"          // Boolean
-    const val PROP_IS_COMPLETE = "isComplete"  // Boolean
-    const val PROP_CALLOUT_TYPE = "calloutType" // "info", "warning"
-    const val PROP_IS_FOLDABLE = "isFoldable"
-    const val PROP_ROW = "row"
-    const val PROP_COL = "col"
-    const val PROP_ALIGNMENT = "alignment"     // JSON string of col alignments
+    const val PROP_LEVEL = "level"             // Int 1-6
+    const val PROP_ORDER = "order"             // Int (Edge Property for Spine)
+    const val PROP_FRONTMATTER = "frontmatter" // Map
+
+    // Content Specific
+    const val PROP_LANGUAGE = "language"
+    const val PROP_CAPTION = "caption"
+    const val PROP_CALLOUT_TYPE = "type"       // info, warning
+    const val PROP_IS_FOLDABLE = "is_foldable"
+
+    // Table Specific
+    const val PROP_HEADERS = "headers"         // List<String>
+    const val PROP_DATA = "data"               // List<Map<String, String>> (Rows)
+
+    // List Specific
+    const val PROP_NUMBER = "number"           // Int
+    const val PROP_BULLET_CHAR = "bullet_char" // -, *, +
+    const val PROP_IS_CHECKED = "is_checked"   // Boolean
+    const val PROP_MARKER = "marker"
+
+    // Concept Specific
+    const val PROP_NESTED_PATH = "nested_path" // for tags
+    const val PROP_MIME_TYPE = "mime_type"
+    const val PROP_ADDRESS = "address"
+    const val PROP_DOMAIN = "domain"
 }

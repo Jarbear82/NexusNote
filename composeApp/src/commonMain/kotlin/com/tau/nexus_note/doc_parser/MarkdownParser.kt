@@ -2,12 +2,10 @@ package com.tau.nexus_note.doc_parser
 
 import com.tau.nexus_note.CodexRepository
 import org.intellij.markdown.MarkdownElementTypes
-import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
 import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
-import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser as IntelliJMarkdownParser
 
 class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
@@ -17,11 +15,20 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     private val flavour = GFMFlavourDescriptor()
     private val parser = IntelliJMarkdownParser(flavour)
 
-    // Regex for Obsidian features
+    // Regex for inline concepts
+    private val tagRegex = Regex("#([\\w/-]+)")
     private val wikiLinkRegex = Regex("\\[\\[(.*?)(?:\\|(.*?))?\\]\\]")
-    private val embedRegex = Regex("!\\[\\[(.*?)\\]\\]")
-    private val frontmatterRegex = Regex("^---\\s*\\n([\\s\\S]*?)\\n---\\s*\\n")
-    private val calloutRegex = Regex("^\\[!(\\w+)\\][-+]? ?(.*)")
+
+    // Stack to manage the Spine (Hierarchy)
+    private data class SpineContext(
+        val nodeId: Long,
+        val level: Int,
+        var childOrderCounter: Int = 0
+    )
+
+    // Temporary storage for edges generated during content processing
+    // These must be executed AFTER the block node is inserted and we have its ID.
+    private var currentEdgeActions: List<suspend (Long) -> Unit>? = null
 
     override suspend fun parse(
         fileUri: String,
@@ -29,40 +36,24 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         repository: CodexRepository
     ): Result<Unit> {
         return try {
-            // 1. Extract Frontmatter (Metadata)
-            var bodyContent = content
-            var frontmatterJson = "{}"
-
-            frontmatterRegex.find(content)?.let { match ->
-                val yamlContent = match.groupValues[1]
-                frontmatterJson = "{ \"raw\": \"$yamlContent\" }"
-                bodyContent = content.substring(match.range.last + 1)
-            }
-
-            // 2. Create Root Document Node
+            // 1. Create Root Document Node (Level 0)
             val fileName = fileUri.substringAfterLast('/').substringBeforeLast('.')
-            val extension = fileUri.substringAfterLast('.', "")
-
             val rootNode = DocRootNode(
-                uri = fileUri,
+                filepath = fileUri,
                 name = fileName,
-                extension = extension,
-                frontmatterJson = frontmatterJson
+                createdAt = 0L // TODO: Get actual file time
             )
-
             val rootId = repository.insertDocumentNode(rootNode)
 
-            // 3. Parse AST (GFM Base)
-            val parsedTree = parser.buildMarkdownTreeFromString(bodyContent)
+            // 2. Parse AST
+            val parsedTree = parser.buildMarkdownTreeFromString(content)
 
-            // 4. Traverse and Build Graph
-            val context = ParsingContext(
-                rawText = bodyContent,
-                parentId = rootId,
-                previousBlockId = null
-            )
+            // 3. Initialize Spine Stack
+            val spineStack = Stack<SpineContext>()
+            spineStack.push(SpineContext(rootId, 0))
 
-            walkTree(parsedTree, context)
+            // 4. Walk the AST
+            walkTree(parsedTree, content, spineStack)
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -70,84 +61,150 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
-    private suspend fun walkTree(node: ASTNode, ctx: ParsingContext) {
-        // Skip the top-level MARKDOWN_FILE node itself, just process children
+    private suspend fun walkTree(node: ASTNode, rawText: String, spineStack: Stack<SpineContext>) {
         if (node.type == MarkdownElementTypes.MARKDOWN_FILE) {
-            node.children.forEach { walkTree(it, ctx) }
+            node.children.forEach { walkTree(it, rawText, spineStack) }
             return
         }
 
-        // 1. Identify the DocumentNode type
-        val docNode = mapAstToDocumentNode(node, ctx.rawText)
+        // --- 1. Map AST to DocumentNode ---
+        val docNode = mapAstToDocumentNode(node, rawText)
 
-        // 2. Handle Hierarchy & Sections
         if (docNode != null) {
-            // Logic to handle Section nesting based on Headers
+            // --- 2. Handle Hierarchy (Spine Logic) ---
+
+            // If it's a Section, we might need to pop the stack to find the correct parent
             if (docNode is SectionNode) {
-                // Pop stack until we find a parent with lower level
-                while (ctx.sectionStack.isNotEmpty() && ctx.sectionStack.peek().level >= docNode.level) {
-                    ctx.sectionStack.pop()
+                while (spineStack.isNotEmpty() && spineStack.peek().level >= docNode.level) {
+                    spineStack.pop()
                 }
+            }
 
-                // INSERT SECTION
-                val nodeId = repository.insertDocumentNode(docNode)
+            // --- 3. Templating & Rib Extraction (Content Logic) ---
+            // We process content to extract tags/links. This updates `currentEdgeActions`.
+            val finalDocNode = when (docNode) {
+                is BlockNode -> processBlockContent(docNode)
+                is OrderedListItemNode -> processListItemContent(docNode)
+                is UnorderedListItemNode -> processListItemContent(docNode)
+                is TaskListItemNode -> processListItemContent(docNode)
+                else -> docNode
+            }
 
-                // LINK TO PARENT
-                val stackTop = if (ctx.sectionStack.isNotEmpty()) ctx.sectionStack.peek() else null
-                val parentId = stackTop?.dbId ?: ctx.parentId
+            // --- 4. Insert Node into Graph ---
+            val nodeId = repository.insertDocumentNode(finalDocNode)
 
-                repository.insertDocumentEdge(StandardSchemas.EDGE_CONTAINS, parentId, nodeId)
+            // --- 4b. Execute Pending Edge Actions (Ribs) ---
+            // Now that we have the block ID (nodeId), we can link it to the tags/concepts.
+            currentEdgeActions?.let { actions ->
+                actions.forEach { action -> action(nodeId) }
+                currentEdgeActions = null // Reset for next node
+            }
 
-                // LINK READING ORDER
-                if (ctx.previousBlockId != null) {
-                    repository.insertDocumentEdge(StandardSchemas.EDGE_NEXT, ctx.previousBlockId!!, nodeId)
-                }
+            val currentParent = spineStack.peek()
 
-                // Push with ID
-                ctx.sectionStack.push(docNode.copy(dbId = nodeId))
-                ctx.previousBlockId = nodeId
+            // --- 5. Connect Spine (CONTAINS with Order) ---
+            repository.insertDocumentEdge(
+                StandardSchemas.EDGE_CONTAINS,
+                currentParent.nodeId,
+                nodeId,
+                mapOf(StandardSchemas.PROP_ORDER to currentParent.childOrderCounter.toString())
+            )
+            currentParent.childOrderCounter++
 
-            } else {
-                // INSERT BLOCK (Paragraphs, Lists, etc.)
-                val nodeId = repository.insertDocumentNode(docNode)
-
-                // Link to Parent
-                val stackTop = if (ctx.sectionStack.isNotEmpty()) ctx.sectionStack.peek() else null
-                val parentId = stackTop?.dbId ?: ctx.parentId
-
-                repository.insertDocumentEdge(StandardSchemas.EDGE_CONTAINS, parentId, nodeId)
-
-                // Link Reading Order
-                if (ctx.previousBlockId != null) {
-                    repository.insertDocumentEdge(StandardSchemas.EDGE_NEXT, ctx.previousBlockId!!, nodeId)
-                }
-                ctx.previousBlockId = nodeId
-
-                // 3. Process Inlines (Links/Embeds) for Leaf Nodes
-                if (docNode is ParagraphNode) {
-                    extractInlineLinks(docNode.content)
-                }
-                // Removed ListItemNode inline extraction because ListItemNode is no longer a graph node
+            // --- 6. Update Stack for Recursion ---
+            if (finalDocNode is SectionNode) {
+                spineStack.push(SpineContext(nodeId, finalDocNode.level))
+            } else if (finalDocNode is CalloutNode) {
+                spineStack.push(SpineContext(nodeId, 99)) // Arbitrary high level
+                node.children.forEach { walkTree(it, rawText, spineStack) }
+                spineStack.pop()
+                return // Skip default recursion
             }
         }
 
-        // 4. Handle Children (Recursion)
-        // NOTE: We REMOVED ListNode from here. Lists now self-contain their items.
-        if (docNode is CalloutNode || docNode is QuoteNode || docNode is TableNode) {
-            val childCtx = ctx.copy(parentId = 0L)
-            node.children.forEach { child ->
-                if (isStructuralNode(child)) {
-                    walkTree(child, childCtx)
-                }
-            }
+        // --- Recursion for generic containers ---
+        // Note: We don't recurse automatically for everything to keep control over the stack
+    }
+
+    /**
+     * Extracts Concepts (Tags) from text, inserts them into the graph,
+     * and returns a new Node with the templated content string.
+     */
+    private suspend fun processBlockContent(node: BlockNode): BlockNode {
+        val extraction = extractAndLinkConcepts(node.content)
+        currentEdgeActions = extraction.edges
+        return node.copy(content = extraction.templatedText)
+    }
+
+    private suspend fun processListItemContent(node: DocumentNode): DocumentNode {
+        val text = when(node) {
+            is OrderedListItemNode -> node.content
+            is UnorderedListItemNode -> node.content
+            is TaskListItemNode -> node.content
+            else -> return node
         }
+
+        val extraction = extractAndLinkConcepts(text)
+        currentEdgeActions = extraction.edges
+
+        return when(node) {
+            is OrderedListItemNode -> node.copy(content = extraction.templatedText)
+            is UnorderedListItemNode -> node.copy(content = extraction.templatedText)
+            is TaskListItemNode -> node.copy(content = extraction.templatedText)
+            else -> node
+        }
+    }
+
+    private data class ExtractionResult(
+        val templatedText: String,
+        val edges: List<suspend (Long) -> Unit>
+    )
+
+    private suspend fun extractAndLinkConcepts(text: String): ExtractionResult {
+        val edgeActions = mutableListOf<suspend (Long) -> Unit>()
+
+        // --- 1. Handle Tags ---
+        // We use findAll + StringBuilder to allow calling suspend functions (insertDocumentNode)
+        val tagMatches = tagRegex.findAll(text).toList()
+        val sb = StringBuilder()
+        var lastIndex = 0
+
+        for (match in tagMatches) {
+            // Append text before the match
+            sb.append(text, lastIndex, match.range.first)
+
+            // Suspend call: Find or Insert Tag Node
+            val tagName = match.groupValues[1]
+            val tagId = repository.insertDocumentNode(TagNode(name = tagName))
+
+            // Queue Edge Creation (Block -> Tag)
+            edgeActions.add { blockId ->
+                repository.insertDocumentEdge(StandardSchemas.EDGE_TAGGED, blockId, tagId)
+            }
+
+            // Append replacement template
+            sb.append("{{tag:$tagId}}")
+
+            lastIndex = match.range.last + 1
+        }
+        // Append remaining text
+        if (lastIndex < text.length) {
+            sb.append(text, lastIndex, text.length)
+        }
+
+        val processedText = sb.toString()
+
+        // --- 2. Handle WikiLinks ---
+        // (Placeholder implementation: In the future, resolve target doc ID here)
+        // For now, we leave them as text or process similarly if we had a resolver.
+
+        return ExtractionResult(processedText, edgeActions)
     }
 
     private fun mapAstToDocumentNode(node: ASTNode, rawText: String): DocumentNode? {
         val text = node.getTextInNode(rawText).toString()
 
         return when (node.type) {
-            // --- HEADERS / SECTIONS ---
             MarkdownElementTypes.ATX_1 -> SectionNode(extractHeaderText(text), 1)
             MarkdownElementTypes.ATX_2 -> SectionNode(extractHeaderText(text), 2)
             MarkdownElementTypes.ATX_3 -> SectionNode(extractHeaderText(text), 3)
@@ -155,89 +212,36 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             MarkdownElementTypes.ATX_5 -> SectionNode(extractHeaderText(text), 5)
             MarkdownElementTypes.ATX_6 -> SectionNode(extractHeaderText(text), 6)
 
-            // --- BLOCKS ---
-            MarkdownElementTypes.PARAGRAPH -> ParagraphNode(text.trim())
+            MarkdownElementTypes.PARAGRAPH -> BlockNode(text.trim())
 
-            MarkdownElementTypes.CODE_FENCE,
-            MarkdownElementTypes.CODE_BLOCK -> {
-                val lang = text.lines().firstOrNull()?.trim()?.removePrefix("```") ?: ""
-                val content = text.removePrefix("```$lang").removeSuffix("```").trim()
-                CodeBlockNode(content, lang)
-            }
+            MarkdownElementTypes.ORDERED_LIST -> null // Skip container, process children
+            MarkdownElementTypes.UNORDERED_LIST -> null // Skip container
 
-            MarkdownElementTypes.BLOCK_QUOTE -> {
-                val firstLine = text.lines().firstOrNull()?.trim() ?: ""
-                val cleanLine = firstLine.removePrefix(">").trim()
-
-                val calloutMatch = calloutRegex.find(cleanLine)
-                if (calloutMatch != null) {
-                    val (type, title) = calloutMatch.destructured
-                    CalloutNode(type, title.ifBlank { type.replaceFirstChar { it.uppercase() } })
+            MarkdownElementTypes.LIST_ITEM -> {
+                if (text.trim().startsWith("- [ ]") || text.trim().startsWith("- [x]")) {
+                    val isChecked = text.contains("[x]")
+                    val content = text.replace(Regex("^- \\[[x ]\\]"), "").trim()
+                    TaskListItemNode(content, isChecked, "- [ ]")
+                } else if (text.trim().matches(Regex("^\\d+\\."))) {
+                    val num = text.trim().substringBefore(".").toIntOrNull() ?: 1
+                    val content = text.replace(Regex("^\\d+\\."), "").trim()
+                    OrderedListItemNode(content, num)
                 } else {
-                    QuoteNode(text)
+                    val content = text.removePrefix("-").removePrefix("*").trim()
+                    UnorderedListItemNode(content, "-")
                 }
             }
 
-            // --- LISTS (UPDATED) ---
-            MarkdownElementTypes.UNORDERED_LIST -> {
-                val items = extractListItems(node, rawText)
-                ListNode("bullet", true, items)
+            GFMElementTypes.TABLE -> {
+                // Placeholder for table parsing
+                TableNode("[]", "[]")
             }
-            MarkdownElementTypes.ORDERED_LIST -> {
-                val items = extractListItems(node, rawText)
-                ListNode("ordered", true, items)
-            }
-            // We no longer handle LIST_ITEM individually as a DocNode
-
-            // --- TABLES ---
-            GFMElementTypes.TABLE -> TableNode("[]")
-            GFMElementTypes.ROW -> null
-
-            // --- OTHERS ---
-            MarkdownElementTypes.HTML_BLOCK -> HTMLBlockNode(text)
-            GFMTokenTypes.TILDE -> ThematicBreakNode("---")
 
             else -> null
         }
     }
 
-    /**
-     * Helper to extract text from all direct list item children.
-     */
-    private fun extractListItems(listNode: ASTNode, rawText: String): List<String> {
-        return listNode.children
-            .filter { it.type == MarkdownElementTypes.LIST_ITEM }
-            .map { itemNode ->
-                val text = itemNode.getTextInNode(rawText).toString()
-                // Remove the marker (bullet or number) at the start
-                text.replace(Regex("^\\s*([-*+]|\\d+\\.)\\s+"), "").trim()
-            }
-    }
-
-    private fun extractInlineLinks(content: String) {
-        wikiLinkRegex.findAll(content).forEach { match ->
-            val linkTarget = match.groupValues[1]
-            // repository.createEdge...
-        }
-        embedRegex.findAll(content).forEach { match ->
-            val target = match.groupValues[1]
-            // repository.createEdge...
-        }
-    }
-
     private fun extractHeaderText(raw: String): String = raw.trimStart('#', ' ').trim()
-
-    private fun isStructuralNode(node: ASTNode): Boolean {
-        return node.type != GFMTokenTypes.CHECK_BOX &&
-                node.type != MarkdownTokenTypes.EOL
-    }
-
-    private data class ParsingContext(
-        val rawText: String,
-        var parentId: Long,
-        var previousBlockId: Long?,
-        val sectionStack: Stack<SectionNode> = Stack()
-    )
 }
 
 // Simple Stack implementation

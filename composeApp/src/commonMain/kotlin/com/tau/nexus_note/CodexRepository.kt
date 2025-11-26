@@ -421,33 +421,37 @@ class CodexRepository(
         }
     }
 
+    // In CodexRepository.kt
+
     suspend fun bootstrapDocumentSchemas() = withContext(Dispatchers.IO) {
         val schemaDefinitions = mapOf(
-            StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, "name", "extension", "frontmatter"),
+            // --- Structural ---
+            StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, StandardSchemas.PROP_NAME, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_FRONTMATTER),
             StandardSchemas.DOC_NODE_SECTION to listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL),
-            StandardSchemas.DOC_NODE_PARAGRAPH to listOf(StandardSchemas.PROP_CONTENT),
-            StandardSchemas.DOC_NODE_HEADING to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LEVEL),
-            StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, "fenceChar"),
-            StandardSchemas.DOC_NODE_QUOTE to listOf(StandardSchemas.PROP_CONTENT),
-            StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_IS_FOLDABLE, "isCollapsed"),
 
-            // FIX: Add PROP_CONTENT to LIST so it has a display property for Unordered Lists
-            StandardSchemas.DOC_NODE_LIST to listOf(StandardSchemas.PROP_LIST_TYPE, StandardSchemas.PROP_TIGHT, StandardSchemas.PROP_CONTENT),
+            // --- Content ---
+            StandardSchemas.DOC_NODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT),
+            StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, StandardSchemas.PROP_CAPTION),
+            StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_IS_FOLDABLE),
+            StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_HEADERS, StandardSchemas.PROP_DATA, StandardSchemas.PROP_CAPTION),
 
-            StandardSchemas.DOC_NODE_LIST_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_TASK, StandardSchemas.PROP_IS_COMPLETE, StandardSchemas.PROP_MARKER),
-            StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_ALIGNMENT),
-            StandardSchemas.DOC_NODE_CELL to listOf(StandardSchemas.PROP_CONTENT, "isHeader", StandardSchemas.PROP_ROW, StandardSchemas.PROP_COL),
-            StandardSchemas.DOC_NODE_THEMATIC_BREAK to listOf(StandardSchemas.PROP_MARKER, StandardSchemas.PROP_CONTENT),
-            StandardSchemas.DOC_NODE_HTML to listOf(StandardSchemas.PROP_CONTENT)
+            // --- List Items ---
+            StandardSchemas.DOC_NODE_ORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_NUMBER),
+            StandardSchemas.DOC_NODE_UNORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_BULLET_CHAR),
+            StandardSchemas.DOC_NODE_TASK_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_CHECKED, StandardSchemas.PROP_MARKER),
+
+            // --- Concepts ---
+            StandardSchemas.DOC_NODE_TAG to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_NESTED_PATH),
+            StandardSchemas.DOC_NODE_URL to listOf(StandardSchemas.PROP_ADDRESS, StandardSchemas.PROP_DOMAIN),
+            StandardSchemas.DOC_NODE_ATTACHMENT to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_MIME_TYPE, StandardSchemas.PROP_URI)
         )
 
-        val edgeDefinitions = listOf(
-            StandardSchemas.EDGE_CONTAINS,
-            StandardSchemas.EDGE_NEXT,
-            StandardSchemas.EDGE_HAS_ITEM,
-            StandardSchemas.EDGE_CELL_AT,
-            StandardSchemas.EDGE_LINKS_TO,
-            StandardSchemas.EDGE_EMBEDS
+        // Define Edges with their properties
+        val edgeDefinitions = mapOf(
+            StandardSchemas.EDGE_CONTAINS to listOf(SchemaProperty(StandardSchemas.PROP_ORDER, CodexPropertyDataTypes.NUMBER, true)),
+            StandardSchemas.EDGE_REFERENCES to listOf(SchemaProperty("alias", CodexPropertyDataTypes.TEXT, true)),
+            StandardSchemas.EDGE_TAGGED to emptyList(),
+            StandardSchemas.EDGE_EMBEDS to emptyList()
         )
 
         try {
@@ -456,28 +460,15 @@ class CodexRepository(
                     type = "NODE",
                     name = name,
                     properties_json = props.map {
-                        // Ensure "name" is display for Documents, Content/Title/ListContent for others
-                        val isDisplay = it == StandardSchemas.PROP_CONTENT ||
-                                it == StandardSchemas.PROP_TITLE ||
-                                it == "name"
+                        // Use smart display defaults
+                        val isDisplay = it == StandardSchemas.PROP_CONTENT || it == StandardSchemas.PROP_TITLE || it == StandardSchemas.PROP_NAME
                         SchemaProperty(it, CodexPropertyDataTypes.TEXT, isDisplay)
                     },
                     connections_json = emptyList()
                 )
             }
 
-            edgeDefinitions.forEach { name ->
-                val props = if(name == StandardSchemas.EDGE_CELL_AT) {
-                    listOf(
-                        SchemaProperty(StandardSchemas.PROP_ROW, CodexPropertyDataTypes.NUMBER, true),
-                        SchemaProperty(StandardSchemas.PROP_COL, CodexPropertyDataTypes.NUMBER, true)
-                    )
-                } else if (name == StandardSchemas.EDGE_HAS_ITEM) {
-                    listOf(SchemaProperty(StandardSchemas.PROP_MARKER, CodexPropertyDataTypes.TEXT, true))
-                } else {
-                    emptyList()
-                }
-
+            edgeDefinitions.forEach { (name, props) ->
                 dbService.database.appDatabaseQueries.insertSchema(
                     type = "EDGE",
                     name = name,
@@ -488,7 +479,7 @@ class CodexRepository(
 
             refreshSchema()
         } catch (e: Exception) {
-            println("Schema bootstrap warning (might already exist): ${e.message}")
+            println("Schema bootstrap warning: ${e.message}")
         }
     }
 
