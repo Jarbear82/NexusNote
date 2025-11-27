@@ -73,6 +73,7 @@ class GraphViewmodel(
     val collapsedNodes = _collapsedNodes.asStateFlow()
 
     private var size = Size.Zero
+    private var currentDensity: Float = 1.0f
 
     private var lastNodeList: List<NodeDisplayItem> = emptyList()
     private var lastEdgeList: List<EdgeDisplayItem> = emptyList()
@@ -103,6 +104,16 @@ class GraphViewmodel(
                     dt.coerceAtMost(0.032f)
                 )
                 _graphNodes.value = updatedNodes
+            }
+        }
+    }
+
+    fun updateDensity(density: Float) {
+        if (abs(currentDensity - density) > 0.01f) {
+            currentDensity = density
+            // Recalculate radii with new density, but preserve positions
+            if (lastNodeList.isNotEmpty()) {
+                recomputeGraphState(calculateNewPositions = false)
             }
         }
     }
@@ -207,18 +218,19 @@ class GraphViewmodel(
                 val id = node.id
                 val edgeCount = edgeCountByNodeId[id] ?: 0
 
-                // 1. Calculate Base Radius based on settings
-                val baseRadius = _physicsOptions.value.nodeBaseRadius + (edgeCount * 1.5f)
+                // 1. Calculate Base Radius based on settings (Scaled by density)
+                val baseRadius = (_physicsOptions.value.nodeBaseRadius + (edgeCount * 1.5f)) * currentDensity
 
                 // 2. FIX: Apply visual size overrides based on the Renderer widths in NodeRenderers.kt
                 // We approximate the radius as roughly half the width of the card.
+                // IMPORTANT: Scale by currentDensity to convert DP to Pixels
                 val radius = when(node.label) {
-                    StandardSchemas.DOC_NODE_DOCUMENT -> 160f // Width is 300dp
-                    StandardSchemas.DOC_NODE_SECTION -> 150f  // Width is 280dp
-                    StandardSchemas.DOC_NODE_BLOCK -> 135f    // Width is 250dp
-                    StandardSchemas.DOC_NODE_CODE_BLOCK -> 160f // Width 300dp
-                    StandardSchemas.DOC_NODE_TABLE -> 150f // Width 280dp
-                    StandardSchemas.DOC_NODE_ATTACHMENT -> 110f // Width 200dp
+                    StandardSchemas.DOC_NODE_DOCUMENT -> 160f * currentDensity // Width 300dp
+                    StandardSchemas.DOC_NODE_SECTION -> 150f * currentDensity  // Width 280dp
+                    StandardSchemas.DOC_NODE_BLOCK -> 135f * currentDensity    // Width 250dp
+                    StandardSchemas.DOC_NODE_CODE_BLOCK -> 160f * currentDensity // Width 300dp
+                    StandardSchemas.DOC_NODE_TABLE -> 150f * currentDensity // Width 280dp
+                    StandardSchemas.DOC_NODE_ATTACHMENT -> 110f * currentDensity // Width 200dp
                     else -> baseRadius // Keep small radius for Tags and generic nodes
                 }
 

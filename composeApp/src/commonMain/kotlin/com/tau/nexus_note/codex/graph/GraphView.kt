@@ -72,6 +72,11 @@ fun GraphView(
 
     val density = LocalDensity.current.density
 
+    // Update ViewModel with current density for accurate physics calculations
+    LaunchedEffect(density) {
+        viewModel.updateDensity(density)
+    }
+
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
