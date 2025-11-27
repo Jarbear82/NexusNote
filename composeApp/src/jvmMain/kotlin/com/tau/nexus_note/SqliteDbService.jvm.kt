@@ -10,6 +10,7 @@ import com.tau.nexusnote.db.Edge
 import com.tau.nexusnote.db.Node
 import com.tau.nexusnote.db.SchemaDefinition
 import java.io.File
+import java.nio.file.Files
 
 actual class SqliteDbService actual constructor() {
 
@@ -25,19 +26,30 @@ actual class SqliteDbService actual constructor() {
     actual val filePath: String
         get() = _filePath
 
+    private var _mediaDirectoryPath: String = ""
+    actual val mediaDirectoryPath: String
+        get() = _mediaDirectoryPath
+
     actual fun initialize(path: String) {
         _filePath = path
-        val isMemoryDb = path == ":memory:"
-        val dbFile = File(path)
-        val dbExists = if (isMemoryDb) false else dbFile.exists()
 
-        if (!isMemoryDb) {
+        // --- Media Directory Resolution ---
+        if (path == ":memory:") {
+            // Create a temporary directory for this session's media
+            val tempDir = Files.createTempDirectory("nexus_note_session_").toFile()
+            tempDir.deleteOnExit() // Attempt to clean up on JVM exit
+            _mediaDirectoryPath = tempDir.absolutePath
+        } else {
+            val dbFile = File(path)
             val mediaDir = File(dbFile.parent, "${dbFile.nameWithoutExtension}.media")
             if (!mediaDir.exists()) {
                 mediaDir.mkdirs()
             }
+            _mediaDirectoryPath = mediaDir.absolutePath
         }
 
+        // --- Driver Setup ---
+        val dbExists = if (path == ":memory:") false else File(path).exists()
         _driver = JdbcSqliteDriver("jdbc:sqlite:$path")
         val driver = _driver!!
 
@@ -62,5 +74,7 @@ actual class SqliteDbService actual constructor() {
 
     actual fun close() {
         driver.close()
+        // Optional: If it was a temp directory, we could recursively delete it here.
+        // For now, rely on deleteOnExit() or OS cleanup.
     }
 }

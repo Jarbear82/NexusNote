@@ -2,7 +2,8 @@ package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.tau.nexus_note.datamodels.GraphNode
+// Use new GraphNode
+import com.tau.nexus_note.codex.graph.GraphNode
 
 /**
  * Implements a QuadTree for Barnes-Hut optimization.

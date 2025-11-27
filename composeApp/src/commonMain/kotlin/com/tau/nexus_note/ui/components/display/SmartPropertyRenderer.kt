@@ -16,7 +16,7 @@ import com.tau.nexus_note.utils.hexToColor
 fun SmartPropertyRenderer(
     property: SchemaProperty,
     value: String,
-    codexPath: String
+    mediaRootPath: String // Updated parameter
 ) {
     if (value.isBlank()) {
         Text("-", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -71,10 +71,10 @@ fun SmartPropertyRenderer(
             }
         }
         CodexPropertyDataTypes.IMAGE -> {
-            ImagePreview(value, codexPath)
+            ImagePreview(value, mediaRootPath)
         }
         CodexPropertyDataTypes.AUDIO -> {
-            AudioPreview(value, codexPath)
+            AudioPreview(value, mediaRootPath)
         }
     }
 }

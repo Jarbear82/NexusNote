@@ -75,7 +75,8 @@ fun CodexView(viewModel: CodexViewModel) {
         viewModel.selectDataTab(DataViewTabs.SCHEMA)
     }
 
-    val codexPath = viewModel.repository.dbPath
+    // Use Media Directory Path, not just DB path
+    val mediaRootPath = viewModel.repository.mediaDirectoryPath
 
     Box(modifier = Modifier.fillMaxSize()) {
         TwoPaneLayout(
@@ -301,7 +302,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
                             onCancelClick = onCancel,
-                            codexPath = codexPath,
+                            mediaRootPath = mediaRootPath, // Updated
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },

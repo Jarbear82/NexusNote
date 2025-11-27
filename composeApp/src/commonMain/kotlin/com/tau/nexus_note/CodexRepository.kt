@@ -30,9 +30,13 @@ class CodexRepository(
     private val dbService: SqliteDbService,
     private val repositoryScope: CoroutineScope
 ) {
-    // Expose the DB path for media handling
+    // Expose the DB path
     val dbPath: String
         get() = dbService.filePath
+
+    // Expose the Media Directory path
+    val mediaDirectoryPath: String
+        get() = dbService.mediaDirectoryPath
 
     private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
@@ -107,7 +111,8 @@ class CodexRepository(
                         label = nodeSchema.name,
                         displayProperty = dbNode.display_label,
                         schemaId = nodeSchema.id,
-                        backgroundImagePath = bgPath
+                        backgroundImagePath = bgPath,
+                        properties = dbNode.properties_json // Pass raw properties
                     )
                 }
             }
@@ -158,7 +163,14 @@ class CodexRepository(
                         dbNode.properties_json[backgroundProp.name]
                     } else null
 
-                    NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id, bgPath)
+                    NodeDisplayItem(
+                        id = dbNode.id,
+                        label = nodeSchema.name,
+                        displayProperty = dbNode.display_label,
+                        schemaId = nodeSchema.id,
+                        backgroundImagePath = bgPath,
+                        properties = dbNode.properties_json
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -396,7 +408,8 @@ class CodexRepository(
                     label = state.schema.name,
                     displayProperty = displayLabel,
                     schemaId = state.schema.id,
-                    backgroundImagePath = bgPath
+                    backgroundImagePath = bgPath,
+                    properties = state.properties
                 )
 
                 _nodeList.update { currentList ->

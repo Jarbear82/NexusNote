@@ -5,8 +5,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +35,8 @@ fun MetadataView(
     onListEdgesClick: () -> Unit,
     repository: CodexRepository
 ) {
-    val codexPath = repository.dbPath
+    // UPDATED: Get the media path directly
+    val mediaRootPath = repository.mediaDirectoryPath
     val density = LocalDensityTokens.current
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp).verticalScroll(rememberScrollState())) {
@@ -55,7 +54,7 @@ fun MetadataView(
                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                         Text(prop.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, fontSize = density.bodyFontSize)
                         val value = nodeEditState.properties[prop.name] ?: ""
-                        SmartPropertyRenderer(prop, value, codexPath)
+                        SmartPropertyRenderer(prop, value, mediaRootPath)
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 }
@@ -74,7 +73,7 @@ fun MetadataView(
                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                         Text(prop.name, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, fontSize = density.bodyFontSize)
                         val value = edgeEditState.properties[prop.name] ?: ""
-                        SmartPropertyRenderer(prop, value, codexPath)
+                        SmartPropertyRenderer(prop, value, mediaRootPath)
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 }

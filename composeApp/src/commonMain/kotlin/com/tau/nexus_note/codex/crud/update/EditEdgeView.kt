@@ -19,7 +19,7 @@ fun EditEdgeView(
     onPropertyChange: (String, String) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    codexPath: String
+    mediaRootPath: String // Updated
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Edit Edge: ${state.schema.name}")
@@ -55,7 +55,7 @@ fun EditEdgeView(
                         property = schemaProperty,
                         currentValue = state.properties[schemaProperty.name] ?: "",
                         onValueChange = { value -> onPropertyChange(schemaProperty.name, value) },
-                        codexPath = codexPath
+                        mediaRootPath = mediaRootPath // Updated
                     )
                 }
             }

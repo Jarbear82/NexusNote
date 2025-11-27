@@ -1,6 +1,7 @@
 package com.tau.nexus_note.doc_parser
 
 import com.tau.nexus_note.CodexRepository
+import com.tau.nexus_note.utils.copyFileToMediaDir
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.intellij.markdown.MarkdownElementTypes
@@ -11,6 +12,7 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser as IntelliJMarkdownParser
+import java.io.File
 
 class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
@@ -44,7 +46,8 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     override suspend fun parse(
         fileUri: String,
         content: String,
-        repository: CodexRepository
+        repository: CodexRepository,
+        sourceDirectory: String
     ): Result<Unit> {
         return try {
             val fileName = fileUri.substringAfterLast('/').substringBeforeLast('.')
@@ -59,7 +62,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             val spineStack = Stack<SpineContext>()
             spineStack.push(SpineContext(rootId, 0))
 
-            walkTree(parsedTree, content, spineStack)
+            walkTree(parsedTree, content, spineStack, sourceDirectory)
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -67,9 +70,9 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
-    private suspend fun walkTree(node: ASTNode, rawText: String, spineStack: Stack<SpineContext>) {
+    private suspend fun walkTree(node: ASTNode, rawText: String, spineStack: Stack<SpineContext>, sourceDir: String) {
         if (node.type == MarkdownElementTypes.MARKDOWN_FILE) {
-            node.children.forEach { walkTree(it, rawText, spineStack) }
+            node.children.forEach { walkTree(it, rawText, spineStack, sourceDir) }
             return
         }
 
@@ -81,7 +84,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             if (node.type == MarkdownElementTypes.ORDERED_LIST ||
                 node.type == MarkdownElementTypes.UNORDERED_LIST ||
                 node.type == MarkdownElementTypes.BLOCK_QUOTE) {
-                node.children.forEach { walkTree(it, rawText, spineStack) }
+                node.children.forEach { walkTree(it, rawText, spineStack, sourceDir) }
             }
             return
         }
@@ -95,10 +98,10 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
         // 4. Templating & Rib Extraction
         val finalDocNode = when (docNode) {
-            is BlockNode -> processBlockContent(docNode)
-            is OrderedListItemNode -> processListItemContent(docNode)
-            is UnorderedListItemNode -> processListItemContent(docNode)
-            is TaskListItemNode -> processListItemContent(docNode)
+            is BlockNode -> processBlockContent(docNode, sourceDir)
+            is OrderedListItemNode -> processListItemContent(docNode, sourceDir)
+            is UnorderedListItemNode -> processListItemContent(docNode, sourceDir)
+            is TaskListItemNode -> processListItemContent(docNode, sourceDir)
             else -> docNode
         }
 
@@ -128,18 +131,18 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         } else if (finalDocNode is CalloutNode) {
             spineStack.push(SpineContext(nodeId, 99))
             // Recurse into children (paragraphs inside the quote)
-            node.children.forEach { walkTree(it, rawText, spineStack) }
+            node.children.forEach { walkTree(it, rawText, spineStack, sourceDir) }
             spineStack.pop()
         }
     }
 
-    private suspend fun processBlockContent(node: BlockNode): BlockNode {
-        val extraction = extractAndLinkConcepts(node.content)
+    private suspend fun processBlockContent(node: BlockNode, sourceDir: String): BlockNode {
+        val extraction = extractAndLinkConcepts(node.content, sourceDir)
         currentEdgeActions = extraction.edges
         return node.copy(content = extraction.templatedText)
     }
 
-    private suspend fun processListItemContent(node: DocumentNode): DocumentNode {
+    private suspend fun processListItemContent(node: DocumentNode, sourceDir: String): DocumentNode {
         val text = when (node) {
             is OrderedListItemNode -> node.content
             is UnorderedListItemNode -> node.content
@@ -147,7 +150,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             else -> return node
         }
 
-        val extraction = extractAndLinkConcepts(text)
+        val extraction = extractAndLinkConcepts(text, sourceDir)
         currentEdgeActions = extraction.edges
 
         return when (node) {
@@ -163,10 +166,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val edges: List<suspend (Long) -> Unit>
     )
 
-    /**
-     * Helper function to perform Regex replacement with suspending transform logic.
-     * Regex.replace() does not support suspend lambdas, so we implement it manually.
-     */
     private suspend fun replaceAsync(
         input: String,
         regex: Regex,
@@ -188,7 +187,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         return sb.toString()
     }
 
-    private suspend fun extractAndLinkConcepts(text: String): ExtractionResult {
+    private suspend fun extractAndLinkConcepts(text: String, sourceDir: String): ExtractionResult {
         val edgeActions = mutableListOf<suspend (Long) -> Unit>()
         var processedText = text
 
@@ -206,8 +205,12 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
         // --- 2. Handle WikiLink Embeds: ![[image.png]] ---
         processedText = replaceAsync(processedText, wikiEmbedRegex) { match ->
-            val filename = match.groupValues[1]
-            val attachId = repository.insertDocumentNode(AttachmentNode(filename = filename, mimeType = "image/auto"))
+            val rawFilename = match.groupValues[1]
+            val storedPath = handleAttachmentImport(rawFilename, sourceDir)
+
+            val attachId = repository.insertDocumentNode(
+                AttachmentNode(filename = rawFilename, mimeType = "image/auto", path = storedPath)
+            )
 
             edgeActions.add { blockId ->
                 repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId)
@@ -221,7 +224,12 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             val path = match.groupValues[2]
             val filename = path.substringAfterLast('/')
 
-            val attachId = repository.insertDocumentNode(AttachmentNode(filename = filename, path = path, mimeType = "image/auto"))
+            // For markdown images, 'path' might be relative or absolute
+            val storedPath = handleAttachmentImport(path, sourceDir)
+
+            val attachId = repository.insertDocumentNode(
+                AttachmentNode(filename = filename, path = storedPath, mimeType = "image/auto")
+            )
 
             edgeActions.add { blockId ->
                 repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId)
@@ -230,6 +238,28 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
 
         return ExtractionResult(processedText, edgeActions)
+    }
+
+    /**
+     * Copies the file from sourceDir to the Codex media directory.
+     * Returns the relative filename to be stored in the database.
+     */
+    private fun handleAttachmentImport(relativePath: String, sourceDir: String): String {
+        val sourceFile = File(sourceDir, relativePath)
+
+        // 1. Check relative path from source document
+        if (sourceFile.exists()) {
+            return copyFileToMediaDir(sourceFile.absolutePath, repository.mediaDirectoryPath)
+        }
+
+        // 2. Check as absolute path
+        val absFile = File(relativePath)
+        if (absFile.exists()) {
+            return copyFileToMediaDir(absFile.absolutePath, repository.mediaDirectoryPath)
+        }
+
+        // 3. Fallback: file not found, keep original string
+        return relativePath
     }
 
     private fun mapAstToDocumentNode(node: ASTNode, rawText: String): DocumentNode? {
@@ -263,7 +293,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
     private fun parseBlockQuote(node: ASTNode, rawText: String): DocumentNode? {
         val fullText = node.getTextInNode(rawText).toString()
-        // Regex to detect Obsidian callout syntax: > [!info] Title
         val calloutRegex = Regex("^>\\s*\\[!([\\w-]+)\\](.*)", RegexOption.MULTILINE)
         val match = calloutRegex.find(fullText)
 
@@ -272,7 +301,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             val title = match.groupValues[2].trim()
             CalloutNode(type, title, isFoldable = true)
         } else {
-            // Generic Blockquote
             CalloutNode("quote", "Quote", isFoldable = false)
         }
     }
@@ -311,8 +339,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             }
         }
 
-        // Parse Language and Filename from Info String
-        // Supports: "kotlin:Main.kt" or "kotlin title='Main.kt'" or "kotlin"
         val (language, filename) = parseCodeFenceInfo(infoString)
 
         return CodeBlockNode(
@@ -324,25 +350,17 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
     private fun parseCodeFenceInfo(info: String): Pair<String, String> {
         if (info.isBlank()) return Pair("", "")
-
-        // Strategy 1: Colon syntax (e.g., "kotlin:Main.kt")
         if (info.contains(":")) {
             val parts = info.split(":", limit = 2)
             return Pair(parts[0].trim(), parts[1].trim())
         }
-
-        // Strategy 2: Key-value attributes (e.g., kotlin title="Main.kt")
-        // Simple regex to find title="..." or filename="..."
         val titleRegex = Regex("(?:title|filename)=[\"'](.*?)[\"']")
         val match = titleRegex.find(info)
         if (match != null) {
             val filename = match.groupValues[1]
-            // Language is usually the first word before attributes
             val language = info.substringBefore(" ").trim()
             return Pair(language, filename)
         }
-
-        // Default: Just language
         return Pair(info.trim(), "")
     }
 

@@ -25,7 +25,7 @@ fun CreateEdgeView(
     onPropertyChanged: (String, String) -> Unit,
     onCreateClick: () -> Unit,
     onCancelClick: () -> Unit,
-    codexPath: String
+    mediaRootPath: String // Updated
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Edge")
@@ -81,7 +81,7 @@ fun CreateEdgeView(
                         property = property,
                         currentValue = edgeCreationState.properties[property.name] ?: "",
                         onValueChange = { onPropertyChanged(property.name, it) },
-                        codexPath = codexPath
+                        mediaRootPath = mediaRootPath // Updated
                     )
                 }
             }

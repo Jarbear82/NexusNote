@@ -37,7 +37,7 @@ class CodexViewModel(
     val graphViewModel = GraphViewmodel(
         viewModelScope = viewModelScope,
         settingsFlow = settingsFlow,
-        dbPath = repository.dbPath
+        mediaPath = repository.mediaDirectoryPath // CHANGED: Pass media path instead of dbPath
     )
 
     // Expose Repository Error Flow

@@ -24,7 +24,7 @@ fun CodexPropertyInput(
     property: SchemaProperty,
     currentValue: String,
     onValueChange: (String) -> Unit,
-    codexPath: String,
+    mediaRootPath: String, // Updated parameter
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensityTokens.current
@@ -88,7 +88,7 @@ fun CodexPropertyInput(
             MediaPropertyEditor(
                 label = property.name,
                 currentValue = currentValue,
-                codexPath = codexPath,
+                mediaRootPath = mediaRootPath, // Pass new path
                 onValueChange = onValueChange,
                 extensions = listOf("png", "jpg", "jpeg", "gif", "webp", "bmp"),
                 modifier = commonModifier
@@ -98,7 +98,7 @@ fun CodexPropertyInput(
             MediaPropertyEditor(
                 label = property.name,
                 currentValue = currentValue,
-                codexPath = codexPath,
+                mediaRootPath = mediaRootPath, // Pass new path
                 onValueChange = onValueChange,
                 extensions = listOf("mp3", "wav", "ogg"),
                 modifier = commonModifier

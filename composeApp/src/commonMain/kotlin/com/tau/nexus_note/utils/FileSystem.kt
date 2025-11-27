@@ -33,6 +33,9 @@ expect fun listFilesWithExtension(path: String, extension: String): List<String>
 
 expect fun getFileName(path: String): String
 
+// Added missing function
+expect fun getParentDirectory(path: String): String
+
 expect fun fileExists(path: String): Boolean
 
 expect fun deleteFile(path: String)
@@ -43,13 +46,13 @@ expect fun readTextFile(path: String): String
 expect fun writeTextFile(path: String, content: String)
 
 /**
- * Copies a source file to the .media directory associated with the current Codex.
- * Returns the relative path to be stored in the database.
+ * Copies a source file to the specified target directory.
+ * Returns the simple filename (e.g. "uuid.png") that was saved.
  *
  * @param sourcePath Absolute path of the file to import.
- * @param dbPath Absolute path of the currently open SQLite database.
- * @return The relative path string (e.g., "media/image.png").
+ * @param targetDirectory Absolute path of the directory to save into.
+ * @return The new filename.
  */
-expect fun copyFileToMediaDir(sourcePath: String, dbPath: String): String
+expect fun copyFileToMediaDir(sourcePath: String, targetDirectory: String): String
 
 expect fun listFilesRecursively(path: String, extensions: List<String>): List<String>

@@ -19,20 +19,13 @@ import io.kamel.image.asyncPainterResource
 import java.io.File
 
 @Composable
-fun ImagePreview(relativePath: String, codexPath: String) {
+fun ImagePreview(relativePath: String, mediaRootPath: String) {
     if (relativePath.isBlank()) return
 
-    // Calculate absolute path
-    val dbFile = File(codexPath)
-    val mediaFile = File(dbFile.parent, relativePath)
-
-    // DEBUG: Print path to terminal to verify
-    println("DEBUG: Attempting to load image from: ${mediaFile.absolutePath}")
-    println("DEBUG: File exists? ${mediaFile.exists()}")
+    // Calculate absolute path using the explicit media directory root
+    val mediaFile = File(mediaRootPath, relativePath)
 
     if (mediaFile.exists()) {
-        // FIX: Use lambda syntax 'resource = { ... }' to fix deprecation warning
-        // 'asyncPainterResource' is available in the scope provided by the lambda
         KamelImage(
             resource = { asyncPainterResource(data = mediaFile.toURI().toString()) },
             contentDescription = "Image: ${mediaFile.name}",
@@ -53,17 +46,16 @@ fun ImagePreview(relativePath: String, codexPath: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.BrokenImage, null, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.width(8.dp))
-            Text("Image not found at path: ${mediaFile.absolutePath}", color = MaterialTheme.colorScheme.error)
+            Text("Image not found ($relativePath)", color = MaterialTheme.colorScheme.error)
         }
     }
 }
 
 @Composable
-fun AudioPreview(relativePath: String, codexPath: String) {
+fun AudioPreview(relativePath: String, mediaRootPath: String) {
     if (relativePath.isBlank()) return
 
-    val dbFile = File(codexPath)
-    val mediaFile = File(dbFile.parent, relativePath)
+    val mediaFile = File(mediaRootPath, relativePath)
 
     Row(
         modifier = Modifier

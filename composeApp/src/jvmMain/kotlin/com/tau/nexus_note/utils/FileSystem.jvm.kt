@@ -58,6 +58,11 @@ actual fun getFileName(path: String): String {
     return File(path).name
 }
 
+// Added missing implementation
+actual fun getParentDirectory(path: String): String {
+    return File(path).parent ?: ""
+}
+
 actual fun fileExists(path: String): Boolean {
     return File(path).exists()
 }
@@ -130,11 +135,8 @@ actual fun FilePicker(
     }
 }
 
-actual fun copyFileToMediaDir(sourcePath: String, dbPath: String): String {
-    val dbFile = File(dbPath)
-    // The media folder is named "{dbName}.media"
-    val mediaDirName = "${dbFile.nameWithoutExtension}.media"
-    val mediaDir = File(dbFile.parent, mediaDirName)
+actual fun copyFileToMediaDir(sourcePath: String, targetDirectory: String): String {
+    val mediaDir = File(targetDirectory)
 
     if (!mediaDir.exists()) {
         mediaDir.mkdirs()
@@ -148,8 +150,8 @@ actual fun copyFileToMediaDir(sourcePath: String, dbPath: String): String {
 
     Files.copy(sourceFile.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
 
-    // Return relative path: "{dbName}.media/filename.ext"
-    return "$mediaDirName/$newFileName"
+    // Return just filename
+    return newFileName
 }
 
 actual fun listFilesRecursively(path: String, extensions: List<String>): List<String> {

@@ -3,7 +3,8 @@ package com.tau.nexus_note.codex.graph.physics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.tau.nexus_note.datamodels.GraphEdge
-import com.tau.nexus_note.datamodels.GraphNode
+// Use the new GraphNode interface
+import com.tau.nexus_note.codex.graph.GraphNode
 import kotlin.math.sqrt
 
 class PhysicsEngine() {
@@ -25,8 +26,8 @@ class PhysicsEngine() {
         if (nodes.isEmpty()) return emptyMap()
 
         val forces = mutableMapOf<Long, Offset>()
-        // Create copies to modify
-        val newNodes = nodes.mapValues { (_, node) -> node.copy() }
+        // Create copies using the interface method
+        val newNodes = nodes.mapValues { (_, node) -> node.copyNode() }
 
         // 1. Initialize forces
         for (node in newNodes.values) {
@@ -177,21 +178,8 @@ class PhysicsEngine() {
     }
 }
 
-// Helper for unique pairs (n=2)
-private fun <T> List<T>.combinations(n: Int = 2): Sequence<Pair<T, T>> {
-    if (n != 2) throw IllegalArgumentException("Only n=2 is supported for pair combinations")
-    return sequence {
-        for (i in 0 until this@combinations.size - 1) {
-            for (j in i + 1 until this@combinations.size) {
-                yield(this@combinations[i] to this@combinations[j])
-            }
-        }
-    }
-}
-
 // Helper to normalize offset
 private fun Offset.normalized(): Offset {
     val mag = this.getDistance()
     return if (mag == 0f) Offset.Zero else this / mag
 }
-

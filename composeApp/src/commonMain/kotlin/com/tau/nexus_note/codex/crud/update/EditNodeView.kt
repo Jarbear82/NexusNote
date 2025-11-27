@@ -19,7 +19,7 @@ fun EditNodeView(
     onPropertyChange: (String, String) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit,
-    codexPath: String
+    mediaRootPath: String // Updated
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Edit Node: ${state.schema.name}")
@@ -36,7 +36,7 @@ fun EditNodeView(
                     property = schemaProperty,
                     currentValue = state.properties[schemaProperty.name] ?: "",
                     onValueChange = { value -> onPropertyChange(schemaProperty.name, value) },
-                    codexPath = codexPath
+                    mediaRootPath = mediaRootPath // Updated
                 )
             }
         }

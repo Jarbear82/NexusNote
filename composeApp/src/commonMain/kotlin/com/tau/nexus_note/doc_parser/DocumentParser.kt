@@ -16,14 +16,17 @@ interface DocumentParser {
     /**
      * Parses the file content and injects the resulting Nodes and Edges
      * directly into the provided [repository].
-     * * @param fileUri The identifier for the file (path or name).
+     *
+     * @param fileUri The identifier for the file (path or name).
      * @param content The raw string content of the file.
      * @param repository The target repository to insert the graph into.
+     * @param sourceDirectory The directory where the source file resides (used for resolving relative assets).
      * @return Result.success if parsing and insertion succeeded, failure otherwise.
      */
     suspend fun parse(
         fileUri: String,
         content: String,
-        repository: CodexRepository
+        repository: CodexRepository,
+        sourceDirectory: String
     ): Result<Unit>
 }

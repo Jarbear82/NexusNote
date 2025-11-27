@@ -20,7 +20,7 @@ fun CreateNodeView(
     onPropertyChanged: (String, String) -> Unit,
     onCreateClick: () -> Unit,
     onCancelClick: () -> Unit,
-    codexPath: String
+    mediaRootPath: String // Updated
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Node")
@@ -46,7 +46,7 @@ fun CreateNodeView(
                         property = property,
                         currentValue = nodeCreationState.properties[property.name] ?: "",
                         onValueChange = { onPropertyChanged(property.name, it) },
-                        codexPath = codexPath
+                        mediaRootPath = mediaRootPath // Updated
                     )
                 }
             }

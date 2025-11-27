@@ -2,7 +2,8 @@ package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.datamodels.GraphEdge
-import com.tau.nexus_note.datamodels.GraphNode
+// Use new GraphNode
+import com.tau.nexus_note.codex.graph.GraphNode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlin.math.sqrt
@@ -39,18 +40,19 @@ fun runFRLayout(
     // --- 2. Initialize Node Positions ---
     // Start nodes at small random positions near the center
     var currentNodes = nodes.mapValues { (_, node) ->
-        node.copy(
-            pos = Offset(
-                Random.nextFloat() * 10f - 5f,
-                Random.nextFloat() * 10f - 5f
-            )
+        val copy = node.copyNode()
+        copy.pos = Offset(
+            Random.nextFloat() * 10f - 5f,
+            Random.nextFloat() * 10f - 5f
         )
+        copy
     }
 
     // --- 3. Run Iterations ---
     for (i in 0 until iterations) {
         val forces = mutableMapOf<Long, Offset>()
-        val nextNodeMap = currentNodes.mapValues { it.value.copy() }
+        // Copy using copyNode()
+        val nextNodeMap = currentNodes.mapValues { it.value.copyNode() }
 
         // Initialize forces
         for (node in nextNodeMap.values) {

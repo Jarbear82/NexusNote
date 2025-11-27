@@ -17,7 +17,7 @@ fun EditItemView(
     editScreenState: EditScreenState,
     onSaveClick: () -> Unit,
     onCancelClick: () -> Unit,
-    codexPath: String, // Pass path down
+    mediaRootPath: String, // Pass path down
 
     // ... (All existing callbacks) ...
     onNodeCreationSchemaSelected: (SchemaDefinitionItem) -> Unit,
@@ -58,7 +58,7 @@ fun EditItemView(
                 onPropertyChanged = onNodeCreationPropertyChanged,
                 onCreateClick = onSaveClick,
                 onCancelClick = onCancelClick,
-                codexPath = codexPath
+                mediaRootPath = mediaRootPath
             )
         }
         is EditScreenState.CreateEdge -> {
@@ -71,7 +71,7 @@ fun EditItemView(
                 onPropertyChanged = onEdgeCreationPropertyChanged,
                 onCreateClick = onSaveClick,
                 onCancelClick = onCancelClick,
-                codexPath = codexPath
+                mediaRootPath = mediaRootPath
             )
         }
         is EditScreenState.CreateNodeSchema -> {
@@ -104,7 +104,7 @@ fun EditItemView(
                 onPropertyChange = onNodeEditPropertyChange,
                 onSave = onSaveClick,
                 onCancel = onCancelClick,
-                codexPath = codexPath
+                mediaRootPath = mediaRootPath
             )
         }
         is EditScreenState.EditEdge -> {
@@ -113,7 +113,7 @@ fun EditItemView(
                 onPropertyChange = onEdgeEditPropertyChange,
                 onSave = onSaveClick,
                 onCancel = onCancelClick,
-                codexPath = codexPath // Need to update EditEdgeView too, though not shown in previous list, logic is identical
+                mediaRootPath = mediaRootPath
             )
         }
         is EditScreenState.EditNodeSchema -> {

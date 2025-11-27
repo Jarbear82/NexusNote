@@ -17,7 +17,7 @@ import com.tau.nexus_note.utils.copyFileToMediaDir
 fun MediaPropertyEditor(
     label: String,
     currentValue: String,
-    codexPath: String,
+    mediaRootPath: String,
     onValueChange: (String) -> Unit,
     extensions: List<String>,
     modifier: Modifier = Modifier
@@ -33,9 +33,9 @@ fun MediaPropertyEditor(
             showPicker = false
             if (paths.isNotEmpty()) {
                 val sourcePath = paths.first()
-                if (codexPath.isNotBlank()) {
+                if (mediaRootPath.isNotBlank()) {
                     try {
-                        val relativePath = copyFileToMediaDir(sourcePath, codexPath)
+                        val relativePath = copyFileToMediaDir(sourcePath, mediaRootPath)
                         onValueChange(relativePath)
                     } catch (e: Exception) {
                         println("Error copying file: $e")
@@ -58,7 +58,7 @@ fun MediaPropertyEditor(
             Spacer(Modifier.width(8.dp))
             Button(
                 onClick = { showPicker = true },
-                enabled = codexPath.isNotBlank() && codexPath != ":memory:",
+                enabled = mediaRootPath.isNotBlank(),
                 modifier = Modifier.height(density.buttonHeight)
             ) {
                 Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(density.iconSize))
@@ -66,8 +66,8 @@ fun MediaPropertyEditor(
                 Text("Upload")
             }
         }
-        if (codexPath == ":memory:") {
-            Text("Media upload unavailable in memory mode.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, fontSize = density.bodyFontSize)
+        if (mediaRootPath.isBlank()) {
+            Text("Media upload unavailable.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, fontSize = density.bodyFontSize)
         }
     }
 }

@@ -10,6 +10,7 @@ import com.tau.nexus_note.settings.SettingsViewModel
 import com.tau.nexus_note.settings.createDataStore
 import com.tau.nexus_note.utils.deleteFile
 import com.tau.nexus_note.utils.getFileName
+import com.tau.nexus_note.utils.getParentDirectory
 import com.tau.nexus_note.utils.getHomeDirectoryPath
 import com.tau.nexus_note.utils.listFilesWithExtension
 import com.tau.nexus_note.utils.toPascalCase
@@ -338,7 +339,10 @@ class MainViewModel {
                 // Parse Files
                 paths.forEach { path ->
                     val content = withContext(Dispatchers.IO) { readTextFile(path) }
-                    parser.parse(path, content, tempRepo)
+                    // Determine source directory for assets (images)
+                    val sourceDir = getParentDirectory(path)
+
+                    parser.parse(path, content, tempRepo, sourceDir)
                 }
 
                 // Finalize
