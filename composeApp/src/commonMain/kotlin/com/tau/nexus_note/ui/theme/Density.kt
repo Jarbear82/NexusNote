@@ -35,12 +35,12 @@ val CompactTokens = DensityTokens(
 )
 
 val ComfortableTokens = DensityTokens(
-    listHeight = 56.dp,
+    listHeight = 66.dp,
     cornerRadius = 12.dp,
-    iconSize = 24.dp,
+    iconSize = 36.dp,
     bodyFontSize = 14.sp,
-    titleFontSize = 20.sp,
-    contentPadding = 16.dp,
+    titleFontSize = 16.sp,
+    contentPadding = 8.dp,
     buttonHeight = 40.dp,
     inputVerticalPadding = 16.dp,
     tabHeight = 48.dp,
@@ -49,11 +49,11 @@ val ComfortableTokens = DensityTokens(
 )
 
 val LargeTokens = DensityTokens(
-    listHeight = 72.dp,
+    listHeight = 96.dp,
     cornerRadius = 16.dp,
     iconSize = 32.dp,
-    bodyFontSize = 18.sp,
-    titleFontSize = 24.sp,
+    bodyFontSize = 16.sp,
+    titleFontSize = 22.sp,
     contentPadding = 24.dp,
     buttonHeight = 56.dp,
     inputVerticalPadding = 20.dp,
