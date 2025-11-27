@@ -7,6 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,7 @@ fun CreateNodeSchemaView(
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
     var newIsDisplay by remember { mutableStateOf(false) }
+    var newIsBackground by remember { mutableStateOf(false) }
 
     val density = LocalDensityTokens.current
 
@@ -80,7 +82,10 @@ fun CreateNodeSchemaView(
                         label = "Type",
                         options = CodexPropertyDataTypes.entries,
                         selectedOption = newPropType,
-                        onOptionSelected = { newPropType = it },
+                        onOptionSelected = {
+                            newPropType = it
+                            if(it != CodexPropertyDataTypes.IMAGE) newIsBackground = false
+                        },
                         displayTransform = { it.displayName }
                     )
                 }
@@ -95,12 +100,24 @@ fun CreateNodeSchemaView(
                     )
                 }
 
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("BG", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
+                    Checkbox(
+                        checked = newIsBackground,
+                        onCheckedChange = { newIsBackground = it },
+                        enabled = newPropType == CodexPropertyDataTypes.IMAGE
+                    )
+                }
+
                 IconButton(
                     onClick = {
-                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay))
+                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay, newIsBackground))
                         newPropName = ""
                         newPropType = CodexPropertyDataTypes.TEXT
                         newIsDisplay = false
+                        newIsBackground = false
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
@@ -124,7 +141,11 @@ fun CreateNodeSchemaView(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 if (property.isDisplayProperty) {
                                     Icon(Icons.Default.Visibility, "Display", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(density.iconSize))
-                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                if (property.isBackgroundProperty) {
+                                    Icon(Icons.Default.Image, "Background", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(density.iconSize))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
                                 IconButton(onClick = { onRemoveProperty(index) }) {
                                     Icon(Icons.Default.Delete, "Delete", modifier = Modifier.size(density.iconSize))

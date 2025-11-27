@@ -37,6 +37,7 @@ fun EditNodeSchemaView(
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
     var newIsDisplay by remember { mutableStateOf(false) }
+    var newIsBackground by remember { mutableStateOf(false) }
 
     val density = LocalDensityTokens.current
 
@@ -71,7 +72,10 @@ fun EditNodeSchemaView(
                         label = "Type",
                         options = CodexPropertyDataTypes.entries,
                         selectedOption = newPropType,
-                        onOptionSelected = { newPropType = it },
+                        onOptionSelected = {
+                            newPropType = it
+                            if(it != CodexPropertyDataTypes.IMAGE) newIsBackground = false
+                        },
                         displayTransform = { it.displayName }
                     )
                 }
@@ -80,12 +84,22 @@ fun EditNodeSchemaView(
                     Text("Display", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
                     Checkbox(checked = newIsDisplay, onCheckedChange = { newIsDisplay = it })
                 }
+                Spacer(modifier = Modifier.width(4.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("BG", style = MaterialTheme.typography.labelSmall, fontSize = density.bodyFontSize)
+                    Checkbox(
+                        checked = newIsBackground,
+                        onCheckedChange = { newIsBackground = it },
+                        enabled = newPropType == CodexPropertyDataTypes.IMAGE
+                    )
+                }
                 IconButton(
                     onClick = {
-                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay))
+                        onAddProperty(SchemaProperty(newPropName, newPropType, newIsDisplay, newIsBackground))
                         newPropName = ""
                         newPropType = CodexPropertyDataTypes.TEXT
                         newIsDisplay = false
+                        newIsBackground = false
                     },
                     enabled = newPropName.isNotBlank()
                 ) {
@@ -117,7 +131,16 @@ fun EditNodeSchemaView(
                             )
                         }
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Disp", style = MaterialTheme.typography.labelSmall)
                             Checkbox(checked = property.isDisplayProperty, onCheckedChange = { onPropertyChange(index, property.copy(isDisplayProperty = it)) })
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("BG", style = MaterialTheme.typography.labelSmall)
+                            Checkbox(
+                                checked = property.isBackgroundProperty,
+                                onCheckedChange = { onPropertyChange(index, property.copy(isBackgroundProperty = it)) },
+                                enabled = property.type == CodexPropertyDataTypes.IMAGE
+                            )
                         }
                         IconButton(onClick = { onRemoveProperty(index) }) {
                             Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(density.iconSize))

@@ -26,7 +26,9 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.jetbrains.markdown)
+            implementation(libs.kamel.image.default)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.ktor.client.cio)
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.sqlite.driver)
         }
@@ -37,6 +39,7 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutinesSwing)
             implementation(libs.sqldelight.sqlite.driver)
+            implementation("org.slf4j:slf4j-simple:2.0.9")
         }
     }
 }

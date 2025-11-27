@@ -8,12 +8,14 @@ import androidx.compose.ui.graphics.Color
  * @param label The name of the schema (e.g., "Person", "Note").
  * @param displayProperty The user-friendly text to show (e.g., a person's name, a note's title).
  * @param schemaId The ID of the schema this node belongs to.
+ * @param backgroundImagePath Relative path to the image file, if this node has a background property.
  */
 data class NodeDisplayItem(
     val id: Long,
     val label: String,
     val displayProperty: String,
-    val schemaId: Long
+    val schemaId: Long,
+    val backgroundImagePath: String? = null
 )
 
 /**

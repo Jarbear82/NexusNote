@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import com.tau.nexus_note.doc_parser.MarkdownExporter
+import java.io.File
 
 class CodexViewModel(
     private val dbService: SqliteDbService,
@@ -34,7 +36,8 @@ class CodexViewModel(
 
     val graphViewModel = GraphViewmodel(
         viewModelScope = viewModelScope,
-        settingsFlow = settingsFlow
+        settingsFlow = settingsFlow,
+        dbPath = repository.dbPath
     )
 
     // Expose Repository Error Flow
@@ -42,9 +45,12 @@ class CodexViewModel(
     fun clearError() = repository.clearError()
 
     // --- Layout State ---
-    // Explicitly tracks if the side panel/drawer is open
     private val _isDetailPaneOpen = MutableStateFlow(false)
     val isDetailPaneOpen = _isDetailPaneOpen.asStateFlow()
+
+    // --- Export State ---
+    private val _showExportDirPicker = MutableStateFlow(false)
+    val showExportDirPicker = _showExportDirPicker.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -56,7 +62,6 @@ class CodexViewModel(
             metadataViewModel.primarySelectedItem.collectLatest {
                 if (it != null) {
                     _isDetailPaneOpen.value = true
-                    // Switch to metadata tab if we are not in edit mode
                     if (editCreateViewModel.editScreenState.value is EditScreenState.None) {
                         selectDataTab(DataViewTabs.METADATA)
                     }
@@ -74,7 +79,7 @@ class CodexViewModel(
             }
         }
 
-        // Combine lists with visibility state
+        // Combine lists with visibility state & Pass to Graph
         viewModelScope.launch {
             combine(
                 metadataViewModel.nodeList,
@@ -82,6 +87,7 @@ class CodexViewModel(
                 metadataViewModel.nodeVisibility,
                 metadataViewModel.edgeVisibility
             ) { nodes, edges, nodeViz, edgeViz ->
+                // Basic visibility filtering
                 val visibleNodes = nodes.filter { nodeViz[it.id] ?: true }
                 val visibleNodeIds = visibleNodes.map { it.id }.toSet()
                 val visibleEdges = edges.filter {
@@ -89,6 +95,8 @@ class CodexViewModel(
                             (it.src.id in visibleNodeIds) &&
                             (it.dst.id in visibleNodeIds)
                 }
+                // GraphViewModel handles the complex "Collapse/Hide" logic internally now
+                // We pass the "potentially visible" set
                 visibleNodes to visibleEdges
             }.collectLatest { (visibleNodes, visibleEdges) ->
                 graphViewModel.updateGraphData(visibleNodes, visibleEdges)
@@ -128,15 +136,12 @@ class CodexViewModel(
         _selectedViewTab.value = tab
     }
 
-    // --- Layout Handlers ---
-
     fun openDetailPane() {
         _isDetailPaneOpen.value = true
     }
 
     fun closeDetailPane() {
         _isDetailPaneOpen.value = false
-        // Optional: Clear selection when closing drawer
         metadataViewModel.clearSelectedItem()
         editCreateViewModel.cancelAllEditing()
     }
@@ -145,6 +150,43 @@ class CodexViewModel(
         graphViewModel.onCleared()
         dbService.close()
         viewModelScope.cancel()
+    }
+
+    // --- Export Logic ---
+
+    fun onExportClicked(saveAs: Boolean) {
+        if (saveAs) {
+            _showExportDirPicker.value = true
+        } else {
+            // "Save" - overwrite current location if possible
+            // We assume the parent dir of the DB is the project root for now?
+            // Or typically "Save" for an import-based workflow implies writing back to source.
+            // However, we don't track original source paths of imported files perfectly in the DB metadata yet.
+            // Fallback: Just trigger Save As if we don't know where to save.
+            // For now, let's assume we save alongside the DB file in an "Export" folder to be safe.
+            val dbFile = File(repository.dbPath)
+            performExport(dbFile.parent)
+        }
+    }
+
+    fun onExportDirSelected(path: String?) {
+        _showExportDirPicker.value = false
+        if (path != null) {
+            performExport(path)
+        }
+    }
+
+    private fun performExport(path: String) {
+        viewModelScope.launch {
+            try {
+                val exporter = MarkdownExporter(repository)
+                exporter.export(path)
+                // Show success message (using error flow for convenience or add notification flow)
+                // _errorFlow.value = "Export successful to $path"
+            } catch (e: Exception) {
+                // _errorFlow.value = "Export failed: ${e.message}"
+            }
+        }
     }
 }
 

@@ -21,10 +21,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
+import com.tau.nexus_note.doc_parser.StandardSchemas
+import com.tau.nexus_note.utils.getFileName
+import java.io.File
 
 class GraphViewmodel(
     private val viewModelScope: CoroutineScope,
-    private val settingsFlow: StateFlow<SettingsData>
+    private val settingsFlow: StateFlow<SettingsData>,
+    private val dbPath: String // Needed to resolve relative image paths
 ) {
 
     private val physicsEngine = PhysicsEngine()
@@ -62,11 +66,17 @@ class GraphViewmodel(
     private val _showDetangleDialog = MutableStateFlow(false)
     val showDetangleDialog = _showDetangleDialog.asStateFlow()
 
+    // NEW: Collapse State
+    private val _collapsedNodes = MutableStateFlow<Set<Long>>(emptySet())
+    val collapsedNodes = _collapsedNodes.asStateFlow()
+
     private var size = Size.Zero
 
-    // Listens for settings changes and simulation state.
+    // Keep references to raw data to re-compute on collapse toggle
+    private var lastNodeList: List<NodeDisplayItem> = emptyList()
+    private var lastEdgeList: List<EdgeDisplayItem> = emptyList()
+
     init {
-        // Collector for settings
         viewModelScope.launch {
             settingsFlow.collect { settings ->
                 _physicsOptions.value = settings.graphPhysics.options
@@ -96,23 +106,125 @@ class GraphViewmodel(
         }
     }
 
-    /**
-     * Public method for CodexViewModel to push new data into the graph.
-     */
     fun updateGraphData(nodeList: List<NodeDisplayItem>, edgeList: List<EdgeDisplayItem>) {
+        lastNodeList = nodeList
+        lastEdgeList = edgeList
+        recomputeGraphState()
+    }
+
+    fun toggleNodeCollapse(nodeId: Long) {
+        _collapsedNodes.update {
+            if (it.contains(nodeId)) it - nodeId else it + nodeId
+        }
+        recomputeGraphState()
+    }
+
+    private fun recomputeGraphState() {
+        val collapsedIds = _collapsedNodes.value
+        val parentMap = mutableMapOf<Long, Long>() // Child ID -> Parent ID
+
+        // 1. Identify Hierarchy (Spine)
+        // Find CONTAINS edges to build parent map
+        lastEdgeList.filter { it.label == StandardSchemas.EDGE_CONTAINS }.forEach { edge ->
+            parentMap[edge.dst.id] = edge.src.id
+        }
+
+        // 2. Identify Hidden Nodes (Children of Collapsed parents)
+        val hiddenNodeIds = mutableSetOf<Long>()
+
+        // Recursive function to check if a node is hidden
+        fun isHidden(nodeId: Long): Boolean {
+            val parentId = parentMap[nodeId] ?: return false
+            // If parent is collapsed, I am hidden
+            if (collapsedIds.contains(parentId)) return true
+            // If parent is hidden (because grandparent is collapsed), I am hidden
+            return isHidden(parentId)
+        }
+
+        lastNodeList.forEach { node ->
+            if (isHidden(node.id)) hiddenNodeIds.add(node.id)
+        }
+
+        // 3. Compute Edges (With Roll-up)
+        // Helper to find the "Visual Source" - the nearest visible ancestor
+        fun getVisualNodeId(actualId: Long): Long {
+            if (!hiddenNodeIds.contains(actualId)) return actualId
+
+            var currentId = actualId
+            while (hiddenNodeIds.contains(currentId)) {
+                val parentId = parentMap[currentId]
+                if (parentId == null) return currentId // Should not happen if logic is correct
+                currentId = parentId
+            }
+            return currentId
+        }
+
+        val visibleEdgesMap = mutableMapOf<Pair<Long, Long>, GraphEdge>()
+
+        lastEdgeList.forEach { edge ->
+            val visualSrc = getVisualNodeId(edge.src.id)
+            val visualDst = getVisualNodeId(edge.dst.id)
+
+            // Ignore edges that become self-loops due to roll-up (internal edges)
+            if (visualSrc == visualDst) return@forEach
+
+            val isProxy = (visualSrc != edge.src.id) || (visualDst != edge.dst.id)
+            val pair = Pair(visualSrc, visualDst)
+
+            if (isProxy) {
+                // Aggregate
+                val existing = visibleEdgesMap[pair]
+                val connectionLabel = "${edge.id}: ${edge.label}"
+                if (existing != null) {
+                    visibleEdgesMap[pair] = existing.copy(
+                        representedConnections = existing.representedConnections + connectionLabel
+                    )
+                } else {
+                    visibleEdgesMap[pair] = GraphEdge(
+                        id = -1L * edge.id, // Negative ID for proxy? Or hash.
+                        sourceId = visualSrc,
+                        targetId = visualDst,
+                        label = "Aggregated",
+                        strength = 1.0f,
+                        colorInfo = labelToColor("Aggregated"),
+                        isProxy = true,
+                        representedConnections = listOf(connectionLabel)
+                    )
+                }
+            } else {
+                // Normal Edge
+                visibleEdgesMap[pair] = GraphEdge(
+                    id = edge.id,
+                    sourceId = visualSrc,
+                    targetId = visualDst,
+                    label = edge.label,
+                    strength = 1.0f,
+                    colorInfo = labelToColor(edge.label),
+                    isProxy = false
+                )
+            }
+        }
+
+        // 4. Update Nodes (Filter Hidden)
         val edgeCountByNodeId = mutableMapOf<Long, Int>()
-        edgeList.forEach { edge ->
-            edgeCountByNodeId[edge.src.id] = (edgeCountByNodeId[edge.src.id] ?: 0) + 1
-            edgeCountByNodeId[edge.dst.id] = (edgeCountByNodeId[edge.dst.id] ?: 0) + 1
+        visibleEdgesMap.values.forEach { edge ->
+            edgeCountByNodeId[edge.sourceId] = (edgeCountByNodeId[edge.sourceId] ?: 0) + 1
+            edgeCountByNodeId[edge.targetId] = (edgeCountByNodeId[edge.targetId] ?: 0) + 1
         }
 
         _graphNodes.update { currentNodes ->
-            val newNodeMap = nodeList.associate { node ->
+            val newNodeMap = lastNodeList.filter { !hiddenNodeIds.contains(it.id) }.associate { node ->
                 val id = node.id
                 val edgeCount = edgeCountByNodeId[id] ?: 0
                 val radius = _physicsOptions.value.nodeBaseRadius + (edgeCount * _physicsOptions.value.nodeRadiusEdgeFactor)
                 val mass = (edgeCount + 1).toFloat()
                 val existingNode = currentNodes[id]
+
+                // Resolve absolute path for background
+                val absBgPath = node.backgroundImagePath?.let { relative ->
+                    val dbFile = File(dbPath)
+                    File(dbFile.parent, relative).absolutePath
+                }
 
                 val newNode = if (existingNode != null) {
                     existingNode.copy(
@@ -120,7 +232,9 @@ class GraphViewmodel(
                         displayProperty = node.displayProperty,
                         mass = mass,
                         radius = radius,
-                        colorInfo = labelToColor(node.label)
+                        colorInfo = labelToColor(node.label),
+                        backgroundImagePath = absBgPath,
+                        isCollapsed = collapsedIds.contains(id)
                     )
                 } else {
                     GraphNode(
@@ -132,24 +246,17 @@ class GraphViewmodel(
                         mass = mass,
                         radius = radius,
                         colorInfo = labelToColor(node.label),
-                        isFixed = false
+                        isFixed = false,
+                        backgroundImagePath = absBgPath,
+                        isCollapsed = collapsedIds.contains(id)
                     )
                 }
                 id to newNode
             }
-            newNodeMap.filterKeys { it in nodeList.map { n -> n.id }.toSet() }
+            newNodeMap
         }
 
-        _graphEdges.value = edgeList.map { edge ->
-            GraphEdge(
-                id = edge.id,
-                sourceId = edge.src.id,
-                targetId = edge.dst.id,
-                label = edge.label,
-                strength = 1.0f,
-                colorInfo = labelToColor(edge.label)
-            )
-        }
+        _graphEdges.value = visibleEdgesMap.values.toList()
     }
 
     // --- Coordinate Conversion ---
@@ -246,10 +353,6 @@ class GraphViewmodel(
         _dragVelocity.value = Offset.Zero
     }
 
-    /**
-     * Called when the canvas is tapped.
-     * Invokes the callback with the tapped node's ID if found.
-     */
     fun onTap(screenPos: Offset, onNodeTapped: (Long) -> Unit) {
         val worldPos = screenToWorld(screenPos)
         val tappedNode = findNodeAt(worldPos)
@@ -274,7 +377,6 @@ class GraphViewmodel(
     }
 
     fun startSimulation() {
-        // Only start if the user has it enabled in settings.
         _simulationRunning.value = settingsFlow.value.graphRendering.startSimulationOnLoad
     }
 
@@ -286,56 +388,27 @@ class GraphViewmodel(
         stopSimulation()
     }
 
-    // --- Detangle Functions ---
-
-    /**
-     * Shows the detangle settings dialog.
-     */
     fun onShowDetangleDialog() {
         _showDetangleDialog.value = true
-        _showSettings.value = false // Close settings panel
+        _showSettings.value = false
     }
 
-    /**
-     * Hides the detangle settings dialog.
-     */
     fun onDismissDetangleDialog() {
         _showDetangleDialog.value = false
     }
 
-    /**
-     * Starts the detangling process.
-     *
-     * @param algorithm The selected static layout algorithm.
-     * @param params The parameters for the algorithm.
-     */
     fun startDetangle(algorithm: DetangleAlgorithm, params: Map<String, Any>) {
-        // 1. Stop the current physics simulation
-        stopSimulation() // This sets _simulationRunning.value = false, stopping the loop in GraphView
-
-        // 2. Trigger lockout
+        stopSimulation()
         _isDetangling.value = true
-        _showDetangleDialog.value = false // Close dialog
+        _showDetangleDialog.value = false
 
-        viewModelScope.launch(Dispatchers.Default) { // Run static layout on background thread
-            val layoutFlow = when (algorithm) {
-                DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> runFRLayout(_graphNodes.value, _graphEdges.value, params)
-                // Default to FR for unimplemented algorithms
-                else -> runFRLayout(_graphNodes.value, _graphEdges.value, params)
-            }
-
-            // 3. "Step-by-Step Visualization"
+        viewModelScope.launch(Dispatchers.Default) {
+            val layoutFlow = runFRLayout(_graphNodes.value, _graphEdges.value, params)
             layoutFlow.collect { tickedNodes ->
-                // Update the graph nodes, which the UI is observing
                 _graphNodes.value = tickedNodes
             }
-
-            // 4. "Completion"
             withContext(Dispatchers.Main) {
-                _isDetangling.value = false // Remove lockout
-                // --- FIX: Call startSimulation, not just set the value ---
-
-                // 5. "Resume Simulation"
+                _isDetangling.value = false
                 startSimulation()
             }
         }

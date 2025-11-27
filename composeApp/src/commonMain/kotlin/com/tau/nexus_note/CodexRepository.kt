@@ -96,7 +96,19 @@ class CodexRepository(
                 if (nodeSchema == null) {
                     null
                 } else {
-                    NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id)
+                    // Check for background image property
+                    val backgroundProp = nodeSchema.properties.find { it.isBackgroundProperty }
+                    val bgPath = if (backgroundProp != null) {
+                        dbNode.properties_json[backgroundProp.name]
+                    } else null
+
+                    NodeDisplayItem(
+                        id = dbNode.id,
+                        label = nodeSchema.name,
+                        displayProperty = dbNode.display_label,
+                        schemaId = nodeSchema.id,
+                        backgroundImagePath = bgPath
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -141,7 +153,12 @@ class CodexRepository(
                 if (nodeSchema == null) {
                     null
                 } else {
-                    NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id)
+                    val backgroundProp = nodeSchema.properties.find { it.isBackgroundProperty }
+                    val bgPath = if (backgroundProp != null) {
+                        dbNode.properties_json[backgroundProp.name]
+                    } else null
+
+                    NodeDisplayItem(dbNode.id, nodeSchema.name, dbNode.display_label, nodeSchema.id, bgPath)
                 }
             }
         } catch (e: Exception) {
@@ -173,6 +190,60 @@ class CodexRepository(
         }
     }
 
+    // --- Export Queries ---
+
+    suspend fun findRootDocuments(): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
+        // Root Documents are "Document" nodes that are NOT the target of a CONTAINS edge
+        // (Assuming a tree structure for document containment)
+        // 1. Get all Document nodes
+        val allNodes = _nodeList.value
+        val docNodes = allNodes.filter { it.label == StandardSchemas.DOC_NODE_DOCUMENT }
+
+        // 2. Get all CONTAINS edges
+        val containsEdges = _edgeList.value.filter { it.label == StandardSchemas.EDGE_CONTAINS }
+        val containedNodeIds = containsEdges.map { it.dst.id }.toSet()
+
+        // 3. Filter
+        docNodes.filter { it.id !in containedNodeIds }
+    }
+
+    suspend fun findOrphanedNodes(): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
+        // Orphans are nodes that are NOT Documents and NOT Root, and have NO incoming CONTAINS edge.
+        val allNodes = _nodeList.value
+        val containsEdges = _edgeList.value.filter { it.label == StandardSchemas.EDGE_CONTAINS }
+        val containedNodeIds = containsEdges.map { it.dst.id }.toSet()
+
+        allNodes.filter {
+            it.label != StandardSchemas.DOC_NODE_DOCUMENT &&
+                    it.id !in containedNodeIds
+        }
+    }
+
+    suspend fun getNodeById(id: Long): NodeEditState? = withContext(Dispatchers.IO) {
+        // Re-use getNodeEditState logic but just return it as a data object
+        getNodeEditState(id)
+    }
+
+    suspend fun getChildrenSorted(parentId: Long): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
+        val containsEdges = _edgeList.value.filter {
+            it.label == StandardSchemas.EDGE_CONTAINS && it.src.id == parentId
+        }
+
+        // Get the 'order' property from the edge to sort
+        // We need to fetch the edge properties from DB for this, as DisplayItem doesn't have it.
+        // Optimization: Do a batch query or fetch individual edges.
+
+        val sortedEdges = containsEdges.sortedBy { edge ->
+            val dbEdge = dbService.database.appDatabaseQueries.selectEdgeById(edge.id).executeAsOneOrNull()
+            val props = dbEdge?.properties_json ?: emptyMap()
+            props[StandardSchemas.PROP_ORDER]?.toIntOrNull() ?: Int.MAX_VALUE
+        }
+
+        sortedEdges.map { it.dst }
+    }
+
+    // --- Standard CRUD (Existing) ---
+
     fun deleteSchema(schemaId: Long) {
         repositoryScope.launch {
             try {
@@ -194,17 +265,13 @@ class CodexRepository(
         }
     }
 
-    // --- ADDED: Helper to find existing node by label (e.g. for Tags) ---
     suspend fun findNodeByLabel(schemaName: String, label: String): Long? = withContext(Dispatchers.IO) {
-        // Ensure schema is loaded
         if (_schema.value == null) refreshSchema()
         val schema = _schema.value?.nodeSchemas?.find { it.name == schemaName } ?: return@withContext null
 
-        // Try finding in loaded memory list first
         val memoryMatch = _nodeList.value.find { it.schemaId == schema.id && it.displayProperty == label }
         if (memoryMatch != null) return@withContext memoryMatch.id
 
-        // Fallback to DB scan (since we don't have a specific query yet)
         try {
             val dbNodes = dbService.database.appDatabaseQueries.selectAllNodes().executeAsList()
             val dbMatch = dbNodes.find { it.schema_id == schema.id && it.display_label == label }
@@ -320,11 +387,16 @@ class CodexRepository(
                     properties_json = state.properties
                 )
 
+                // Background Path might change
+                val backgroundProp = state.schema.properties.find { it.isBackgroundProperty }
+                val bgPath = if(backgroundProp != null) state.properties[backgroundProp.name] else null
+
                 val updatedItem = NodeDisplayItem(
                     id = state.id,
                     label = state.schema.name,
                     displayProperty = displayLabel,
-                    schemaId = state.schema.id
+                    schemaId = state.schema.id,
+                    backgroundImagePath = bgPath
                 )
 
                 _nodeList.update { currentList ->
@@ -413,6 +485,7 @@ class CodexRepository(
     }
 
     suspend fun bootstrapDocumentSchemas() = withContext(Dispatchers.IO) {
+        // ... (Existing schema definitions) ...
         val schemaDefinitions = mapOf(
             StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, StandardSchemas.PROP_NAME, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_FRONTMATTER),
             StandardSchemas.DOC_NODE_SECTION to listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL),
@@ -434,7 +507,6 @@ class CodexRepository(
             StandardSchemas.EDGE_EMBEDS to emptyList()
         )
 
-        // Helper to assign the correct UI type to standard properties
         fun getTypeForProp(name: String): CodexPropertyDataTypes {
             return when (name) {
                 StandardSchemas.PROP_HEADERS -> CodexPropertyDataTypes.LIST
@@ -443,6 +515,7 @@ class CodexRepository(
                 StandardSchemas.PROP_LEVEL, StandardSchemas.PROP_NUMBER, StandardSchemas.PROP_ORDER, StandardSchemas.PROP_CREATED_AT -> CodexPropertyDataTypes.NUMBER
                 StandardSchemas.PROP_DATA -> CodexPropertyDataTypes.LONG_TEXT
                 StandardSchemas.PROP_CONTENT -> CodexPropertyDataTypes.MARKDOWN
+                StandardSchemas.PROP_URI -> CodexPropertyDataTypes.IMAGE // Treat as image for Attachment, though it might be other types
                 else -> CodexPropertyDataTypes.TEXT
             }
         }
@@ -454,7 +527,9 @@ class CodexRepository(
                     name = name,
                     properties_json = props.map {
                         val isDisplay = it == StandardSchemas.PROP_CONTENT || it == StandardSchemas.PROP_TITLE || it == StandardSchemas.PROP_NAME
-                        SchemaProperty(it, getTypeForProp(it), isDisplay)
+                        // Auto-detect background property for Attachments/Images
+                        val isBackground = (name == StandardSchemas.DOC_NODE_ATTACHMENT && it == StandardSchemas.PROP_URI)
+                        SchemaProperty(it, getTypeForProp(it), isDisplay, isBackground)
                     },
                     connections_json = emptyList()
                 )

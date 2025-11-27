@@ -16,6 +16,8 @@ import androidx.compose.ui.geometry.Offset
  * @param oldForce The net force applied to this node in the *previous* frame.
  * @param swinging The magnitude of the change in force between frames.
  * @param traction The magnitude of the consistent force between frames.
+ * @param backgroundImagePath Absolute path to the background image file (or URL).
+ * @param isCollapsed Whether this node is currently collapsed (hiding its children).
  */
 data class GraphNode(
     val id: Long,
@@ -30,7 +32,10 @@ data class GraphNode(
     // --- State for ForceAtlas2 Adaptive Speed ---
     var oldForce: Offset = Offset.Zero,
     var swinging: Float = 0f,
-    var traction: Float = 0f
+    var traction: Float = 0f,
+    // --- New Features ---
+    val backgroundImagePath: String? = null,
+    val isCollapsed: Boolean = false
 )
 
 /**
@@ -41,6 +46,8 @@ data class GraphNode(
  * @param label The schema name (e.g., "KNOWS").
  * @param strength The "springiness" of the edge.
  * @param colorInfo The color for drawing.
+ * @param isProxy True if this edge represents aggregated connections (visual roll-up).
+ * @param representedConnections A list of strings describing the underlying edges (e.g. "EdgeID: Label") for tooltips.
  */
 data class GraphEdge(
     val id: Long,
@@ -48,7 +55,10 @@ data class GraphEdge(
     val targetId: Long,
     val label: String,
     val strength: Float,
-    val colorInfo: ColorInfo
+    val colorInfo: ColorInfo,
+    // --- New Features ---
+    val isProxy: Boolean = false,
+    val representedConnections: List<String> = emptyList()
 )
 
 /**

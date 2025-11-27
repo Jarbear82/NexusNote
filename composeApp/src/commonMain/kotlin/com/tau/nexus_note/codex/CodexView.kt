@@ -3,6 +3,8 @@ package com.tau.nexus_note.codex
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.SaveAs
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,6 +19,7 @@ import com.tau.nexus_note.codex.schema.SchemaView
 import com.tau.nexus_note.ui.components.CodexAlertDialog
 import com.tau.nexus_note.ui.components.TwoPaneLayout
 import com.tau.nexus_note.ui.components.CodexTab
+import com.tau.nexus_note.utils.DirectoryPicker
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +45,10 @@ fun CodexView(viewModel: CodexViewModel) {
     val nodeVisibility by viewModel.metadataViewModel.nodeVisibility.collectAsState()
     val edgeVisibility by viewModel.metadataViewModel.edgeVisibility.collectAsState()
     val schemaVisibility by viewModel.schemaViewModel.schemaVisibility.collectAsState()
+
+    // Export
+    val showExportPicker by viewModel.showExportDirPicker.collectAsState()
+    DirectoryPicker(showExportPicker, "Select Export Directory", "") { viewModel.onExportDirSelected(it) }
 
     LaunchedEffect(viewModel.editCreateViewModel) {
         viewModel.editCreateViewModel.navigationEventFlow.collectLatest {
@@ -77,15 +84,25 @@ fun CodexView(viewModel: CodexViewModel) {
             listContent = {
                 Box(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                        PrimaryTabRow(selectedTabIndex = selectedViewTab.value) {
-                            ViewTabs.entries.forEach { tab ->
-                                CodexTab(
-                                    text = tab.name,
-                                    selected = selectedViewTab.value == tab.value,
-                                    onClick = { viewModel.selectViewTab(tab) }
-                                )
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            PrimaryTabRow(selectedTabIndex = selectedViewTab.value, modifier = Modifier.weight(1f)) {
+                                ViewTabs.entries.forEach { tab ->
+                                    CodexTab(
+                                        text = tab.name,
+                                        selected = selectedViewTab.value == tab.value,
+                                        onClick = { viewModel.selectViewTab(tab) }
+                                    )
+                                }
+                            }
+                            // Export Actions
+                            IconButton(onClick = { viewModel.onExportClicked(false) }) {
+                                Icon(Icons.Default.Save, "Save (Export)")
+                            }
+                            IconButton(onClick = { viewModel.onExportClicked(true) }) {
+                                Icon(Icons.Default.SaveAs, "Save As")
                             }
                         }
+
                         Spacer(modifier = Modifier.height(16.dp))
 
                         when (selectedViewTab) {
@@ -144,6 +161,12 @@ fun CodexView(viewModel: CodexViewModel) {
                                             val node = viewModel.metadataViewModel.nodeList.value.find { it.id == nodeId }
                                             if (node != null) {
                                                 viewModel.metadataViewModel.selectItem(node)
+                                            }
+                                        },
+                                        onEdgeTap = { edgeId ->
+                                            val edge = viewModel.metadataViewModel.edgeList.value.find { it.id == edgeId }
+                                            if (edge != null) {
+                                                viewModel.metadataViewModel.selectItem(edge)
                                             }
                                         },
                                         onAddNodeClick = {

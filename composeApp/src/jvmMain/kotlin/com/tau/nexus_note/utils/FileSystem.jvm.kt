@@ -83,6 +83,12 @@ actual fun readTextFile(path: String): String {
     return File(path).readText()
 }
 
+actual fun writeTextFile(path: String, content: String) {
+    val file = File(path)
+    file.parentFile?.mkdirs()
+    file.writeText(content)
+}
+
 @Composable
 actual fun FilePicker(
     show: Boolean,
@@ -148,35 +154,16 @@ actual fun copyFileToMediaDir(sourcePath: String, dbPath: String): String {
 
 actual fun listFilesRecursively(path: String, extensions: List<String>): List<String> {
     val root = File(path)
-    println("DEBUG: listFilesRecursively started for: $path")
+    if (!root.exists() || !root.isDirectory) return emptyList()
 
-    if (!root.exists()) {
-        println("DEBUG: Root path does not exist.")
-        return emptyList()
-    }
-    if (!root.isDirectory) {
-        println("DEBUG: Root path is not a directory.")
-        return emptyList()
-    }
-
-    // Normalize extensions to lowercase for case-insensitive comparison
     val normalizedExtensions = extensions.map { it.lowercase() }
 
     return root.walkTopDown()
-        .onEnter { file ->
-            val readable = file.canRead()
-            if (!readable) println("DEBUG: Skipping unreadable dir: ${file.absolutePath}")
-            readable
-        }
         .filter { file ->
             if (file.isDirectory) return@filter false
-
-            // Check extension
             val ext = "." + file.extension.lowercase()
-            val matches = normalizedExtensions.any { reqExt -> ext.endsWith(reqExt) }
-            matches
+            normalizedExtensions.any { reqExt -> ext.endsWith(reqExt) }
         }
         .map { it.absolutePath }
         .toList()
-        .also { println("DEBUG: Found ${it.size} files in tree.") }
 }

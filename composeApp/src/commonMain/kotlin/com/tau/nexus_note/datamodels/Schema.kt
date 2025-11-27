@@ -7,12 +7,15 @@ import kotlinx.serialization.Serializable
  * This is serialized to/from JSON.
  * @param name The name of the property (e.g., "Description", "Due Date").
  * @param type The data type for the UI (e.g., "Text", "Image", "Date").
+ * @param isDisplayProperty If true, this property's value is used as the node's label in the graph.
+ * @param isBackgroundProperty If true, and type is IMAGE, this property's value is used as the node's background.
  */
 @Serializable
 data class SchemaProperty(
     val name: String,
     val type: CodexPropertyDataTypes,
-    val isDisplayProperty: Boolean = false
+    val isDisplayProperty: Boolean = false,
+    val isBackgroundProperty: Boolean = false
 )
 
 /**

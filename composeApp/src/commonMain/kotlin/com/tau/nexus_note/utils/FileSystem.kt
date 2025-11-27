@@ -39,6 +39,9 @@ expect fun deleteFile(path: String)
 
 expect fun readTextFile(path: String): String
 
+// New function for Export
+expect fun writeTextFile(path: String, content: String)
+
 /**
  * Copies a source file to the .media directory associated with the current Codex.
  * Returns the relative path to be stored in the database.
