@@ -36,6 +36,7 @@ data class EdgeCreationState(
 // --- Data class for Node Schema Creation UI State ---
 data class NodeSchemaCreationState(
     val tableName: String = "",
+    val nodeStyle: NodeStyle = NodeStyle.GENERIC, // Added Style
     val properties: List<SchemaProperty> = listOf(SchemaProperty("name",
         CodexPropertyDataTypes.TEXT, isDisplayProperty = true)),
     val tableNameError: String? = null,
@@ -73,6 +74,7 @@ data class EdgeEditState(
 data class NodeSchemaEditState(
     val originalSchema: SchemaDefinitionItem,
     val currentName: String,
+    val currentNodeStyle: NodeStyle, // Added Style
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap()

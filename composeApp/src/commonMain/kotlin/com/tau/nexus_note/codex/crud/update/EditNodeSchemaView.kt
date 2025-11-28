@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.datamodels.CodexPropertyDataTypes
 import com.tau.nexus_note.datamodels.NodeSchemaEditState
+import com.tau.nexus_note.datamodels.NodeStyle
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
@@ -28,6 +29,7 @@ import com.tau.nexus_note.utils.toPascalCase
 fun EditNodeSchemaView(
     state: NodeSchemaEditState,
     onLabelChange: (String) -> Unit,
+    onNodeStyleChange: (NodeStyle) -> Unit, // New callback
     onPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddProperty: (SchemaProperty) -> Unit,
     onRemoveProperty: (Int) -> Unit,
@@ -53,6 +55,17 @@ fun EditNodeSchemaView(
                 isError = state.currentNameError != null
             )
             if (state.currentNameError != null) Text(state.currentNameError, color = MaterialTheme.colorScheme.error)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Node Style Dropdown
+            CodexDropdown(
+                label = "Visual Style",
+                options = NodeStyle.entries,
+                selectedOption = state.currentNodeStyle,
+                onOptionSelected = onNodeStyleChange,
+                displayTransform = { it.displayName }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 

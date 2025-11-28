@@ -1,100 +1,79 @@
 package com.tau.nexus_note.codex.graph
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
+import com.tau.nexus_note.settings.GraphLayoutMode
+import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlin.math.roundToInt
 
 @Composable
 fun GraphSettingsView(
-    options: PhysicsOptions,
-    onDetangleClick: () -> Unit,
+    layoutMode: GraphLayoutMode,
+    onLayoutModeChange: (GraphLayoutMode) -> Unit,
+    physicsOptions: PhysicsOptions,
+    onPhysicsOptionChange: (PhysicsOptions) -> Unit,
+    onTriggerLayout: () -> Unit, // Re-run / Detangle
+    snapEnabled: Boolean,
+    onSnapToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensityTokens.current
 
     Card(
-        modifier = modifier.width(300.dp),
+        modifier = modifier.width(320.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
     ) {
         Column(modifier = Modifier.padding(density.contentPadding)) {
-            Text("Graph Physics", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
+            Text("Graph Settings", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
             Spacer(Modifier.height(16.dp))
 
-            // Read-only sliders
-            SettingSlider(
-                label = "Gravity",
-                value = options.gravity,
-                onValueChange = {},
-                range = 0f..2f,
-                enabled = false
+            // --- Layout Mode Selector ---
+            CodexDropdown(
+                label = "Layout Mode",
+                options = GraphLayoutMode.entries,
+                selectedOption = layoutMode,
+                onOptionSelected = onLayoutModeChange,
+                displayTransform = { it.displayName }
             )
+            Spacer(Modifier.height(8.dp))
 
-            SettingSlider(
-                label = "Repulsion",
-                value = options.repulsion,
-                onValueChange = {},
-                range = 0f..10000f,
-                enabled = false
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Snap Back on Drag", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Switch(checked = snapEnabled, onCheckedChange = onSnapToggle, modifier = Modifier.scale(0.8f))
+            }
 
-            SettingSlider(
-                label = "Spring",
-                value = options.spring,
-                onValueChange = {},
-                range = 0.01f..1f,
-                enabled = false
-            )
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            SettingSlider(
-                label = "Damping",
-                value = options.damping,
-                onValueChange = {},
-                range = 0.5f..1f,
-                enabled = false
-            )
-
-            SettingSlider(
-                label = "Barnes-Hut Theta",
-                value = options.barnesHutTheta,
-                onValueChange = {},
-                range = 0.1f..3f,
-                enabled = false
-            )
-
-            SettingSlider(
-                label = "Tolerance (Speed)",
-                value = options.tolerance,
-                onValueChange = {},
-                range = 0.1f..10f,
-                enabled = false
-            )
-
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onDetangleClick,
-                modifier = Modifier.fillMaxWidth().height(density.buttonHeight)
-            ) {
-                Text("Detangle Graph")
+            // --- Contextual Controls ---
+            when (layoutMode) {
+                GraphLayoutMode.CONTINUOUS -> {
+                    Text("Physics Simulation", style = MaterialTheme.typography.labelMedium)
+                    SettingSlider("Gravity", physicsOptions.gravity, { onPhysicsOptionChange(physicsOptions.copy(gravity = it)) }, 0f..2f)
+                    SettingSlider("Repulsion", physicsOptions.repulsion, { onPhysicsOptionChange(physicsOptions.copy(repulsion = it)) }, 0f..5000f)
+                    SettingSlider("Spring", physicsOptions.spring, { onPhysicsOptionChange(physicsOptions.copy(spring = it)) }, 0.01f..0.5f)
+                    Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Detangle (Restart)") }
+                }
+                GraphLayoutMode.COMPUTED -> {
+                    Text("Static Algorithms", style = MaterialTheme.typography.labelMedium)
+                    // We can add Iteration count here later if needed, hardcoded in VM for now
+                    Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Re-run Detangle") }
+                    Text(
+                        "Nodes are frozen. Drag to move manually, or enable 'Snap Back' to let physics settle neighbors.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                GraphLayoutMode.HIERARCHICAL -> {
+                    Text("Tree Layout", style = MaterialTheme.typography.labelMedium)
+                    Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Reset Hierarchy") }
+                }
             }
         }
     }
@@ -105,8 +84,7 @@ private fun SettingSlider(
     label: String,
     value: Float,
     onValueChange: (Float) -> Unit,
-    range: ClosedFloatingPointRange<Float>,
-    enabled: Boolean = true
+    range: ClosedFloatingPointRange<Float>
 ) {
     val density = LocalDensityTokens.current
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -117,7 +95,7 @@ private fun SettingSlider(
         ) {
             Text(label, fontSize = density.bodyFontSize)
             Text(
-                text = if (value > 100) value.roundToInt().toString() else String.format("%.2f", value),
+                text = String.format("%.2f", value),
                 fontSize = density.bodyFontSize,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -126,9 +104,11 @@ private fun SettingSlider(
             value = value,
             onValueChange = onValueChange,
             valueRange = range,
-            modifier = Modifier.fillMaxWidth(),
-            enabled = enabled
+            modifier = Modifier.fillMaxWidth().height(24.dp)
         )
         Spacer(Modifier.height(8.dp))
     }
 }
+
+// Helper for modifier scaling if needed
+private fun Modifier.scale(scale: Float): Modifier = this // Placeholder if direct scale modifier issues arise

@@ -3,20 +3,11 @@ package com.tau.nexus_note.codex.graph.physics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import com.tau.nexus_note.datamodels.GraphEdge
-// Use the new GraphNode interface
 import com.tau.nexus_note.codex.graph.GraphNode
 import kotlin.math.sqrt
 
 class PhysicsEngine() {
 
-    /**
-     * Updates the positions and velocities of all nodes based on physics.
-     * @param nodes The current map of nodes.
-     * @param edges The list of edges.
-     * @param options The *current* physics options from the settings UI.
-     * @param dt The time delta (e.g., 16ms).
-     * @return A new map of updated nodes.
-     */
     fun update(
         nodes: Map<Long, GraphNode>,
         edges: List<GraphEdge>,
@@ -37,148 +28,117 @@ class PhysicsEngine() {
         // 2. Apply forces
         // 2a. Gravity (pull to center 0,0)
         for (node in newNodes.values) {
-            // Do not apply gravity to fixed (dragged) nodes
-            if (node.isFixed) continue
+            // Do not apply forces to fixed/locked nodes
+            if (node.isFixed || node.isLocked) continue
 
             val gravityForce = -node.pos * options.gravity * node.mass
             forces[node.id] = forces[node.id]!! + gravityForce
         }
 
-        // 2b. Repulsion (Barnes-Hut Optimization)
-        // First, determine the boundaries of all nodes
-        var minX = Float.POSITIVE_INFINITY
-        var minY = Float.POSITIVE_INFINITY
-        var maxX = Float.NEGATIVE_INFINITY
-        var maxY = Float.NEGATIVE_INFINITY
+        // 2b. Repulsion (Barnes-Hut)
+        // Bounds calc
+        var minX = Float.POSITIVE_INFINITY; var minY = Float.POSITIVE_INFINITY
+        var maxX = Float.NEGATIVE_INFINITY; var maxY = Float.NEGATIVE_INFINITY
         for (node in newNodes.values) {
             if (node.pos.x < minX) minX = node.pos.x
             if (node.pos.x > maxX) maxX = node.pos.x
             if (node.pos.y < minY) minY = node.pos.y
             if (node.pos.y > maxY) maxY = node.pos.y
         }
-        // Add padding to prevent nodes from being exactly on the edge
-        val width = (maxX - minX) * 1.2f + 100f // +100f for empty graphs
+        val width = (maxX - minX) * 1.2f + 100f
         val height = (maxY - minY) * 1.2f + 100f
         val centerX = (minX + maxX) / 2f
         val centerY = (minY + maxY) / 2f
         val boundary = Rect(centerX - width/2, centerY - height/2, centerX + width/2, centerY + height/2)
 
-        // Build the QuadTree
         val quadTree = QuadTree(boundary)
         for (node in newNodes.values) {
             quadTree.insert(node)
         }
 
-        // Calculate repulsion force for each node
         for (node in newNodes.values) {
-            // Do not apply repulsion to fixed nodes (but they still repel others)
-            if (node.isFixed) continue
-
+            if (node.isFixed || node.isLocked) continue
             val repulsionForce = quadTree.applyRepulsion(node, options, options.barnesHutTheta)
             forces[node.id] = forces[node.id]!! + repulsionForce
         }
 
-
-        // 2c. Spring (from edges) (Hooke's Law)
+        // 2c. Spring
         for (edge in edges) {
             val nodeA = newNodes[edge.sourceId]
             val nodeB = newNodes[edge.targetId]
 
             if (nodeA != null && nodeB != null) {
-                // Do not apply spring forces if *either* node is fixed
-                if (nodeA.isFixed || nodeB.isFixed) continue
+                // If BOTH are locked/fixed, no spring needed (they are static relative to each other)
+                // If ONE is locked, the spring force still acts on the OTHER.
 
                 val delta = nodeB.pos - nodeA.pos
                 val dist = delta.getDistance()
                 if (dist == 0f) continue
 
-                // The "ideal" length of the spring is the sum of radii + a buffer
                 val idealLength = nodeA.radius + nodeB.radius + (options.minDistance * 5)
-
                 val displacement = dist - idealLength
                 val springForce = delta.normalized() * displacement * options.spring * edge.strength
 
-                forces[nodeA.id] = forces[nodeA.id]!! + springForce
-                forces[nodeB.id] = forces[nodeB.id]!! - springForce
+                if (!nodeA.isFixed && !nodeA.isLocked) {
+                    forces[nodeA.id] = forces[nodeA.id]!! + springForce
+                }
+                if (!nodeB.isFixed && !nodeB.isLocked) {
+                    forces[nodeB.id] = forces[nodeB.id]!! - springForce
+                }
             }
         }
 
-        // 3. Calculate ForceAtlas2 Adaptive Speed (Swinging & Traction)
+        // 3. FA2 Adaptive Speed
         var globalSwinging = 0f
         var globalTraction = 0f
 
         for (node in newNodes.values) {
-            if (node.isFixed) continue
+            if (node.isFixed || node.isLocked) continue
 
             val currentForce = forces[node.id]!!
-
-            // 3a. Calculate Swinging (how much the force vector changed direction)
             val swingingVector = currentForce - node.oldForce
             node.swinging = swingingVector.getDistance()
-
-            // 3b. Calculate Traction (how much force is in a consistent direction)
             val tractionVector = currentForce + node.oldForce
             node.traction = tractionVector.getDistance() / 2f
 
-            // 3c. Sum global values (weighted by mass, which is deg+1)
             globalSwinging += node.mass * node.swinging
             globalTraction += node.mass * node.traction
-
-            // 3d. Store current force for next frame
             node.oldForce = currentForce
         }
 
-        // 3e. Calculate Global Speed
-        // This is the "adaptive cooling" part from FA2 paper
         val globalSpeed = if (globalSwinging > 0) {
             options.tolerance * globalTraction / globalSwinging
         } else {
-            0.1f // Default speed if no movement
-        }.coerceIn(0.01f, 10f) // Add min/max caps
+            0.1f
+        }.coerceIn(0.01f, 10f)
 
-
-        // 4. Update velocities and positions (Euler integration)
+        // 4. Update
         for (node in newNodes.values) {
-            // If node is fixed, set velocity to zero and skip position update
-            if (node.isFixed) {
+            if (node.isFixed || node.isLocked) {
                 node.vel = Offset.Zero
                 continue
             }
 
             val force = forces[node.id]!!
-
-            // F = ma -> a = F/m
             val acceleration = force / node.mass
-
-            // v = v0 + at
             var newVel = node.vel + (acceleration * dt)
-
-            // Apply damping
             newVel *= options.damping
 
-            // Apply FA2 Adaptive Speed
-            // 4a. Calculate Local Speed (slows down swinging nodes)
             val localSpeed = if (node.swinging > 0) {
                 (globalSpeed / (1f + globalSpeed * sqrt(node.swinging))).coerceAtLeast(0.01f)
             } else {
                 globalSpeed
             }
 
-            // 4b. Apply displacement modulated by local speed
-            // We use the localSpeed as a multiplier on the time-step (dt * localSpeed)
             val displacement = newVel * (dt * localSpeed)
-            val newPos = node.pos + displacement
-
-            // Update the node in the map
+            node.pos += displacement
             node.vel = newVel
-            node.pos = newPos
         }
 
         return newNodes
     }
 }
 
-// Helper to normalize offset
 private fun Offset.normalized(): Offset {
     val mag = this.getDistance()
     return if (mag == 0f) Offset.Zero else this / mag

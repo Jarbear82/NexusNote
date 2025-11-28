@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.datamodels.CodexPropertyDataTypes
 import com.tau.nexus_note.datamodels.NodeSchemaCreationState
+import com.tau.nexus_note.datamodels.NodeStyle
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.components.CodexSectionHeader
@@ -30,6 +31,7 @@ import com.tau.nexus_note.utils.toPascalCase
 fun CreateNodeSchemaView(
     state: NodeSchemaCreationState,
     onTableNameChange: (String) -> Unit,
+    onNodeStyleChange: (NodeStyle) -> Unit, // New Callback
     onAddProperty: (SchemaProperty) -> Unit,
     onRemoveProperty: (Int) -> Unit,
     onPropertyChange: (Int, SchemaProperty) -> Unit,
@@ -49,6 +51,7 @@ fun CreateNodeSchemaView(
         Column(
             modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())
         ) {
+            // Table Name
             CodexTextField(
                 value = state.tableName,
                 onValueChange = { onTableNameChange(it.toPascalCase()) },
@@ -59,6 +62,18 @@ fun CreateNodeSchemaView(
             if (state.tableNameError != null) {
                 Text(state.tableNameError, color = MaterialTheme.colorScheme.error, fontSize = density.bodyFontSize)
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Node Style Dropdown
+            CodexDropdown(
+                label = "Visual Style",
+                options = NodeStyle.entries,
+                selectedOption = state.nodeStyle,
+                onOptionSelected = onNodeStyleChange,
+                displayTransform = { it.displayName }
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Properties", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)

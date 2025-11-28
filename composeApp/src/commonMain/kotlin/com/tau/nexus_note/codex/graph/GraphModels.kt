@@ -15,7 +15,10 @@ sealed interface GraphNode {
     val mass: Float
     val radius: Float
     val colorInfo: ColorInfo
-    var isFixed: Boolean
+
+    // Physics State
+    var isFixed: Boolean // Used for dragging or temp locks
+    var isLocked: Boolean // User explicitly locked this node (Persistent in session)
 
     // Physics internals (FA2)
     var oldForce: Offset
@@ -36,12 +39,14 @@ data class GenericGraphNode(
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
+    val displayProperties: Map<String, String>,
     override var pos: Offset,
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -54,8 +59,7 @@ data class GenericGraphNode(
 // 1. Structural Spine Nodes
 data class DocumentGraphNode(
     val title: String,
-    val metaJson: String, // frontmatter
-    // Standard overrides
+    val metaJson: String,
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -65,6 +69,7 @@ data class DocumentGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -77,7 +82,6 @@ data class DocumentGraphNode(
 data class SectionGraphNode(
     val title: String,
     val level: Int,
-    // Standard overrides
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -87,6 +91,7 @@ data class SectionGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -99,7 +104,6 @@ data class SectionGraphNode(
 // 2. Content Nodes
 data class BlockGraphNode(
     val content: String,
-    // Standard overrides
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -109,6 +113,7 @@ data class BlockGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -122,7 +127,6 @@ data class CodeBlockGraphNode(
     val code: String,
     val language: String,
     val caption: String,
-    // Standard overrides
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -132,6 +136,7 @@ data class CodeBlockGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -144,7 +149,6 @@ data class CodeBlockGraphNode(
 data class TableGraphNode(
     val headers: List<String>,
     val data: List<Map<String, String>>,
-    // Standard overrides
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -154,6 +158,7 @@ data class TableGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -166,7 +171,6 @@ data class TableGraphNode(
 // 3. Concept Rib Nodes
 data class TagGraphNode(
     val name: String,
-    // Standard overrides
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -176,6 +180,7 @@ data class TagGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -188,8 +193,7 @@ data class TagGraphNode(
 data class AttachmentGraphNode(
     val filename: String,
     val mimeType: String,
-    val resolvedPath: String, // Absolute path for rendering
-    // Standard overrides
+    val resolvedPath: String,
     override val id: Long,
     override val label: String,
     override val displayProperty: String,
@@ -199,6 +203,7 @@ data class AttachmentGraphNode(
     override val radius: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,

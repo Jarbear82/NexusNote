@@ -9,6 +9,7 @@ import com.tau.nexus_note.codex.crud.create.CreateNodeView
 import com.tau.nexus_note.datamodels.ConnectionPair
 import com.tau.nexus_note.datamodels.EditScreenState
 import com.tau.nexus_note.datamodels.NodeDisplayItem
+import com.tau.nexus_note.datamodels.NodeStyle
 import com.tau.nexus_note.datamodels.SchemaDefinitionItem
 import com.tau.nexus_note.datamodels.SchemaProperty
 
@@ -28,6 +29,7 @@ fun EditItemView(
     onEdgeCreationDstSelected: (NodeDisplayItem) -> Unit,
     onEdgeCreationPropertyChanged: (String, String) -> Unit,
     onNodeSchemaTableNameChange: (String) -> Unit,
+    onNodeSchemaCreationStyleChange: (NodeStyle) -> Unit, // ADDED
     onNodeSchemaPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddNodeSchemaProperty: (SchemaProperty) -> Unit,
     onRemoveNodeSchemaProperty: (Int) -> Unit,
@@ -40,6 +42,7 @@ fun EditItemView(
     onNodeEditPropertyChange: (String, String) -> Unit,
     onEdgeEditPropertyChange: (String, String) -> Unit,
     onNodeSchemaEditLabelChange: (String) -> Unit,
+    onNodeSchemaEditStyleChange: (NodeStyle) -> Unit, // ADDED
     onNodeSchemaEditPropertyChange: (Int, SchemaProperty) -> Unit,
     onNodeSchemaEditAddProperty: (SchemaProperty) -> Unit,
     onNodeSchemaEditRemoveProperty: (Int) -> Unit,
@@ -78,6 +81,7 @@ fun EditItemView(
             CreateNodeSchemaView(
                 state = editScreenState.state,
                 onTableNameChange = onNodeSchemaTableNameChange,
+                onNodeStyleChange = onNodeSchemaCreationStyleChange, // Pass here
                 onPropertyChange = onNodeSchemaPropertyChange,
                 onAddProperty = onAddNodeSchemaProperty,
                 onRemoveProperty = onRemoveNodeSchemaProperty,
@@ -120,6 +124,7 @@ fun EditItemView(
             EditNodeSchemaView(
                 state = editScreenState.state,
                 onLabelChange = onNodeSchemaEditLabelChange,
+                onNodeStyleChange = onNodeSchemaEditStyleChange, // Pass here
                 onPropertyChange = onNodeSchemaEditPropertyChange,
                 onAddProperty = onNodeSchemaEditAddProperty,
                 onRemoveProperty = onNodeSchemaEditRemoveProperty,

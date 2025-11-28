@@ -4,22 +4,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.flow.StateFlow
 
-/**
- * Manages the state for the Settings screen.
- * It receives the master StateFlow from MainViewModel (which is fed by the SettingsRepository)
- * and provides event handlers to update it via a lambda.
- */
 class SettingsViewModel(
-    /**
-     * A flow that emits the current, persisted settings.
-     * The View should collect this.
-     */
     val settingsFlow: StateFlow<SettingsData>,
-
-    /**
-     * A lambda function to call when settings need to be updated.
-     * This will trigger the SettingsRepository to save the new data.
-     */
     private val onUpdateSettings: (SettingsData) -> Unit
 ) {
 
@@ -46,12 +32,9 @@ class SettingsViewModel(
     }
 
     fun onResetTheme() {
-        // Now just resets to the simple default
         val newSettings = settingsFlow.value.copy(theme = ThemeSettings.Default)
         onUpdateSettings(newSettings)
     }
-
-    // --- ADDED: New simplified color handlers ---
 
     fun onAccentColorChange(color: Color) {
         val newSettings = settingsFlow.value.copy(
@@ -122,6 +105,14 @@ class SettingsViewModel(
         onUpdateSettings(newSettings)
     }
 
+    // New: Change layout mode default
+    fun onDefaultLayoutModeChange(mode: GraphLayoutMode) {
+        val newSettings = settingsFlow.value.copy(
+            graphPhysics = settingsFlow.value.graphPhysics.copy(layoutMode = mode)
+        )
+        onUpdateSettings(newSettings)
+    }
+
     fun onResetPhysics() {
         val newSettings = settingsFlow.value.copy(graphPhysics = GraphPhysicsSettings.Default)
         onUpdateSettings(newSettings)
@@ -184,12 +175,7 @@ class SettingsViewModel(
 
     // --- Data ---
     fun onChangeDefaultDirectory() {
-        // This would trigger navigation via the MainViewModel
-        // For now, we just log it
         println("Directory change requested")
-        // NOTE: This action is handled by MainViewModel,
-        // so this function can be modified to call a lambda from MainViewModel
-        // if you want to trigger the directory picker.
     }
 
     fun onAutoLoadLastCodexChange(enabled: Boolean) {

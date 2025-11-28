@@ -85,8 +85,9 @@ class CodexViewModel(
                 metadataViewModel.nodeList,
                 metadataViewModel.edgeList,
                 metadataViewModel.nodeVisibility,
-                metadataViewModel.edgeVisibility
-            ) { nodes, edges, nodeViz, edgeViz ->
+                metadataViewModel.edgeVisibility,
+                repository.schema
+            ) { nodes, edges, nodeViz, edgeViz, schema ->
                 // Basic visibility filtering
                 val visibleNodes = nodes.filter { nodeViz[it.id] ?: true }
                 val visibleNodeIds = visibleNodes.map { it.id }.toSet()
@@ -97,9 +98,9 @@ class CodexViewModel(
                 }
                 // GraphViewModel handles the complex "Collapse/Hide" logic internally now
                 // We pass the "potentially visible" set
-                visibleNodes to visibleEdges
-            }.collectLatest { (visibleNodes, visibleEdges) ->
-                graphViewModel.updateGraphData(visibleNodes, visibleEdges)
+                Triple(visibleNodes, visibleEdges, schema)
+            }.collectLatest { (visibleNodes, visibleEdges, schema) ->
+                graphViewModel.updateGraphData(visibleNodes, visibleEdges, schema)
             }
         }
 

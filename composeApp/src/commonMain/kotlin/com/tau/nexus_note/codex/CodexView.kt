@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.datamodels.NodeDisplayItem
 import com.tau.nexus_note.codex.crud.update.EditItemView
-import com.tau.nexus_note.codex.graph.DetangleSettingsDialog
 import com.tau.nexus_note.codex.graph.GraphView
 import com.tau.nexus_note.codex.metadata.MetadataView
 import com.tau.nexus_note.codex.schema.SchemaView
@@ -37,7 +36,7 @@ fun CodexView(viewModel: CodexViewModel) {
     val selectedViewTab by viewModel.selectedViewTab.collectAsState()
     val isDetailPaneOpen by viewModel.isDetailPaneOpen.collectAsState()
     val graphViewModel = viewModel.graphViewModel
-    val showDetangleDialog by graphViewModel.showDetangleDialog.collectAsState()
+    // Detangle Dialog State Removed - now handled in GraphView overlay
     val nodeSearchText by viewModel.metadataViewModel.nodeSearchText.collectAsState()
     val edgeSearchText by viewModel.metadataViewModel.edgeSearchText.collectAsState()
     val nodeSchemaSearchText by viewModel.schemaViewModel.nodeSchemaSearchText.collectAsState()
@@ -56,14 +55,6 @@ fun CodexView(viewModel: CodexViewModel) {
         }
     }
 
-    LaunchedEffect(selectedViewTab, graphViewModel) {
-        if (selectedViewTab == ViewTabs.GRAPH) {
-            graphViewModel.startSimulation()
-        } else {
-            graphViewModel.stopSimulation()
-        }
-    }
-
     val onSave: () -> Unit = {
         viewModel.editCreateViewModel.saveCurrentState()
         viewModel.metadataViewModel.refreshPaginatedLists()
@@ -75,7 +66,6 @@ fun CodexView(viewModel: CodexViewModel) {
         viewModel.selectDataTab(DataViewTabs.SCHEMA)
     }
 
-    // Use Media Directory Path, not just DB path
     val mediaRootPath = viewModel.repository.mediaDirectoryPath
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -95,7 +85,6 @@ fun CodexView(viewModel: CodexViewModel) {
                                     )
                                 }
                             }
-                            // Export Actions
                             IconButton(onClick = { viewModel.onExportClicked(false) }) {
                                 Icon(Icons.Default.Save, "Save (Export)")
                             }
@@ -178,7 +167,7 @@ fun CodexView(viewModel: CodexViewModel) {
                                             viewModel.editCreateViewModel.initiateEdgeCreation()
                                             viewModel.selectDataTab(DataViewTabs.EDIT)
                                         },
-                                        onDetangleClick = { vm.onShowDetangleDialog() }
+                                        onDetangleClick = { vm.onTriggerLayoutAction() }
                                     )
                                 }
                             }
@@ -302,7 +291,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
                             onCancelClick = onCancel,
-                            mediaRootPath = mediaRootPath, // Updated
+                            mediaRootPath = mediaRootPath,
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },
@@ -311,6 +300,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             onEdgeCreationDstSelected = { viewModel.editCreateViewModel.updateEdgeCreationDst(it) },
                             onEdgeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateEdgeCreationProperty(k, v) },
                             onNodeSchemaTableNameChange = { viewModel.editCreateViewModel.onNodeSchemaTableNameChange(it) },
+                            onNodeSchemaCreationStyleChange = { viewModel.editCreateViewModel.onNodeSchemaStyleChange(it) },
                             onNodeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onNodeSchemaPropertyChange(i, p) },
                             onAddNodeSchemaProperty = { viewModel.editCreateViewModel.onAddNodeSchemaProperty(it) },
                             onRemoveNodeSchemaProperty = { viewModel.editCreateViewModel.onRemoveNodeSchemaProperty(it) },
@@ -323,6 +313,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             onNodeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateNodeEditProperty(k, v) },
                             onEdgeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateEdgeEditProperty(k, v) },
                             onNodeSchemaEditLabelChange = { viewModel.editCreateViewModel.updateNodeSchemaEditLabel(it) },
+                            onNodeSchemaEditStyleChange = { viewModel.editCreateViewModel.updateNodeSchemaEditStyle(it) },
                             onNodeSchemaEditPropertyChange = { i, p -> viewModel.editCreateViewModel.updateNodeSchemaEditProperty(i, p) },
                             onNodeSchemaEditAddProperty = { viewModel.editCreateViewModel.updateNodeSchemaEditAddProperty(it) },
                             onNodeSchemaEditRemoveProperty = { viewModel.editCreateViewModel.updateNodeSchemaEditRemoveProperty(it) },
@@ -337,12 +328,5 @@ fun CodexView(viewModel: CodexViewModel) {
                 }
             }
         )
-
-        if (showDetangleDialog) {
-            DetangleSettingsDialog(
-                onDismiss = { graphViewModel.onDismissDetangleDialog() },
-                onDetangle = { alg, params -> graphViewModel.startDetangle(alg, params) }
-            )
-        }
     }
 }

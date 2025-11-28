@@ -15,6 +15,7 @@ import com.tau.nexus_note.datamodels.SchemaDefinitionItem
 import com.tau.nexus_note.datamodels.SchemaProperty
 import com.tau.nexus_note.codex.schema.SchemaData
 import com.tau.nexus_note.datamodels.CodexPropertyDataTypes
+import com.tau.nexus_note.datamodels.NodeStyle
 import com.tau.nexus_note.doc_parser.StandardSchemas
 import com.tau.nexus_note.doc_parser.DocumentNode
 import kotlinx.coroutines.CoroutineScope
@@ -71,7 +72,18 @@ class CodexRepository(
 
                 if (dbSchema.type == "NODE") {
                     nodeSchemas.add(
-                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, null)
+                        SchemaDefinitionItem(
+                            id = dbSchema.id,
+                            type = dbSchema.type,
+                            name = dbSchema.name,
+                            properties = properties,
+                            connections = null,
+                            nodeStyle = try {
+                                NodeStyle.valueOf(dbSchema.node_style)
+                            } catch (e: Exception) {
+                                NodeStyle.GENERIC
+                            }
+                        )
                     )
                 } else if (dbSchema.type == "EDGE") {
                     val connections = dbSchema.connections_json
@@ -112,7 +124,8 @@ class CodexRepository(
                         displayProperty = dbNode.display_label,
                         schemaId = nodeSchema.id,
                         backgroundImagePath = bgPath,
-                        properties = dbNode.properties_json // Pass raw properties
+                        properties = dbNode.properties_json,
+                        style = nodeSchema.nodeStyle
                     )
                 }
             }
@@ -169,7 +182,8 @@ class CodexRepository(
                         displayProperty = dbNode.display_label,
                         schemaId = nodeSchema.id,
                         backgroundImagePath = bgPath,
-                        properties = dbNode.properties_json
+                        properties = dbNode.properties_json,
+                        style = nodeSchema.nodeStyle
                     )
                 }
             }
@@ -300,7 +314,8 @@ class CodexRepository(
                     type = "NODE",
                     name = state.tableName,
                     properties_json = state.properties,
-                    connections_json = emptyList()
+                    connections_json = emptyList(),
+                    node_style = state.nodeStyle.name
                 )
                 refreshSchema()
             } catch (e: Exception) {
@@ -316,7 +331,8 @@ class CodexRepository(
                     type = "EDGE",
                     name = state.tableName,
                     properties_json = state.properties,
-                    connections_json = state.connections
+                    connections_json = state.connections,
+                    node_style = "GENERIC" // Edge schema doesn't use this
                 )
                 refreshSchema()
             } catch (e: Exception) {
@@ -332,7 +348,8 @@ class CodexRepository(
                     id = state.originalSchema.id,
                     name = state.currentName,
                     properties_json = state.properties,
-                    connections_json = emptyList()
+                    connections_json = emptyList(),
+                    node_style = state.currentNodeStyle.name
                 )
                 refreshSchema()
                 refreshNodes()
@@ -349,7 +366,8 @@ class CodexRepository(
                     id = state.originalSchema.id,
                     name = state.currentName,
                     properties_json = state.properties,
-                    connections_json = state.connections
+                    connections_json = state.connections,
+                    node_style = "GENERIC"
                 )
                 refreshSchema()
                 refreshEdges()
@@ -409,7 +427,8 @@ class CodexRepository(
                     displayProperty = displayLabel,
                     schemaId = state.schema.id,
                     backgroundImagePath = bgPath,
-                    properties = state.properties
+                    properties = state.properties,
+                    style = state.schema.nodeStyle
                 )
 
                 _nodeList.update { currentList ->
@@ -500,17 +519,18 @@ class CodexRepository(
     suspend fun bootstrapDocumentSchemas() = withContext(Dispatchers.IO) {
         // ... (Existing schema definitions) ...
         val schemaDefinitions = mapOf(
-            StandardSchemas.DOC_NODE_DOCUMENT to listOf(StandardSchemas.PROP_URI, StandardSchemas.PROP_NAME, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_FRONTMATTER),
-            StandardSchemas.DOC_NODE_SECTION to listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL),
-            StandardSchemas.DOC_NODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT),
-            StandardSchemas.DOC_NODE_CODE_BLOCK to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, StandardSchemas.PROP_FILENAME, StandardSchemas.PROP_CAPTION),
-            StandardSchemas.DOC_NODE_CALLOUT to listOf(StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_IS_FOLDABLE),StandardSchemas.DOC_NODE_TABLE to listOf(StandardSchemas.PROP_HEADERS, StandardSchemas.PROP_DATA, StandardSchemas.PROP_CAPTION),
-            StandardSchemas.DOC_NODE_ORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_NUMBER),
-            StandardSchemas.DOC_NODE_UNORDERED_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_BULLET_CHAR),
-            StandardSchemas.DOC_NODE_TASK_ITEM to listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_CHECKED, StandardSchemas.PROP_MARKER),
-            StandardSchemas.DOC_NODE_TAG to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_NESTED_PATH),
-            StandardSchemas.DOC_NODE_URL to listOf(StandardSchemas.PROP_ADDRESS, StandardSchemas.PROP_DOMAIN),
-            StandardSchemas.DOC_NODE_ATTACHMENT to listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_MIME_TYPE, StandardSchemas.PROP_URI)
+            StandardSchemas.DOC_NODE_DOCUMENT to Pair(listOf(StandardSchemas.PROP_URI, StandardSchemas.PROP_NAME, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_FRONTMATTER), NodeStyle.DOCUMENT),
+            StandardSchemas.DOC_NODE_SECTION to Pair(listOf(StandardSchemas.PROP_TITLE, StandardSchemas.PROP_LEVEL), NodeStyle.SECTION),
+            StandardSchemas.DOC_NODE_BLOCK to Pair(listOf(StandardSchemas.PROP_CONTENT), NodeStyle.BLOCK),
+            StandardSchemas.DOC_NODE_CODE_BLOCK to Pair(listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_LANGUAGE, StandardSchemas.PROP_FILENAME, StandardSchemas.PROP_CAPTION), NodeStyle.CODE_BLOCK),
+            StandardSchemas.DOC_NODE_CALLOUT to Pair(listOf(StandardSchemas.PROP_CALLOUT_TYPE, StandardSchemas.PROP_TITLE, StandardSchemas.PROP_IS_FOLDABLE), NodeStyle.GENERIC),
+            StandardSchemas.DOC_NODE_TABLE to Pair(listOf(StandardSchemas.PROP_HEADERS, StandardSchemas.PROP_DATA, StandardSchemas.PROP_CAPTION), NodeStyle.TABLE),
+            StandardSchemas.DOC_NODE_ORDERED_ITEM to Pair(listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_NUMBER), NodeStyle.BLOCK),
+            StandardSchemas.DOC_NODE_UNORDERED_ITEM to Pair(listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_BULLET_CHAR), NodeStyle.BLOCK),
+            StandardSchemas.DOC_NODE_TASK_ITEM to Pair(listOf(StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_IS_CHECKED, StandardSchemas.PROP_MARKER), NodeStyle.BLOCK),
+            StandardSchemas.DOC_NODE_TAG to Pair(listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_NESTED_PATH), NodeStyle.TAG),
+            StandardSchemas.DOC_NODE_URL to Pair(listOf(StandardSchemas.PROP_ADDRESS, StandardSchemas.PROP_DOMAIN), NodeStyle.GENERIC),
+            StandardSchemas.DOC_NODE_ATTACHMENT to Pair(listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_MIME_TYPE, StandardSchemas.PROP_URI), NodeStyle.ATTACHMENT)
         )
 
         val edgeDefinitions = mapOf(
@@ -534,7 +554,10 @@ class CodexRepository(
         }
 
         try {
-            schemaDefinitions.forEach { (name, props) ->
+            schemaDefinitions.forEach { (name, pair) ->
+                val props = pair.first
+                val style = pair.second
+
                 dbService.database.appDatabaseQueries.insertSchema(
                     type = "NODE",
                     name = name,
@@ -544,7 +567,8 @@ class CodexRepository(
                         val isBackground = (name == StandardSchemas.DOC_NODE_ATTACHMENT && it == StandardSchemas.PROP_URI)
                         SchemaProperty(it, getTypeForProp(it), isDisplay, isBackground)
                     },
-                    connections_json = emptyList()
+                    connections_json = emptyList(),
+                    node_style = style.name
                 )
             }
 
@@ -553,7 +577,8 @@ class CodexRepository(
                     type = "EDGE",
                     name = name,
                     properties_json = props,
-                    connections_json = emptyList()
+                    connections_json = emptyList(),
+                    node_style = "GENERIC"
                 )
             }
             refreshSchema()

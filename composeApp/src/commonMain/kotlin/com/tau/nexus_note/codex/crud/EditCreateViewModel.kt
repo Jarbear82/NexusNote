@@ -16,6 +16,7 @@ import com.tau.nexus_note.CodexRepository
 import com.tau.nexus_note.datamodels.CodexPropertyDataTypes
 import com.tau.nexus_note.datamodels.EdgeDisplayItem
 import com.tau.nexus_note.datamodels.NodeDisplayItem
+import com.tau.nexus_note.datamodels.NodeStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -260,6 +261,13 @@ class EditCreateViewModel(
         }
     }
 
+    fun onNodeSchemaStyleChange(style: NodeStyle) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(nodeStyle = style))
+        }
+    }
+
     fun onNodeSchemaPropertyChange(index: Int, property: SchemaProperty) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNodeSchema) return@update current
@@ -426,6 +434,7 @@ class EditCreateViewModel(
             NodeSchemaEditState(
                 originalSchema = schema,
                 currentName = schema.name,
+                currentNodeStyle = schema.nodeStyle, // Populate
                 properties = schema.properties
             )
         )
@@ -436,6 +445,13 @@ class EditCreateViewModel(
             if (current !is EditScreenState.EditNodeSchema) return@update current
             val error = isSchemaNameUnique(label, current.state.originalSchema.id)
             current.copy(state = current.state.copy(currentName = label, currentNameError = error))
+        }
+    }
+
+    fun updateNodeSchemaEditStyle(style: NodeStyle) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNodeSchema) return@update current
+            current.copy(state = current.state.copy(currentNodeStyle = style))
         }
     }
 

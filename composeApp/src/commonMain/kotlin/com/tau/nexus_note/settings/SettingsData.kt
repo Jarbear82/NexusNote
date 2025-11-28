@@ -10,7 +10,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
 import kotlinx.serialization.Serializable
 
-// NEW: Enum to represent the settings categories for the UI
 enum class SettingsCategory(
     val title: String,
     val icon: ImageVector
@@ -22,45 +21,42 @@ enum class SettingsCategory(
     ABOUT("About", Icons.Default.Info)
 }
 
-/**
- * Enumeration for the possible theme modes.
- */
 @Serializable
 enum class ThemeMode {
     LIGHT, DARK, SYSTEM, CUSTOM
 }
 
-/**
- * Enumeration for UI Density Modes.
- */
 @Serializable
 enum class DensityMode {
     COMPACT, COMFORTABLE, LARGE
 }
 
 /**
- * Holds all settings related to a custom color theme.
- * All colors are stored as Longs (ARGB). "On" colors are derived automatically.
+ * Defines the operational mode of the Graph View.
  */
+@Serializable
+enum class GraphLayoutMode(val displayName: String) {
+    CONTINUOUS("Continuous (Simulation)"),
+    COMPUTED("Computed (Static)"),
+    HIERARCHICAL("Hierarchical (Tree)")
+}
+
 @Serializable
 data class ThemeSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val densityMode: DensityMode = DensityMode.COMFORTABLE,
-    val useRoundedCorners: Boolean = false, // Default to square corners
-    val accentColor: Long = 0xFF33C3FF, // A nice default blue accent
-    val customBackgroundColor: Long = 0xFF121212 // Default custom background (dark)
+    val useRoundedCorners: Boolean = false,
+    val accentColor: Long = 0xFF33C3FF,
+    val customBackgroundColor: Long = 0xFF121212
 ) {
     companion object {
         val Default = ThemeSettings()
     }
 }
 
-/**
- * Holds settings for default graph physics.
- * This re-uses the PhysicsOptions data class.
- */
 @Serializable
 data class GraphPhysicsSettings(
+    val layoutMode: GraphLayoutMode = GraphLayoutMode.CONTINUOUS, // New Field
     val options: PhysicsOptions = PhysicsOptions(
         gravity = 0.5f,
         repulsion = 2000f,
@@ -78,57 +74,47 @@ data class GraphPhysicsSettings(
     }
 }
 
-/**
- * Holds settings for graph rendering.
- */
 @Serializable
 data class GraphRenderingSettings(
-    val startSimulationOnLoad: Boolean = true,
     val showNodeLabels: Boolean = true,
     val showEdgeLabels: Boolean = true,
-    val showCrosshairs: Boolean = true
+    val showCrosshairs: Boolean = true,
+    // "startSimulationOnLoad" is largely superseded by layoutMode, but kept for legacy compat if needed
+    val startSimulationOnLoad: Boolean = true
 ) {
     companion object {
         val Default = GraphRenderingSettings()
     }
 }
 
-/**
- * Holds settings for graph interaction.
- */
 @Serializable
 data class GraphInteractionSettings(
     val zoomSensitivity: Float = 1.0f,
     val nodeBaseRadius: Float = 15f,
-    val nodeRadiusEdgeFactor: Float = 2.0f
+    val nodeRadiusEdgeFactor: Float = 2.0f,
+    val snapToGrid: Boolean = false // Could be reused for "Lock on Drag" default
 ) {
     companion object {
         val Default = GraphInteractionSettings()
     }
 }
 
-/**
- * Holds settings for data and codex file management.
- */
 @Serializable
 data class DataSettings(
     val defaultCodexDirectory: String = com.tau.nexus_note.utils.getHomeDirectoryPath(),
     val autoLoadLastCodex: Boolean = false,
     val autoRefreshCodex: Boolean = false,
-    val refreshInterval: Float = 60f // in seconds
+    val refreshInterval: Float = 60f
 ) {
     companion object {
         val Default = DataSettings()
     }
 }
 
-/**
- * Holds settings for general application behavior settings.
- */
 @Serializable
 data class GeneralSettings(
-    val startupScreen: String = "Nexus", // "Nexus" or "Last Codex"
-    val defaultCodexView: String = "Graph", // "Graph" or "List"
+    val startupScreen: String = "Nexus",
+    val defaultCodexView: String = "Graph",
     val confirmNodeEdgeDeletion: Boolean = true,
     val confirmSchemaDeletion: Boolean = true,
     val defaultMarkdownFlavor: String = "Obsidian"
@@ -138,9 +124,6 @@ data class GeneralSettings(
     }
 }
 
-/**
- * Root data class holding all application settings.
- */
 @Serializable
 data class SettingsData(
     val theme: ThemeSettings = ThemeSettings.Default,
@@ -151,9 +134,6 @@ data class SettingsData(
     val general: GeneralSettings = GeneralSettings.Default
 ) {
     companion object {
-        /*
-         * The master default settings for the entire application.
-         */
         val Default = SettingsData()
     }
 }

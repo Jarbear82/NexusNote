@@ -32,7 +32,6 @@ fun SettingsView(
     val density = LocalDensityTokens.current
 
     Row(modifier = Modifier.fillMaxSize()) {
-        // --- Navigation Rail ---
         NavigationRail(
             modifier = Modifier.fillMaxHeight().width(density.navRailWidth),
             containerColor = MaterialTheme.colorScheme.surface
@@ -49,7 +48,6 @@ fun SettingsView(
             }
         }
 
-        // --- Content Area ---
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
@@ -161,6 +159,16 @@ private fun GraphSettingsSection(settings: SettingsData, viewModel: SettingsView
 
 @Composable
 private fun GraphPhysicsSubSection(physics: GraphPhysicsSettings, viewModel: SettingsViewModel) {
+    // New: Default Layout Mode selection
+    CodexDropdown(
+        label = "Default Layout Mode",
+        options = GraphLayoutMode.entries,
+        selectedOption = physics.layoutMode,
+        onOptionSelected = { viewModel.onDefaultLayoutModeChange(it) },
+        displayTransform = { it.displayName },
+        modifier = Modifier.padding(bottom = 16.dp)
+    )
+
     InfoCard("Recommended Defaults: Gravity: 0.5, Repulsion: 2000, Spring: 0.1, Damping: 0.9, Barnes-Hut: 1.2, Tolerance: 1.0")
     SettingSlider("Gravity", physics.options.gravity, viewModel::onGravityChange, 0f..2f)
     SettingSlider("Repulsion", physics.options.repulsion, viewModel::onRepulsionChange, 0f..10000f)

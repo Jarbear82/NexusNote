@@ -2,14 +2,20 @@ package com.tau.nexus_note.codex.graph
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -17,6 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.kamel.image.KamelImage
@@ -195,13 +203,95 @@ fun TableNodeView(node: TableGraphNode, modifier: Modifier = Modifier) {
 // --- 8. Default Fallback ---
 @Composable
 fun DefaultNodeView(node: GenericGraphNode, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(node.radius.dp * 2)
-            .background(node.colorInfo.composeColor, CircleShape)
-            .border(2.dp, Color.White, CircleShape),
-        contentAlignment = Alignment.Center
+    var expanded by remember { mutableStateOf(false) }
+    // Ensure text is legible against the card background
+    val fontColor = node.colorInfo.composeFontColor
+
+    Card(
+        modifier = modifier.width(280.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        // Just a simple circle
+        Column(modifier = Modifier.padding(12.dp)) {
+            // 1. Small text in top corner for Schema Name
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    text = node.label.uppercase(),
+                    color = fontColor.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // 2. Main Title (Display Property)
+            Text(
+                text = node.displayProperty,
+                color = fontColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                color = fontColor.copy(alpha = 0.2f)
+            )
+
+            // 3. Properties List (Ellipsed > 3)
+            if (node.displayProperties.isNotEmpty()) {
+                val propertyLimit = 3
+                val shouldCollapse = node.displayProperties.size > propertyLimit
+                val propertiesToShow = if (expanded || !shouldCollapse) {
+                    node.displayProperties.entries.toList()
+                } else {
+                    node.displayProperties.entries.take(propertyLimit).toList()
+                }
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    propertiesToShow.forEach { (key, value) ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text(
+                                text = "$key: ",
+                                color = fontColor.copy(alpha = 0.8f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = value,
+                                color = fontColor,
+                                fontSize = 12.sp,
+                                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                if (shouldCollapse) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (expanded) "Show Less" else "Show More...",
+                        color = fontColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier
+                            .clickable { expanded = !expanded }
+                            .padding(4.dp)
+                            .align(Alignment.End)
+                    )
+                }
+            }
+        }
     }
 }
