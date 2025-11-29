@@ -50,24 +50,61 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         sourceDirectory: String
     ): Result<Unit> {
         return try {
+            // 1. Extract Frontmatter & Body
+            val (frontmatterMap, bodyContent) = extractFrontmatter(content)
+            val frontmatterJson = json.encodeToString(frontmatterMap)
+
             val fileName = fileUri.substringAfterLast('/').substringBeforeLast('.')
+
+            // 2. Create Root Node with Frontmatter (Map Node logic)
             val rootNode = DocRootNode(
                 filepath = fileUri,
                 name = fileName,
-                createdAt = 0L
+                createdAt = 0L,
+                frontmatterJson = frontmatterJson
             )
             val rootId = repository.insertDocumentNode(rootNode)
 
-            val parsedTree = parser.buildMarkdownTreeFromString(content)
+            // 3. Parse Body AST
+            val parsedTree = parser.buildMarkdownTreeFromString(bodyContent)
             val spineStack = Stack<SpineContext>()
             spineStack.push(SpineContext(rootId, 0))
 
-            walkTree(parsedTree, content, spineStack, sourceDirectory)
+            walkTree(parsedTree, bodyContent, spineStack, sourceDirectory)
 
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun extractFrontmatter(fullText: String): Pair<Map<String, String>, String> {
+        val trimmed = fullText.trimStart()
+        // Frontmatter must start on the first line with ---
+        if (!trimmed.startsWith("---")) return Pair(emptyMap(), fullText)
+
+        // Find the closing ---
+        // We look for \n--- to ensure it's a separate line
+        val endIdx = trimmed.indexOf("\n---", 3)
+        if (endIdx == -1) return Pair(emptyMap(), fullText)
+
+        val yamlBlock = trimmed.substring(3, endIdx)
+        val body = trimmed.substring(endIdx + 4).trimStart() // +4 to skip \n---
+
+        val map = mutableMapOf<String, String>()
+        yamlBlock.lines().forEach { line ->
+            val parts = line.split(":", limit = 2)
+            if (parts.size == 2) {
+                val key = parts[0].trim()
+                // Remove quotes if present
+                val value = parts[1].trim().removeSurrounding("\"").removeSurrounding("'")
+                if (key.isNotBlank()) {
+                    map[key] = value
+                }
+            }
+        }
+
+        return Pair(map, body)
     }
 
     private suspend fun walkTree(node: ASTNode, rawText: String, spineStack: Stack<SpineContext>, sourceDir: String) {
@@ -76,14 +113,14 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             return
         }
 
-        // --- NEW: Consolidated List Handling ---
+        // --- Consolidated List Handling (LIST Node) ---
         // If we hit a list container, process it as a single node instead of recursing immediately
         if (node.type == MarkdownElementTypes.ORDERED_LIST || node.type == MarkdownElementTypes.UNORDERED_LIST) {
             processConsolidatedList(node, rawText, spineStack, sourceDir)
             return
         }
 
-        // 1. Map AST to DocumentNode
+        // 1. Map AST to DocumentNode (HEADING, LONG_TEXT)
         val docNode = mapAstToDocumentNode(node, rawText)
 
         // 2. Recursion for Containers (BlockQuotes)
@@ -104,10 +141,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         // 4. Templating & Rib Extraction
         val finalDocNode = when (docNode) {
             is BlockNode -> processBlockContent(docNode, sourceDir)
-            // Lists are now handled separately, so these cases are unreachable via mapAst, but good to keep safe
-            is OrderedListItemNode -> docNode
-            is UnorderedListItemNode -> docNode
-            is TaskListItemNode -> docNode
             else -> docNode
         }
 
@@ -304,10 +337,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         return ExtractionResult(processedText, edgeActions)
     }
 
-    /**
-     * Copies the file from sourceDir to the Codex media directory.
-     * Returns the relative filename to be stored in the database.
-     */
     private fun handleAttachmentImport(relativePath: String, sourceDir: String): String {
         val sourceFile = File(sourceDir, relativePath)
 

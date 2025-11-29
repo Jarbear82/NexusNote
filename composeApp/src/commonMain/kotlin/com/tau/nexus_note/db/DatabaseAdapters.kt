@@ -7,11 +7,12 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 /**
  * Reusable Json instance for database serialization.
  */
-private val dbJson = Json {
+val dbJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
     coerceInputValues = true
@@ -52,6 +53,7 @@ val connectionPairAdapter = object : ColumnAdapter<List<ConnectionPair>, String>
 /**
  * Adapter for `Node.properties_json` and `Edge.properties_json`
  * Converts Map<String, String> to/from a JSON String.
+ * (Retained for legacy/migration if needed, but primary use is now jsonContentAdapter)
  */
 val stringMapAdapter = object : ColumnAdapter<Map<String, String>, String> {
     override fun decode(databaseValue: String): Map<String, String> {
@@ -59,5 +61,19 @@ val stringMapAdapter = object : ColumnAdapter<Map<String, String>, String> {
     }
     override fun encode(value: Map<String, String>): String {
         return dbJson.encodeToString(MapSerializer(String.serializer(), String.serializer()), value)
+    }
+}
+
+/**
+ * NEW: Polymorphic Content Adapter.
+ * Stores arbitrary JSON (Primitive, Array, or Object) in the database.
+ */
+val jsonContentAdapter = object : ColumnAdapter<JsonElement, String> {
+    override fun decode(databaseValue: String): JsonElement {
+        return dbJson.parseToJsonElement(databaseValue)
+    }
+
+    override fun encode(value: JsonElement): String {
+        return dbJson.encodeToString(JsonElement.serializer(), value)
     }
 }

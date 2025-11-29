@@ -1,34 +1,34 @@
--- AppDatabase.sq
 import com.tau.nexus_note.datamodels.SchemaProperty;
 import com.tau.nexus_note.datamodels.ConnectionPair;
+import kotlinx.serialization.json.JsonElement;
 import kotlin.collections.List;
 
 CREATE TABLE SchemaDefinition (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
-name TEXT NOT NULL UNIQUE,
-properties_json TEXT AS List<SchemaProperty> NOT NULL,
-connections_json TEXT AS List<ConnectionPair> NOT NULL,
-node_style TEXT NOT NULL DEFAULT 'GENERIC'
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
+    name TEXT NOT NULL UNIQUE,
+    properties_json TEXT AS List<SchemaProperty> NOT NULL,
+    connections_json TEXT AS List<ConnectionPair> NOT NULL,
+    node_style TEXT NOT NULL DEFAULT 'GENERIC'
 );
 
 CREATE TABLE Node (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-schema_id INTEGER NOT NULL,
-display_label TEXT NOT NULL,
-properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
-FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    schema_id INTEGER NOT NULL,
+    display_label TEXT NOT NULL,
+    properties_json TEXT AS JsonElement NOT NULL,
+    FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE
 );
 
 CREATE TABLE Edge (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-schema_id INTEGER NOT NULL,
-from_node_id INTEGER NOT NULL,
-to_node_id INTEGER NOT NULL,
-properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
-FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
-FOREIGN KEY(from_node_id) REFERENCES Node(id) ON DELETE CASCADE,
-FOREIGN KEY(to_node_id) REFERENCES Node(id) ON DELETE CASCADE
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    schema_id INTEGER NOT NULL,
+    from_node_id INTEGER NOT NULL,
+    to_node_id INTEGER NOT NULL,
+    properties_json TEXT AS JsonElement NOT NULL,
+    FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
+    FOREIGN KEY(from_node_id) REFERENCES Node(id) ON DELETE CASCADE,
+    FOREIGN KEY(to_node_id) REFERENCES Node(id) ON DELETE CASCADE
 );
 
 --- SchemaDefinition Queries ---

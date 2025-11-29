@@ -28,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -105,7 +104,6 @@ fun GraphView(
     LaunchedEffect(density) { viewModel.updateDensity(density) }
 
     val textMeasurer = rememberTextMeasurer()
-    // Inject TextMeasurer for squarifier logic
     LaunchedEffect(textMeasurer) { viewModel.updateTextMeasurer(textMeasurer) }
 
     val velocityTracker = remember { VelocityTracker() }
@@ -456,18 +454,16 @@ fun NodeWrapper(
             Box(Modifier.matchParentSize().border(2.dp, Color.Green, androidx.compose.foundation.shape.CircleShape))
         }
 
-        // Render the specific Node Content
+        // Render the specific Node Content using the new Structural Hierarchy
         when(node) {
-            is SectionGraphNode -> SectionNodeView(node)
-            is DocumentGraphNode -> DocumentNodeView(node)
-            is BlockGraphNode -> BlockNodeView(node)
-            is CodeBlockGraphNode -> CodeBlockView(node)
-            is TableGraphNode -> TableNodeView(node)
-            is TagGraphNode -> TagNodeView(node)
-            is AttachmentGraphNode -> AttachmentNodeView(node)
+            is HeadingGraphNode -> HeadingRenderer(node)
+            is ShortTextGraphNode -> ShortTextRenderer(node)
+            is LongTextGraphNode -> LongTextRenderer(node)
+            is ListGraphNode -> ListRenderer(node)
+            is MapGraphNode -> MapRenderer(node)
+            is CodeGraphNode -> CodeRenderer(node)
+            is TableGraphNode -> TableRenderer(node) // ADDED
             is ClusterNode -> ClusterNodeView(node)
-            is ListGraphNode -> ListNodeView(node)
-            else -> DefaultNodeView(node as GenericGraphNode)
         }
 
         // Lock Icon (Top Left)
@@ -480,26 +476,23 @@ fun NodeWrapper(
             )
         }
 
-        // Expand/Collapse Icon (Bottom Right) -- FIXED LOCATION
-        val showExpand = node is BlockGraphNode || node is CodeBlockGraphNode || node is ListGraphNode || node is TableGraphNode
-        if (showExpand) {
-            val icon = if (node.isExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore
-            IconButton(
-                onClick = onToggleExpand,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd) // Moved from TopEnd
-                    .offset(x = 8.dp, y = 8.dp) // Adjusted offset for bottom corner
-                    .size(24.dp)
-                    .background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.CircleShape)
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = if(node.isExpanded) "Collapse" else "Expand",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurface
-                )
-            }
+        // Expand/Collapse Icon (Bottom Right)
+        val icon = if (node.isExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore
+        IconButton(
+            onClick = onToggleExpand,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = 8.dp, y = 8.dp)
+                .size(24.dp)
+                .background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.CircleShape)
+        ) {
+            Icon(
+                icon,
+                contentDescription = if(node.isExpanded) "Collapse" else "Expand",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }

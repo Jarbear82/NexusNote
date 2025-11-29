@@ -6,16 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material.icons.filled.UnfoldLess
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,14 +27,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tau.nexus_note.ui.components.Icon
-import com.tau.nexus_note.ui.components.IconButton
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
 import dev.snipme.highlights.model.ColorHighlight
@@ -47,161 +41,164 @@ import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import java.io.File
 
-// --- Helper: Convert SnipMe Highlights to Compose AnnotatedString ---
-fun Highlights.toAnnotatedString(): AnnotatedString {
-    return buildAnnotatedString {
-        append(getCode())
-        getHighlights().forEach { highlight ->
-            val style = when (highlight) {
-                is ColorHighlight -> SpanStyle(color = Color(highlight.rgb.toLong() and 0xFFFFFFFFL))
-                is BoldHighlight -> SpanStyle(fontWeight = FontWeight.Bold)
-            }
-            addStyle(style, highlight.location.start, highlight.location.end)
-        }
-    }
-}
-
-// --- 1. Section Node (The Blue Header) ---
+// --- 1. Heading Renderer (Documents, Sections) ---
 @Composable
-fun SectionNodeView(node: SectionGraphNode, modifier: Modifier = Modifier) {
+fun HeadingRenderer(node: HeadingGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+    val fontSize = if (node.level == 1) 24.sp else 18.sp
+
     Card(
-        modifier = modifier.width(280.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1976D2)), // Blue
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+        modifier = modifier.width(if(isExpanded) node.width.dp else 200.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor.copy(alpha = 0.8f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if(node.level == 1) 8.dp else 4.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Box(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = node.title,
-                color = Color.White,
+                color = node.colorInfo.composeFontColor,
+                fontSize = fontSize,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-            Text(
-                text = "Level ${node.level}",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 12.sp
+                maxLines = if(isExpanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-// --- 2. Document Node (The Root) ---
+// --- 2. Short Text Renderer (Tags, Attachments) ---
 @Composable
-fun DocumentNodeView(node: DocumentGraphNode, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.width(300.dp),
-        shape = RoundedCornerShape(4.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF263238)), // Dark Grey
-        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+fun ShortTextRenderer(node: ShortTextGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+
+    if (node.backgroundImagePath != null && File(node.backgroundImagePath).exists()) {
+        Card(
+            modifier = modifier.size(if(isExpanded) 200.dp else 80.dp),
+            shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            KamelImage(
+                resource = { asyncPainterResource(data = File(node.backgroundImagePath).toURI().toString()) },
+                contentDescription = node.label,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        return
+    }
+
+    Surface(
+        modifier = modifier.defaultMinSize(minWidth = 100.dp),
+        shape = RoundedCornerShape(50),
+        color = node.colorInfo.composeColor,
+        shadowElevation = 4.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha=0.3f))
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(
-                text = "DOCUMENT",
-                color = Color(0xFF90CAF9),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = node.label, // Name
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
+                text = node.text,
+                color = node.colorInfo.composeFontColor,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-// --- 3. Block Node (The Content) ---
+// --- 3. Long Text Renderer (Blocks, Content) ---
 @Composable
-fun BlockNodeView(node: BlockGraphNode, modifier: Modifier = Modifier) {
+fun LongTextRenderer(node: LongTextGraphNode, modifier: Modifier = Modifier) {
     val isExpanded = node.isExpanded
 
     Card(
-        modifier = modifier.width(if(isExpanded) node.width.dp else 250.dp), // Use physics width if expanded
+        modifier = modifier.width(if(isExpanded) node.width.dp else 250.dp),
         shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFEEEEEE)), // Light Gray
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = node.content,
-                color = Color.Black,
+                color = node.colorInfo.composeFontColor,
                 fontSize = 14.sp,
-                maxLines = if(isExpanded) Int.MAX_VALUE else 5,
                 lineHeight = 20.sp,
+                maxLines = if(isExpanded) Int.MAX_VALUE else 6,
                 overflow = TextOverflow.Ellipsis
             )
-            if (!isExpanded && node.content.length > 100) {
-                Text("...", color = Color.Gray, fontSize = 12.sp)
-            }
         }
     }
 }
 
-// --- 4. Tag Node (The Pill) ---
+// --- 4. Map Renderer (Key-Value Tables) ---
 @Composable
-fun TagNodeView(node: TagGraphNode, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .background(Color(0xFFE8F5E9), CircleShape) // Light Green
-            .border(1.dp, Color(0xFF43A047), CircleShape)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = "#${node.name}",
-            color = Color(0xFF2E7D32),
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
+fun MapRenderer(node: MapGraphNode, modifier: Modifier = Modifier) {
+    var expanded by remember { mutableStateOf(false) }
+    val fontColor = node.colorInfo.composeFontColor
 
-// --- 5. Image / Attachment Node ---
-@Composable
-fun AttachmentNodeView(node: AttachmentGraphNode, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.width(200.dp).height(150.dp),
-        shape = RoundedCornerShape(12.dp),
+        modifier = modifier.width(280.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        if (node.resolvedPath.isNotBlank()) {
-            val file = File(node.resolvedPath)
-            if (file.exists()) {
-                KamelImage(
-                    resource = { asyncPainterResource(data = file.toURI().toString()) },
-                    contentDescription = node.filename,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                    onLoading = {
-                        Box(Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
-                            Text("Loading...", color = Color.White, fontSize = 10.sp)
-                        }
-                    },
-                    onFailure = {
-                        Box(Modifier.fillMaxSize().background(Color.Red.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
-                            Text("Error", color = Color.White)
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    text = node.label.uppercase(),
+                    color = fontColor.copy(alpha = 0.7f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (node.title != null) {
+                Text(
+                    text = node.title,
+                    color = fontColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = fontColor.copy(alpha = 0.2f))
+
+            if (node.data.isNotEmpty()) {
+                val propertyLimit = 3
+                val shouldCollapse = node.data.size > propertyLimit
+                val propertiesToShow = if (expanded || !shouldCollapse) node.data.entries.toList() else node.data.entries.take(propertyLimit).toList()
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    propertiesToShow.forEach { (key, value) ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Text("$key: ", color = fontColor.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(value, color = fontColor, fontSize = 12.sp, maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
-                )
-            } else {
-                Box(Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
-                    Text("File Missing", color = Color.White)
                 }
-            }
-        } else {
-            Box(Modifier.fillMaxSize().background(Color.LightGray), contentAlignment = Alignment.Center) {
-                Text(node.filename)
+
+                if (shouldCollapse) {
+                    Text(
+                        text = if (expanded) "Show Less" else "Show More...",
+                        color = fontColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier.clickable { expanded = !expanded }.padding(top = 8.dp).align(Alignment.End)
+                    )
+                }
             }
         }
     }
 }
 
-// --- 6. Code Block ---
+// --- 5. Code Renderer ---
 @Composable
-fun CodeBlockView(node: CodeBlockGraphNode, modifier: Modifier = Modifier) {
+fun CodeRenderer(node: CodeGraphNode, modifier: Modifier = Modifier) {
     val isExpanded = node.isExpanded
 
-    // Highlight Logic using SnipMe Highlights
     val highlights = remember(node.code, node.language) {
         Highlights.Builder()
             .code(node.code)
@@ -210,157 +207,51 @@ fun CodeBlockView(node: CodeBlockGraphNode, modifier: Modifier = Modifier) {
             .build()
     }
 
-    Column(modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp)) {
-        // Main Card (Code Content)
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2B2B)), // Dark IDE theme
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Column {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFF3C3F41))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        node.language.uppercase(),
-                        color = Color(0xFFA9B7C6),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (node.filename.isNotBlank()) {
-                        Text(node.filename, color = Color.Gray, fontSize = 10.sp)
-                    }
+    fun Highlights.toAnnotatedString(): AnnotatedString {
+        return buildAnnotatedString {
+            append(getCode())
+            getHighlights().forEach { highlight ->
+                val style = when (highlight) {
+                    is ColorHighlight -> SpanStyle(color = Color(highlight.rgb.toLong() and 0xFFFFFFFFL))
+                    is BoldHighlight -> SpanStyle(fontWeight = FontWeight.Bold)
                 }
-
-                // Content Body
-                Box(modifier = Modifier.padding(12.dp)) {
-                    if (isExpanded) {
-                        // Use AnnotatedString for highlighting - ACTUAL USAGE HERE
-                        Text(
-                            text = highlights.toAnnotatedString(),
-                            color = Color(0xFFA9B7C6),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp
-                        )
-                    } else {
-                        // Collapsed: First few lines + ellipsis
-                        Column {
-                            val lines = node.code.lines().take(3)
-                            Text(
-                                text = lines.joinToString("\n"),
-                                color = Color(0xFFA9B7C6),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            )
-                            if (node.code.lines().size > 3) {
-                                Text("...", color = Color.Gray, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Caption Footer (Photo-caption style)
-        if (node.caption.isNotBlank()) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 2.dp, start = 4.dp, end = 4.dp),
-                color = Color.White,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray),
-                shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
-                shadowElevation = 2.dp
-            ) {
-                Text(
-                    text = node.caption,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Black,
-                    modifier = Modifier.padding(8.dp),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    fontStyle = FontStyle.Italic
-                )
+                addStyle(style, highlight.location.start, highlight.location.end)
             }
         }
     }
-}
-
-// --- 7. Table Node ---
-@Composable
-fun TableNodeView(node: TableGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
 
     Card(
-        modifier = modifier.width(if(isExpanded) node.width.dp else 280.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray),
-        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+        modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2B2B)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(8.dp)
     ) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            // Header Row
+        Column {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF5F5F5))
-                    .padding(4.dp),
+                modifier = Modifier.fillMaxWidth().background(Color(0xFF3C3F41)).padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Show ALL headers, letting them share space
-                node.headers.forEach { h ->
-                    Text(
-                        text = h,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.weight(1f).padding(end = 4.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(node.language.uppercase(), color = Color(0xFFA9B7C6), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                if (node.filename.isNotBlank()) Text(node.filename, color = Color.Gray, fontSize = 10.sp)
             }
 
-            HorizontalDivider(color = Color.LightGray)
-
-            if (isExpanded) {
-                // Expanded: Render Data Rows
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    node.data.forEachIndexed { index, row ->
-                        Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
-                            node.headers.forEach { h ->
-                                Text(
-                                    text = row[h] ?: "",
-                                    fontSize = 12.sp,
-                                    modifier = Modifier.weight(1f).padding(end = 4.dp),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                        if (index < node.data.lastIndex) {
-                            HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
-                        }
-                    }
-                }
-            } else {
-                // Collapsed: Visual cue
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
+            Box(modifier = Modifier.padding(12.dp)) {
+                if (isExpanded) {
                     Text(
-                        text = "${node.data.size} rows hidden",
-                        fontSize = 10.sp,
-                        color = Color.Gray,
-                        fontStyle = FontStyle.Italic
+                        text = highlights.toAnnotatedString(),
+                        color = Color(0xFFA9B7C6),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                } else {
+                    Text(
+                        text = node.code.lines().take(3).joinToString("\n"),
+                        color = Color(0xFFA9B7C6),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
                     )
                 }
             }
@@ -368,54 +259,47 @@ fun TableNodeView(node: TableGraphNode, modifier: Modifier = Modifier) {
     }
 }
 
-// --- 8. List Node View ---
+// --- 6. List Renderer ---
 @Composable
-fun ListNodeView(node: ListGraphNode, modifier: Modifier = Modifier) {
+fun ListRenderer(node: ListGraphNode, modifier: Modifier = Modifier) {
     val isExpanded = node.isExpanded
-    val type = node.listType // "ordered", "unordered", "task"
 
     Card(
         modifier = modifier.width(if(isExpanded) node.width.dp else 220.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)), // Light Yellow
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBC02D)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            if (node.title != null) {
+                Text(node.title, fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor)
+                HorizontalDivider(color = node.colorInfo.composeFontColor.copy(alpha=0.5f), modifier = Modifier.padding(vertical=4.dp))
+            }
+
             if (isExpanded) {
-                // Render Full List
-                node.items.forEachIndexed { index, item ->
+                node.items.forEach { item ->
                     Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 4.dp)) {
-                        when (type) {
-                            "ordered" -> Text("${index + 1}.", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.width(24.dp))
-                            "task" -> Icon(Icons.Default.CheckBoxOutlineBlank, null, modifier = Modifier.size(16.dp))
-                            else -> Text("•", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(16.dp))
-                        }
-                        Spacer(Modifier.width(4.dp))
-                        Text(item, fontSize = 12.sp)
+                        Text("•", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor, modifier = Modifier.width(12.dp))
+                        Text(item, fontSize = 12.sp, color = node.colorInfo.composeFontColor)
                     }
                 }
             } else {
-                // Render Collapsed: First Item + Cue
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    when (type) {
-                        "ordered" -> Text("1.", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        "task" -> Icon(Icons.Default.CheckBoxOutlineBlank, null, modifier = Modifier.size(14.dp))
-                        else -> Text("•", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
+                    Text("•", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = node.items.firstOrNull() ?: "Empty List",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        color = node.colorInfo.composeFontColor
                     )
                 }
                 if (node.items.size > 1) {
                     Text(
-                        text = "+ ${node.items.size - 1} more items...",
+                        text = "+ ${node.items.size - 1} more...",
                         fontSize = 10.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(start = 20.dp, top = 2.dp)
+                        color = node.colorInfo.composeFontColor.copy(alpha=0.7f),
+                        modifier = Modifier.padding(start = 16.dp)
                     )
                 }
             }
@@ -423,16 +307,89 @@ fun ListNodeView(node: ListGraphNode, modifier: Modifier = Modifier) {
     }
 }
 
-// --- 9. Cluster Node (New) ---
+// --- 7. Table Renderer ---
+@Composable
+fun TableRenderer(node: TableGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+    val fontColor = node.colorInfo.composeFontColor
+    val borderColor = fontColor.copy(alpha = 0.2f)
+
+    Card(
+        modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Caption / Title
+            if (!node.caption.isNullOrBlank()) {
+                Text(
+                    text = node.caption,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = fontColor,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            // Table Content
+            Column(modifier = Modifier.border(1.dp, borderColor, RoundedCornerShape(4.dp))) {
+                // Header Row
+                Row(modifier = Modifier.background(borderColor).padding(4.dp)) {
+                    node.headers.forEach { header ->
+                        Text(
+                            text = header,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = fontColor,
+                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                if (isExpanded) {
+                    // Data Rows
+                    node.rows.forEachIndexed { index, row ->
+                        HorizontalDivider(color = borderColor, thickness = 0.5.dp)
+                        Row(modifier = Modifier.padding(4.dp)) {
+                            node.headers.forEach { header ->
+                                Text(
+                                    text = row[header] ?: "",
+                                    fontSize = 12.sp,
+                                    color = fontColor,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Collapsed Hint
+                    if (node.rows.isNotEmpty()) {
+                        HorizontalDivider(color = borderColor, thickness = 0.5.dp)
+                        Text(
+                            text = "${node.rows.size} rows hidden...",
+                            fontSize = 10.sp,
+                            color = fontColor.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(8.dp).align(Alignment.CenterHorizontally)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- 8. Cluster Node Renderer ---
 @Composable
 fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
-    val bgColor = node.colorInfo.composeColor
-
     Box(
         modifier = modifier
-            .size(80.dp) // Base size, physics radius might be larger
+            .size(node.radius.dp * 2)
             .shadow(8.dp, CircleShape)
-            .background(bgColor, CircleShape)
+            .background(node.colorInfo.composeColor, CircleShape)
             .border(2.dp, Color.White, CircleShape),
         contentAlignment = Alignment.Center
     ) {
@@ -448,102 +405,6 @@ fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
                 color = node.colorInfo.composeFontColor.copy(alpha = 0.8f),
                 style = MaterialTheme.typography.labelSmall
             )
-        }
-    }
-}
-
-// --- 10. Default Fallback ---
-@Composable
-fun DefaultNodeView(node: GenericGraphNode, modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    // Ensure text is legible against the card background
-    val fontColor = node.colorInfo.composeFontColor
-
-    Card(
-        modifier = modifier.width(280.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // 1. Small text in top corner for Schema Name
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
-                    text = node.label.uppercase(),
-                    color = fontColor.copy(alpha = 0.7f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 2. Main Title (Display Property)
-            Text(
-                text = node.displayProperty,
-                color = fontColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 8.dp),
-                color = fontColor.copy(alpha = 0.2f)
-            )
-
-            // 3. Properties List (Ellipsed > 3)
-            if (node.displayProperties.isNotEmpty()) {
-                val propertyLimit = 3
-                val shouldCollapse = node.displayProperties.size > propertyLimit
-                val propertiesToShow = if (expanded || !shouldCollapse) {
-                    node.displayProperties.entries.toList()
-                } else {
-                    node.displayProperties.entries.take(propertyLimit).toList()
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    propertiesToShow.forEach { (key, value) ->
-                        Row(verticalAlignment = Alignment.Top) {
-                            Text(
-                                text = "$key: ",
-                                color = fontColor.copy(alpha = 0.8f),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = value,
-                                color = fontColor,
-                                fontSize = 12.sp,
-                                maxLines = if (expanded) Int.MAX_VALUE else 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-
-                if (shouldCollapse) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = if (expanded) "Show Less" else "Show More...",
-                        color = fontColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier
-                            .clickable { expanded = !expanded }
-                            .padding(4.dp)
-                            .align(Alignment.End)
-                    )
-                }
-            }
         }
     }
 }

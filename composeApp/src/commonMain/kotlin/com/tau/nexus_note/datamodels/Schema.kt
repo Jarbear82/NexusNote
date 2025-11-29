@@ -24,19 +24,52 @@ data class ConnectionPair(
 
 /**
  * Defines the visual rendering style for nodes of a specific schema.
+ * Now acts as the registry for Node Topology definitions.
  */
 @Serializable
-enum class NodeStyle(val displayName: String) {
-    GENERIC("Generic Card"),
-    DOCUMENT("Document Root"),
-    SECTION("Section Header"),
-    BLOCK("Text Block"),
-    CODE_BLOCK("Code Block"),
-    TABLE("Data Table"),
-    TAG("Tag / Pill"),
-    ATTACHMENT("Media / Attachment"),
-    // NEW: List Style
-    LIST("List Group")
+enum class NodeStyle(val displayName: String, val definition: NodeDefinition) {
+    GENERIC(
+        "Generic Card",
+        NodeDefinition(NodeTopology.LEAF, "Standard Node container", supportsChildren = true)
+    ),
+
+    // --- Structural Roots & Branches ---
+    DOCUMENT(
+        "Document Root",
+        NodeDefinition(NodeTopology.ROOT, "Root node, no parents, heavy mass.", supportsChildren = true)
+    ),
+    SECTION(
+        "Section Header",
+        NodeDefinition(NodeTopology.BRANCH, "Structural divider within a document", supportsChildren = true)
+    ),
+    LIST(
+        "List Group",
+        NodeDefinition(NodeTopology.BRANCH, "Container for list items", supportsChildren = true)
+    ),
+
+    // --- Content Leaves ---
+    BLOCK(
+        "Text Block",
+        NodeDefinition(NodeTopology.LEAF, "Atomic unit of text content", supportsChildren = false)
+    ),
+    CODE_BLOCK(
+        "Code Block",
+        NodeDefinition(NodeTopology.LEAF, "Syntax highlighted code snippet", supportsChildren = false)
+    ),
+    TABLE(
+        "Data Table",
+        NodeDefinition(NodeTopology.LEAF, "Structured data grid", supportsChildren = false)
+    ),
+
+    // --- Concept / Asset Leaves ---
+    TAG(
+        "Tag / Pill",
+        NodeDefinition(NodeTopology.LEAF, "Conceptual label or category", supportsChildren = false)
+    ),
+    ATTACHMENT(
+        "Media / Attachment",
+        NodeDefinition(NodeTopology.LEAF, "External file reference (Image, Audio, etc)", supportsChildren = false)
+    )
 }
 
 /**
@@ -48,5 +81,5 @@ data class SchemaDefinitionItem(
     val name: String,
     val properties: List<SchemaProperty>,
     val connections: List<ConnectionPair>? = null,
-    val nodeStyle: NodeStyle = NodeStyle.GENERIC // Added Style
+    val nodeStyle: NodeStyle = NodeStyle.GENERIC
 )

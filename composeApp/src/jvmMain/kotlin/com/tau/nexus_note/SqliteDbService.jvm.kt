@@ -4,8 +4,8 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.tau.nexus_note.db.AppDatabase
 import com.tau.nexus_note.db.connectionPairAdapter
+import com.tau.nexus_note.db.jsonContentAdapter
 import com.tau.nexus_note.db.schemaPropertyAdapter
-import com.tau.nexus_note.db.stringMapAdapter
 import com.tau.nexusnote.db.Edge
 import com.tau.nexusnote.db.Node
 import com.tau.nexusnote.db.SchemaDefinition
@@ -64,10 +64,10 @@ actual class SqliteDbService actual constructor() {
                 connections_jsonAdapter = connectionPairAdapter
             ),
             NodeAdapter = Node.Adapter(
-                properties_jsonAdapter = stringMapAdapter
+                properties_jsonAdapter = jsonContentAdapter
             ),
             EdgeAdapter = Edge.Adapter(
-                properties_jsonAdapter = stringMapAdapter
+                properties_jsonAdapter = jsonContentAdapter
             )
         )
     }

@@ -60,9 +60,7 @@ object ClusteringEngine {
                 val newContained = cluster.containedNodes + outlier.id
                 clusters[existingClusterId] = cluster.copy(
                     containedNodes = newContained,
-                    childCount = newContained.size,
-                    // Update display to show count
-                    displayProperty = "${cluster.label} + ${newContained.size - 1}"
+                    childCount = newContained.size
                 )
                 nodeMap[outlier.id] = existingClusterId
                 processedNodes.add(outlier.id)
@@ -79,11 +77,13 @@ object ClusteringEngine {
                     containedNodes = contained,
                     childCount = contained.size,
                     label = neighborNode.label,
-                    displayProperty = "${neighborNode.displayProperty} (+1)",
                     pos = pos,
                     radius = 40f,
                     mass = 20f,
-                    colorInfo = labelToColor(neighborNode.label)
+                    colorInfo = labelToColor(neighborNode.label),
+                    // Missing required properties initialized to defaults or placeholders
+                    width = 100f,
+                    height = 100f
                 )
 
                 clusters[newClusterId] = cluster
@@ -144,11 +144,13 @@ object ClusteringEngine {
                     containedNodes = contained,
                     childCount = contained.size,
                     label = "HUB",
-                    displayProperty = "${hub.displayProperty} (${neighbors.size})",
                     pos = pos,
                     radius = 60f + (neighbors.size * 2f).coerceAtMost(40f), // Grow with size
                     mass = 40f + neighbors.size,
-                    colorInfo = labelToColor("HUB")
+                    colorInfo = labelToColor("HUB"),
+                    // Missing required properties initialized to defaults or placeholders
+                    width = 100f,
+                    height = 100f
                 )
 
                 clusters[newClusterId] = cluster

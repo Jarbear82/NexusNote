@@ -2,7 +2,7 @@ package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.codex.graph.GraphNode
-import com.tau.nexus_note.codex.graph.SectionGraphNode
+import com.tau.nexus_note.codex.graph.HeadingGraphNode
 import com.tau.nexus_note.datamodels.GraphEdge
 import kotlin.math.abs
 
@@ -80,10 +80,10 @@ class HierarchicalRepulsionSolver : ForceSolver {
             val newPosX = node.pos.x + newVelX * dt
 
             // Y-Axis: Strict Constraint
-            // If the node has a defined level (SectionNode), snap to it.
+            // If the node has a defined level (HeadingGraphNode), snap to it.
             // Otherwise, maintain current Y (assume initial layout placed it correctly).
             var targetY = node.pos.y
-            if (node is SectionGraphNode) {
+            if (node is HeadingGraphNode) {
                 // Example: Level 1 at -300, Level 2 at 0, etc.
                 // Or just trust the initial Y
             }
