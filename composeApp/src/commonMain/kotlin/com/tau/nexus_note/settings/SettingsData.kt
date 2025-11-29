@@ -41,6 +41,17 @@ enum class GraphLayoutMode(val displayName: String) {
     HIERARCHICAL("Hierarchical (Tree)")
 }
 
+/**
+ * Defines the flow direction for Hierarchical layouts.
+ */
+@Serializable
+enum class LayoutDirection(val displayName: String) {
+    TOP_BOTTOM("Top -> Bottom"),
+    BOTTOM_TOP("Bottom -> Top"),
+    LEFT_RIGHT("Left -> Right"),
+    RIGHT_LEFT("Right -> Left")
+}
+
 @Serializable
 data class ThemeSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -56,7 +67,8 @@ data class ThemeSettings(
 
 @Serializable
 data class GraphPhysicsSettings(
-    val layoutMode: GraphLayoutMode = GraphLayoutMode.CONTINUOUS, // New Field
+    val layoutMode: GraphLayoutMode = GraphLayoutMode.CONTINUOUS,
+    val hierarchicalDirection: LayoutDirection = LayoutDirection.LEFT_RIGHT, // Added Direction
     val options: PhysicsOptions = PhysicsOptions(
         gravity = 0.5f,
         repulsion = 2000f,
@@ -79,7 +91,6 @@ data class GraphRenderingSettings(
     val showNodeLabels: Boolean = true,
     val showEdgeLabels: Boolean = true,
     val showCrosshairs: Boolean = true,
-    // "startSimulationOnLoad" is largely superseded by layoutMode, but kept for legacy compat if needed
     val startSimulationOnLoad: Boolean = true
 ) {
     companion object {
@@ -92,7 +103,7 @@ data class GraphInteractionSettings(
     val zoomSensitivity: Float = 1.0f,
     val nodeBaseRadius: Float = 15f,
     val nodeRadiusEdgeFactor: Float = 2.0f,
-    val snapToGrid: Boolean = false // Could be reused for "Lock on Drag" default
+    val snapToGrid: Boolean = false
 ) {
     companion object {
         val Default = GraphInteractionSettings()

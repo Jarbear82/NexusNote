@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
 import com.tau.nexus_note.codex.graph.physics.SolverType
 import com.tau.nexus_note.settings.GraphLayoutMode
+import com.tau.nexus_note.settings.LayoutDirection
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlin.math.roundToInt
@@ -17,6 +18,8 @@ import kotlin.math.roundToInt
 fun GraphSettingsView(
     layoutMode: GraphLayoutMode,
     onLayoutModeChange: (GraphLayoutMode) -> Unit,
+    layoutDirection: LayoutDirection, // Added
+    onLayoutDirectionChange: (LayoutDirection) -> Unit, // Added
     physicsOptions: PhysicsOptions,
     onPhysicsOptionChange: (PhysicsOptions) -> Unit,
     onTriggerLayout: () -> Unit, // Re-run / Detangle
@@ -83,7 +86,18 @@ fun GraphSettingsView(
                 }
                 GraphLayoutMode.HIERARCHICAL -> {
                     Text("Tree Layout", style = MaterialTheme.typography.labelMedium)
-                    Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Reset Hierarchy") }
+
+                    // Direction Selector
+                    CodexDropdown(
+                        label = "Direction",
+                        options = LayoutDirection.entries,
+                        selectedOption = layoutDirection,
+                        onOptionSelected = onLayoutDirectionChange,
+                        displayTransform = { it.displayName },
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+
+                    Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Apply Layout") }
                 }
             }
         }

@@ -65,6 +65,7 @@ fun GraphView(
     val isProcessing by viewModel.isProcessingLayout.collectAsState()
 
     val layoutMode by viewModel.layoutMode.collectAsState()
+    val layoutDirection by viewModel.layoutDirection.collectAsState() // Added state
     val physicsOptions by viewModel.physicsOptions.collectAsState()
     val snapEnabled by viewModel.snapEnabled.collectAsState()
 
@@ -149,6 +150,8 @@ fun GraphView(
             GraphSettingsView(
                 layoutMode = layoutMode,
                 onLayoutModeChange = viewModel::onLayoutModeChanged,
+                layoutDirection = layoutDirection, // Pass direction state
+                onLayoutDirectionChange = viewModel::onLayoutDirectionChanged, // Pass handler
                 physicsOptions = physicsOptions,
                 onPhysicsOptionChange = viewModel::updatePhysicsOptions,
                 onTriggerLayout = viewModel::onTriggerLayoutAction,

@@ -15,6 +15,7 @@ import com.tau.nexus_note.datamodels.NodeStyle
 import com.tau.nexus_note.datamodels.TransformState
 import com.tau.nexus_note.doc_parser.StandardSchemas
 import com.tau.nexus_note.settings.GraphLayoutMode
+import com.tau.nexus_note.settings.LayoutDirection
 import com.tau.nexus_note.settings.SettingsData
 import com.tau.nexus_note.utils.labelToColor
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +40,10 @@ class GraphViewmodel(
     // Local State overrides
     private val _layoutMode = MutableStateFlow(GraphLayoutMode.CONTINUOUS)
     val layoutMode = _layoutMode.asStateFlow()
+
+    // New: Local state for Hierarchical Direction (synced initially with settings)
+    private val _layoutDirection = MutableStateFlow(LayoutDirection.LEFT_RIGHT)
+    val layoutDirection = _layoutDirection.asStateFlow()
 
     private val _physicsOptions = MutableStateFlow(settingsFlow.value.graphPhysics.options)
     val physicsOptions = _physicsOptions.asStateFlow()
@@ -92,6 +97,7 @@ class GraphViewmodel(
                 if (_graphNodes.value.isEmpty()) {
                     _physicsOptions.value = settings.graphPhysics.options
                     _layoutMode.value = settings.graphPhysics.layoutMode
+                    _layoutDirection.value = settings.graphPhysics.hierarchicalDirection
                     // Initialize solver type
                     physicsEngine.setSolverType(settings.graphPhysics.options.solver)
                 }
@@ -178,6 +184,14 @@ class GraphViewmodel(
         }
     }
 
+    // New: Handle direction change
+    fun onLayoutDirectionChanged(direction: LayoutDirection) {
+        _layoutDirection.value = direction
+        if (_layoutMode.value == GraphLayoutMode.HIERARCHICAL) {
+            triggerHierarchicalLayout()
+        }
+    }
+
     fun onTriggerLayoutAction() {
         when (_layoutMode.value) {
             GraphLayoutMode.CONTINUOUS -> {
@@ -206,8 +220,33 @@ class GraphViewmodel(
 
     private fun triggerHierarchicalLayout() {
         _isProcessingLayout.value = true
-        recomputeGraphState(calculateNewPositions = true)
-        _isProcessingLayout.value = false
+        // 1. Ensure basic nodes exist
+        recomputeGraphState(calculateNewPositions = false)
+
+        viewModelScope.launch(Dispatchers.Default) {
+            val currentNodes = _graphNodes.value
+            val currentEdges = _graphEdges.value
+            val direction = _layoutDirection.value // Use local state
+
+            // 2. Run Sugiyama Engine
+            val newPositions = HierarchicalLayout.arrange(currentNodes, currentEdges, direction)
+
+            // 3. Apply Positions
+            val updatedNodes = currentNodes.mapValues { (id, node) ->
+                val pos = newPositions[id] ?: node.pos // Fallback to current if not in layout
+                node.copyNode().apply {
+                    this.pos = pos
+                    this.vel = Offset.Zero
+                    this.isFixed = false
+                }
+            }
+
+            _graphNodes.value = updatedNodes
+
+            withContext(Dispatchers.Main) {
+                _isProcessingLayout.value = false
+            }
+        }
     }
 
     fun updatePhysicsOptions(options: PhysicsOptions) {
