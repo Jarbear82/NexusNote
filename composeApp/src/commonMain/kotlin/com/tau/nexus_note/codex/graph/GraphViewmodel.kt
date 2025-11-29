@@ -173,12 +173,13 @@ class GraphViewmodel(
         // --- Phase 4: Zoom-based Clustering Monitor ---
         viewModelScope.launch {
             _transform.collect { transform ->
-                // Hysteresis to prevent flickering:
-                // Cluster when zooming OUT far (< 0.3)
-                // Clear when zooming IN closer (> 0.4)
-                if (transform.zoom < 0.3f && _clusteringResult.value == null) {
+                // Fixed Hysteresis:
+                // Cluster when zooming OUT far (< 0.1)
+                // Clear when zooming IN closer (> 0.15)
+                // Adjusted lower to match new zoom capabilities
+                if (transform.zoom < 0.1f && _clusteringResult.value == null) {
                     clusterOutliers()
-                } else if (transform.zoom > 0.4f && _clusteringResult.value != null) {
+                } else if (transform.zoom > 0.15f && _clusteringResult.value != null) {
                     clearClustering()
                 }
             }
@@ -262,7 +263,9 @@ class GraphViewmodel(
         val padding = 50f
         val scaleX = size.width / (graphWidth + padding * 2)
         val scaleY = size.height / (graphHeight + padding * 2)
-        val targetZoom = min(scaleX, scaleY).coerceIn(0.1f, 5f)
+
+        // UPDATED: Allow fitting to very large graphs (0.02)
+        val targetZoom = min(scaleX, scaleY).coerceIn(0.02f, 5f)
 
         val targetPan = Offset(-centerX, -centerY)
 
@@ -750,6 +753,34 @@ class GraphViewmodel(
                 absBgPath
             )
 
+            NodeStyle.ATTACHMENT -> {
+                // UPDATED: Resolve path relative to mediaPath
+                val rawUri = props[StandardSchemas.PROP_URI] ?: ""
+                val fullPath = if (rawUri.isNotBlank()) File(mediaPath, rawUri).absolutePath else ""
+
+                AttachmentGraphNode(
+                    node.displayProperty,
+                    props[StandardSchemas.PROP_MIME_TYPE] ?: "",
+                    fullPath,
+                    id,
+                    node.label,
+                    node.displayProperty,
+                    pos,
+                    Offset.Zero,
+                    mass,
+                    radius,
+                    width, height,
+                    colorInfo,
+                    false,
+                    isLocked,
+                    Offset.Zero,
+                    0f,
+                    0f,
+                    isCollapsed,
+                    absBgPath
+                )
+            }
+
             else -> GenericGraphNode(
                 id,
                 node.label,
@@ -881,7 +912,8 @@ class GraphViewmodel(
         val newZoomFactor = 1.0f + (zoomFactor - 1.0f) * settingsFlow.value.graphInteraction.zoomSensitivity
         _transform.update { state ->
             val oldZoom = state.zoom
-            val newZoom = (oldZoom * newZoomFactor).coerceIn(0.1f, 10.0f)
+            // UPDATED: Adjusted zoom limits to allow wide view
+            val newZoom = (oldZoom * newZoomFactor).coerceIn(0.02f, 5.0f)
             val sizeCenter = Offset(size.width / 2f, size.height / 2f)
             val worldPos = (zoomCenterScreen - state.pan * oldZoom - sizeCenter) / oldZoom
             val newPan = (zoomCenterScreen - worldPos * newZoom - sizeCenter) / newZoom
@@ -896,7 +928,7 @@ class GraphViewmodel(
         onZoom(zoomFactor, screenCenter)
     }
 
-    fun onResize(newSize: androidx.compose.ui.unit.IntSize) {
+    fun onResize(newSize: IntSize) {
         size = Size(newSize.width.toFloat(), newSize.height.toFloat())
     }
 

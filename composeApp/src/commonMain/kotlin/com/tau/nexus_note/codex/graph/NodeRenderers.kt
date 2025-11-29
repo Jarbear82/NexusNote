@@ -136,7 +136,17 @@ fun AttachmentNodeView(node: AttachmentGraphNode, modifier: Modifier = Modifier)
                     resource = { asyncPainterResource(data = file.toURI().toString()) },
                     contentDescription = node.filename,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    onLoading = {
+                        Box(Modifier.fillMaxSize().background(Color.DarkGray), contentAlignment = Alignment.Center) {
+                            Text("Loading...", color = Color.White, fontSize = 10.sp)
+                        }
+                    },
+                    onFailure = {
+                        Box(Modifier.fillMaxSize().background(Color.Red.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+                            Text("Error", color = Color.White)
+                        }
+                    }
                 )
             } else {
                 Box(Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
