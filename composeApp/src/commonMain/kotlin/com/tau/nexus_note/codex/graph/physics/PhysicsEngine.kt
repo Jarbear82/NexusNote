@@ -21,6 +21,20 @@ class PhysicsEngine {
     }
 
     /**
+     * Calculates the Total Kinetic Energy of the system.
+     * E = Sum(0.5 * mass * velocity^2)
+     * Used for Adaptive Freeze (stopping simulation when stable).
+     */
+    fun calculateSystemEnergy(nodes: Map<Long, GraphNode>): Float {
+        var totalEnergy = 0f
+        for (node in nodes.values) {
+            val speedSq = node.vel.getDistanceSquared()
+            totalEnergy += 0.5f * node.mass * speedSq
+        }
+        return totalEnergy
+    }
+
+    /**
      * Helper to switch solver based on options
      */
     fun setSolverType(type: SolverType) {

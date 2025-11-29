@@ -64,6 +64,10 @@ class GraphViewmodel(
     private val _simulationRunning = MutableStateFlow(false)
     val simulationRunning = _simulationRunning.asStateFlow()
 
+    // Loading State for Stabilization
+    private val _loadingProgress = MutableStateFlow<String?>(null)
+    val loadingProgress = _loadingProgress.asStateFlow()
+
     private val _graphNodes = MutableStateFlow<Map<Long, GraphNode>>(emptyMap())
     val graphNodes = _graphNodes.asStateFlow()
 
@@ -144,10 +148,20 @@ class GraphViewmodel(
 
     suspend fun runSimulationLoop() {
         var lastTimeNanos = withFrameNanos { it }
+        val energyThreshold = 0.5f // Energy threshold for Adaptive Freeze
+
         while (true) {
             val currentTimeNanos = withFrameNanos { it }
             val dt = (currentTimeNanos - lastTimeNanos) / 1_000_000_000.0f
             lastTimeNanos = currentTimeNanos
+
+            // Adaptive Freeze Check (Phase 2)
+            if (_simulationRunning.value) {
+                val totalEnergy = physicsEngine.calculateSystemEnergy(_graphNodes.value)
+                if (totalEnergy < energyThreshold && _draggedNodeId.value == null) {
+                    _simulationRunning.value = false
+                }
+            }
 
             // Determine if we should update physics
             val shouldSimulate = when (_layoutMode.value) {
@@ -211,9 +225,6 @@ class GraphViewmodel(
         val scaleY = size.height / (graphHeight + padding * 2)
         val targetZoom = min(scaleX, scaleY).coerceIn(0.1f, 5f)
 
-        // Center point in World Space needs to move to Center of Screen
-        // Pan logic: ScreenCenter = WorldPoint * Zoom + ScreenCenter + Pan * Zoom
-        // Pan = -WorldPoint
         val targetPan = Offset(-centerX, -centerY)
 
         animateTransform(targetPan, targetZoom)
@@ -221,7 +232,6 @@ class GraphViewmodel(
 
     fun focusOnNode(nodeId: Long) {
         val node = _graphNodes.value[nodeId] ?: return
-        // Center on node, zoom in a bit if too far out
         val targetPan = -node.pos
         val currentZoom = _transform.value.zoom
         val targetZoom = if (currentZoom < 0.8f) 1.2f else currentZoom
@@ -280,14 +290,11 @@ class GraphViewmodel(
         _selectionRect.value = null
         selectionStartPos = null
 
-        // Perform selection logic
-        // 1. Convert Screen Rect to World Rect? No, easier to check Node Screen Pos vs Rect
         val selectedIds = mutableListOf<Long>()
         val transform = _transform.value
         val screenCenter = Offset(size.width / 2f, size.height / 2f)
 
         _graphNodes.value.values.forEach { node ->
-            // Manual World -> Screen projection
             val nodeScreenPos = screenCenter + (node.pos + transform.pan) * transform.zoom
             if (rect.contains(nodeScreenPos)) {
                 selectedIds.add(node.id)
@@ -296,7 +303,7 @@ class GraphViewmodel(
 
         if (selectedIds.isNotEmpty()) {
             viewModelScope.launch {
-                _nodeSelectionRequest.emit(selectedIds.take(2)) // Limit to 2 for Pri/Sec selection model
+                _nodeSelectionRequest.emit(selectedIds.take(2))
             }
         }
     }
@@ -321,11 +328,9 @@ class GraphViewmodel(
         if (_isEditMode.value) {
             val pending = _pendingEdgeSourceId.value
             if (pending == null) {
-                // Select first node for edge
                 _pendingEdgeSourceId.value = nodeId
             } else {
                 if (pending != nodeId) {
-                    // Create Edge
                     viewModelScope.launch {
                         _createEdgeRequest.emit(Pair(pending, nodeId))
                     }
@@ -333,12 +338,11 @@ class GraphViewmodel(
                 _pendingEdgeSourceId.value = null // Reset
             }
         }
-        // If not edit mode, the View will trigger the standard selection callback via other means or we can emit here too
     }
 
-    // --- Existing Graph Logic ---
+    // --- Graph Logic & Updates ---
 
-    fun updateGraphData(
+    suspend fun updateGraphData(
         nodeList: List<NodeDisplayItem>,
         edgeList: List<EdgeDisplayItem>,
         schema: SchemaData?
@@ -359,19 +363,19 @@ class GraphViewmodel(
         val currentPositions = _graphNodes.value.mapValues { it.value.pos }
         val result = ClusteringEngine.clusterOutliers(lastNodeList, lastEdgeList, currentPositions)
         _clusteringResult.value = result
-        recomputeGraphState(calculateNewPositions = false)
+        viewModelScope.launch { recomputeGraphState(calculateNewPositions = false) }
     }
 
     fun clusterByHubSize(threshold: Int) {
         val currentPositions = _graphNodes.value.mapValues { it.value.pos }
         val result = ClusteringEngine.clusterByHubSize(lastNodeList, lastEdgeList, currentPositions, threshold)
         _clusteringResult.value = result
-        recomputeGraphState(calculateNewPositions = false)
+        viewModelScope.launch { recomputeGraphState(calculateNewPositions = false) }
     }
 
     fun clearClustering() {
         _clusteringResult.value = null
-        recomputeGraphState(calculateNewPositions = false)
+        viewModelScope.launch { recomputeGraphState(calculateNewPositions = false) }
     }
 
     fun onLayoutModeChanged(mode: GraphLayoutMode) {
@@ -382,6 +386,7 @@ class GraphViewmodel(
                 _simulationRunning.value = false
                 triggerComputedLayout()
             }
+
             GraphLayoutMode.HIERARCHICAL -> {
                 _simulationRunning.value = false
                 triggerHierarchicalLayout()
@@ -399,8 +404,9 @@ class GraphViewmodel(
     fun onTriggerLayoutAction() {
         when (_layoutMode.value) {
             GraphLayoutMode.CONTINUOUS -> {
-                recomputeGraphState(calculateNewPositions = true)
+                viewModelScope.launch { recomputeGraphState(calculateNewPositions = true) }
             }
+
             GraphLayoutMode.COMPUTED -> triggerComputedLayout()
             GraphLayoutMode.HIERARCHICAL -> triggerHierarchicalLayout()
         }
@@ -422,7 +428,7 @@ class GraphViewmodel(
 
     private fun triggerHierarchicalLayout() {
         _isProcessingLayout.value = true
-        recomputeGraphState(calculateNewPositions = false)
+        viewModelScope.launch { recomputeGraphState(calculateNewPositions = false) }
 
         viewModelScope.launch(Dispatchers.Default) {
             val currentNodes = _graphNodes.value
@@ -461,83 +467,86 @@ class GraphViewmodel(
         _snapEnabled.value = enabled
     }
 
-    private fun recomputeGraphState(calculateNewPositions: Boolean) {
-        val collapsedIds = _collapsedNodes.value
-        val parentMap = mutableMapOf<Long, Long>()
-        val clusterData = _clusteringResult.value
+    private suspend fun recomputeGraphState(calculateNewPositions: Boolean) {
+        // Run computation on default dispatcher to avoid blocking UI
+        withContext(Dispatchers.Default) {
+            val collapsedIds = _collapsedNodes.value
+            val parentMap = mutableMapOf<Long, Long>()
+            val clusterData = _clusteringResult.value
 
-        lastEdgeList.filter { it.label == StandardSchemas.EDGE_CONTAINS }.forEach { edge ->
-            parentMap[edge.dst.id] = edge.src.id
-        }
+            lastEdgeList.filter { it.label == StandardSchemas.EDGE_CONTAINS }.forEach { edge ->
+                parentMap[edge.dst.id] = edge.src.id
+            }
 
-        val hiddenNodeIds = mutableSetOf<Long>()
-        fun isHidden(nodeId: Long): Boolean {
-            val parentId = parentMap[nodeId] ?: return false
-            if (collapsedIds.contains(parentId)) return true
-            return isHidden(parentId)
-        }
-        lastNodeList.forEach { node ->
-            if (isHidden(node.id)) hiddenNodeIds.add(node.id)
-        }
+            val hiddenNodeIds = mutableSetOf<Long>()
+            fun isHidden(nodeId: Long): Boolean {
+                val parentId = parentMap[nodeId] ?: return false
+                if (collapsedIds.contains(parentId)) return true
+                return isHidden(parentId)
+            }
+            lastNodeList.forEach { node ->
+                if (isHidden(node.id)) hiddenNodeIds.add(node.id)
+            }
 
-        fun getVisualNodeId(actualId: Long): Long {
-            var currentId = actualId
-            if (hiddenNodeIds.contains(actualId)) {
-                var walker = actualId
-                while (hiddenNodeIds.contains(walker)) {
-                    val parentId = parentMap[walker] ?: break
-                    walker = parentId
+            fun getVisualNodeId(actualId: Long): Long {
+                var currentId = actualId
+                if (hiddenNodeIds.contains(actualId)) {
+                    var walker = actualId
+                    while (hiddenNodeIds.contains(walker)) {
+                        val parentId = parentMap[walker] ?: break
+                        walker = parentId
+                    }
+                    currentId = walker
                 }
-                currentId = walker
-            }
-            val clusterId = clusterData?.nodeMap?.get(currentId)
-            return clusterId ?: currentId
-        }
-
-        val visibleEdgesMap = mutableMapOf<Pair<Long, Long>, GraphEdge>()
-
-        lastEdgeList.forEach { edge ->
-            val visualSrc = getVisualNodeId(edge.src.id)
-            val visualDst = getVisualNodeId(edge.dst.id)
-
-            val isProxy = (visualSrc != edge.src.id) || (visualDst != edge.dst.id)
-
-            if (visualSrc == visualDst) return@forEach
-
-            val pair = Pair(visualSrc, visualDst)
-            val strength = if(edge.label == StandardSchemas.EDGE_CONTAINS) 0.5f else 0.05f
-
-            val isBidirectional = lastEdgeList.any {
-                getVisualNodeId(it.src.id) == visualDst && getVisualNodeId(it.dst.id) == visualSrc
+                val clusterId = clusterData?.nodeMap?.get(currentId)
+                return clusterId ?: currentId
             }
 
-            val edgeId = if(isProxy) -1L * edge.id else edge.id
+            val visibleEdgesMap = mutableMapOf<Pair<Long, Long>, GraphEdge>()
 
-            if (isProxy) {
-                if (visibleEdgesMap[pair] == null) {
+            lastEdgeList.forEach { edge ->
+                val visualSrc = getVisualNodeId(edge.src.id)
+                val visualDst = getVisualNodeId(edge.dst.id)
+
+                val isProxy = (visualSrc != edge.src.id) || (visualDst != edge.dst.id)
+
+                if (visualSrc == visualDst) return@forEach
+
+                val pair = Pair(visualSrc, visualDst)
+                val strength = if (edge.label == StandardSchemas.EDGE_CONTAINS) 0.5f else 0.05f
+
+                val isBidirectional = lastEdgeList.any {
+                    getVisualNodeId(it.src.id) == visualDst && getVisualNodeId(it.dst.id) == visualSrc
+                }
+
+                val edgeId = if (isProxy) -1L * edge.id else edge.id
+
+                if (isProxy) {
+                    if (visibleEdgesMap[pair] == null) {
+                        visibleEdgesMap[pair] = GraphEdge(
+                            id = edgeId, sourceId = visualSrc, targetId = visualDst,
+                            label = "Aggregated", strength = strength, colorInfo = labelToColor("Aggregated"),
+                            isProxy = true, representedConnections = listOf("${edge.id}: ${edge.label}"),
+                            isBidirectional = isBidirectional
+                        )
+                    }
+                } else {
                     visibleEdgesMap[pair] = GraphEdge(
                         id = edgeId, sourceId = visualSrc, targetId = visualDst,
-                        label = "Aggregated", strength = strength, colorInfo = labelToColor("Aggregated"),
-                        isProxy = true, representedConnections = listOf("${edge.id}: ${edge.label}"),
-                        isBidirectional = isBidirectional
+                        label = edge.label, strength = strength, colorInfo = labelToColor(edge.label),
+                        isProxy = false, isBidirectional = isBidirectional
                     )
                 }
-            } else {
-                visibleEdgesMap[pair] = GraphEdge(
-                    id = edgeId, sourceId = visualSrc, targetId = visualDst,
-                    label = edge.label, strength = strength, colorInfo = labelToColor(edge.label),
-                    isProxy = false, isBidirectional = isBidirectional
-                )
             }
-        }
 
-        val initialPositions = if (calculateNewPositions) {
-            LayoutStrategy.calculateInitialPositions(lastNodeList, lastEdgeList)
-        } else {
-            emptyMap()
-        }
+            val edges = visibleEdgesMap.values.toList()
+            val initialPositions = if (calculateNewPositions) {
+                LayoutStrategy.calculateInitialPositions(lastNodeList, lastEdgeList)
+            } else {
+                emptyMap()
+            }
 
-        _graphNodes.update { currentNodes ->
+            val currentNodesSnapshot = _graphNodes.value
             val newNodeMap = mutableMapOf<Long, GraphNode>()
             val clusterHiddenIds = clusterData?.nodeMap?.keys ?: emptySet()
 
@@ -545,7 +554,7 @@ class GraphViewmodel(
                 val id = node.id
                 if (hiddenNodeIds.contains(id) || clusterHiddenIds.contains(id)) return@forEach
 
-                val existingNode = currentNodes[id]
+                val existingNode = currentNodesSnapshot[id]
                 val pos = if (calculateNewPositions) {
                     initialPositions[id] ?: Offset.Zero
                 } else {
@@ -562,7 +571,7 @@ class GraphViewmodel(
             }
 
             clusterData?.clusters?.forEach { (clusterId, clusterNode) ->
-                val existingNode = currentNodes[clusterId]
+                val existingNode = currentNodesSnapshot[clusterId]
                 val finalNode = if (existingNode != null) {
                     clusterNode.copy(
                         pos = existingNode.pos,
@@ -575,13 +584,42 @@ class GraphViewmodel(
                 newNodeMap[clusterId] = finalNode
             }
 
-            newNodeMap
+            // --- Phase 2: Stabilization Loop ---
+            if (calculateNewPositions) {
+                _loadingProgress.value = "Stabilizing Graph..."
+                var tempNodes = newNodeMap.toMap()
+                val steps = 150
+                val reportInterval = 20
+
+                // Use the physics engine to settle nodes before showing them
+                for (i in 0 until steps) {
+                    if (i % reportInterval == 0) {
+                        _loadingProgress.value = "Stabilizing... ${(i * 100 / steps)}%"
+                    }
+                    // Step physics
+                    tempNodes = physicsEngine.update(tempNodes, edges, _physicsOptions.value, 0.016f)
+                }
+
+                // Final update to state
+                _graphNodes.value = tempNodes
+                _loadingProgress.value = null
+            } else {
+                // Just update directly
+                _graphNodes.value = newNodeMap
+            }
+
+            _graphEdges.value = edges
         }
-        _graphEdges.value = visibleEdgesMap.values.toList()
     }
 
-    private fun createGraphNode(node: NodeDisplayItem, pos: Offset, id: Long, isCollapsed: Boolean, isLocked: Boolean): GraphNode {
-        val radius = when(node.style) {
+    private fun createGraphNode(
+        node: NodeDisplayItem,
+        pos: Offset,
+        id: Long,
+        isCollapsed: Boolean,
+        isLocked: Boolean
+    ): GraphNode {
+        val radius = when (node.style) {
             NodeStyle.DOCUMENT -> 160f * currentDensity
             NodeStyle.SECTION -> 150f * currentDensity
             NodeStyle.BLOCK -> 135f * currentDensity
@@ -595,11 +633,84 @@ class GraphViewmodel(
         val absBgPath = node.backgroundImagePath?.let { File(mediaPath, it).absolutePath }
         val props = node.properties
 
-        return when(node.style) {
-            NodeStyle.DOCUMENT -> DocumentGraphNode(node.displayProperty, props[StandardSchemas.PROP_FRONTMATTER] ?: "{}", id, node.label, node.displayProperty, pos, Offset.Zero, mass, radius, colorInfo, false, isLocked, Offset.Zero, 0f, 0f, isCollapsed, absBgPath)
-            NodeStyle.SECTION -> SectionGraphNode(node.displayProperty, props[StandardSchemas.PROP_LEVEL]?.toIntOrNull() ?: 1, id, node.label, node.displayProperty, pos, Offset.Zero, mass, radius, colorInfo, false, isLocked, Offset.Zero, 0f, 0f, isCollapsed, absBgPath)
-            NodeStyle.BLOCK -> BlockGraphNode(props[StandardSchemas.PROP_CONTENT] ?: node.displayProperty, id, node.label, node.displayProperty, pos, Offset.Zero, mass, radius, colorInfo, false, isLocked, Offset.Zero, 0f, 0f, isCollapsed, absBgPath)
-            else -> GenericGraphNode(id, node.label, node.displayProperty, emptyMap(), pos, Offset.Zero, mass, radius, colorInfo, false, isLocked, Offset.Zero, 0f, 0f, isCollapsed, absBgPath)
+        return when (node.style) {
+            NodeStyle.DOCUMENT -> DocumentGraphNode(
+                node.displayProperty,
+                props[StandardSchemas.PROP_FRONTMATTER] ?: "{}",
+                id,
+                node.label,
+                node.displayProperty,
+                pos,
+                Offset.Zero,
+                mass,
+                radius,
+                colorInfo,
+                false,
+                isLocked,
+                Offset.Zero,
+                0f,
+                0f,
+                isCollapsed,
+                absBgPath
+            )
+
+            NodeStyle.SECTION -> SectionGraphNode(
+                node.displayProperty,
+                props[StandardSchemas.PROP_LEVEL]?.toIntOrNull() ?: 1,
+                id,
+                node.label,
+                node.displayProperty,
+                pos,
+                Offset.Zero,
+                mass,
+                radius,
+                colorInfo,
+                false,
+                isLocked,
+                Offset.Zero,
+                0f,
+                0f,
+                isCollapsed,
+                absBgPath
+            )
+
+            NodeStyle.BLOCK -> BlockGraphNode(
+                props[StandardSchemas.PROP_CONTENT] ?: node.displayProperty,
+                id,
+                node.label,
+                node.displayProperty,
+                pos,
+                Offset.Zero,
+                mass,
+                radius,
+                colorInfo,
+                false,
+                isLocked,
+                Offset.Zero,
+                0f,
+                0f,
+                isCollapsed,
+                absBgPath
+            )
+
+            else -> GenericGraphNode(
+                id,
+                node.label,
+                node.displayProperty,
+                emptyMap(),
+                pos,
+                Offset.Zero,
+                mass,
+                radius,
+                colorInfo,
+                false,
+                isLocked,
+                Offset.Zero,
+                0f,
+                0f,
+                isCollapsed,
+                absBgPath
+            )
         }
     }
 
@@ -632,6 +743,8 @@ class GraphViewmodel(
     fun onDragStart(nodeId: Long) {
         _draggedNodeId.value = nodeId
         _dragVelocity.value = Offset.Zero
+        // Wake up simulation on interaction
+        _simulationRunning.value = true
 
         _graphNodes.update { allNodes ->
             val newNodes = allNodes.toMutableMap()
@@ -701,7 +814,10 @@ class GraphViewmodel(
         return (screenPos - center - pan * zoom) / zoom
     }
 
-    fun onPan(delta: Offset) { _transform.update { it.copy(pan = it.pan + (delta / it.zoom)) } }
+    fun onPan(delta: Offset) {
+        _transform.update { it.copy(pan = it.pan + (delta / it.zoom)) }
+    }
+
     fun onZoom(zoomFactor: Float, zoomCenterScreen: Offset) {
         val newZoomFactor = 1.0f + (zoomFactor - 1.0f) * settingsFlow.value.graphInteraction.zoomSensitivity
         _transform.update { state ->
@@ -714,9 +830,23 @@ class GraphViewmodel(
         }
     }
 
-    fun onResize(newSize: androidx.compose.ui.unit.IntSize) { size = Size(newSize.width.toFloat(), newSize.height.toFloat()) }
-    fun updateDensity(density: Float) { currentDensity = density }
-    fun onFabClick() { _showFabMenu.update { !it } }
-    fun toggleSettings() { _showSettings.update { !it } }
-    fun onCleared() { _simulationRunning.value = false }
+    fun onResize(newSize: androidx.compose.ui.unit.IntSize) {
+        size = Size(newSize.width.toFloat(), newSize.height.toFloat())
+    }
+
+    fun updateDensity(density: Float) {
+        currentDensity = density
+    }
+
+    fun onFabClick() {
+        _showFabMenu.update { !it }
+    }
+
+    fun toggleSettings() {
+        _showSettings.update { !it }
+    }
+
+    fun onCleared() {
+        _simulationRunning.value = false
+    }
 }

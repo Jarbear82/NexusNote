@@ -67,6 +67,7 @@ fun GraphView(
     val showFabMenu by viewModel.showFabMenu.collectAsState()
     val showSettings by viewModel.showSettings.collectAsState()
     val isProcessing by viewModel.isProcessingLayout.collectAsState()
+    val loadingProgress by viewModel.loadingProgress.collectAsState()
 
     val layoutMode by viewModel.layoutMode.collectAsState()
     val layoutDirection by viewModel.layoutDirection.collectAsState()
@@ -310,6 +311,23 @@ fun GraphView(
         if(isProcessing) {
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
+            }
+        }
+
+        // --- Loading / Stabilization Overlay ---
+        loadingProgress?.let { progress ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f), MaterialTheme.shapes.medium)
+                    .padding(horizontal = 24.dp, vertical = 12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(progress, style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
     }
