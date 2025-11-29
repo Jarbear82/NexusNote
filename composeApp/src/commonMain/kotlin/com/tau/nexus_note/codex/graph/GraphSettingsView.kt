@@ -7,6 +7,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
+import com.tau.nexus_note.codex.graph.physics.SolverType
 import com.tau.nexus_note.settings.GraphLayoutMode
 import com.tau.nexus_note.ui.components.CodexDropdown
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
@@ -55,6 +56,17 @@ fun GraphSettingsView(
             when (layoutMode) {
                 GraphLayoutMode.CONTINUOUS -> {
                     Text("Physics Simulation", style = MaterialTheme.typography.labelMedium)
+
+                    // --- Solver Selector ---
+                    CodexDropdown(
+                        label = "Solver Strategy",
+                        options = SolverType.entries,
+                        selectedOption = physicsOptions.solver,
+                        onOptionSelected = { onPhysicsOptionChange(physicsOptions.copy(solver = it)) },
+                        displayTransform = { it.displayName },
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    )
+
                     SettingSlider("Gravity", physicsOptions.gravity, { onPhysicsOptionChange(physicsOptions.copy(gravity = it)) }, 0f..2f)
                     SettingSlider("Repulsion", physicsOptions.repulsion, { onPhysicsOptionChange(physicsOptions.copy(repulsion = it)) }, 0f..5000f)
                     SettingSlider("Spring", physicsOptions.spring, { onPhysicsOptionChange(physicsOptions.copy(spring = it)) }, 0.01f..0.5f)
@@ -62,7 +74,6 @@ fun GraphSettingsView(
                 }
                 GraphLayoutMode.COMPUTED -> {
                     Text("Static Algorithms", style = MaterialTheme.typography.labelMedium)
-                    // We can add Iteration count here later if needed, hardcoded in VM for now
                     Button(onClick = onTriggerLayout, modifier = Modifier.fillMaxWidth()) { Text("Re-run Detangle") }
                     Text(
                         "Nodes are frozen. Drag to move manually, or enable 'Snap Back' to let physics settle neighbors.",
@@ -110,5 +121,4 @@ private fun SettingSlider(
     }
 }
 
-// Helper for modifier scaling if needed
-private fun Modifier.scale(scale: Float): Modifier = this // Placeholder if direct scale modifier issues arise
+private fun Modifier.scale(scale: Float): Modifier = this

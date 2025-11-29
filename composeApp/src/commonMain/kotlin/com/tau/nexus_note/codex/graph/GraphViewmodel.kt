@@ -5,6 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.unit.IntSize
 import com.tau.nexus_note.codex.graph.physics.PhysicsEngine
+import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
 import com.tau.nexus_note.codex.graph.physics.runFRLayout
 import com.tau.nexus_note.codex.schema.SchemaData
 import com.tau.nexus_note.datamodels.EdgeDisplayItem
@@ -91,6 +92,8 @@ class GraphViewmodel(
                 if (_graphNodes.value.isEmpty()) {
                     _physicsOptions.value = settings.graphPhysics.options
                     _layoutMode.value = settings.graphPhysics.layoutMode
+                    // Initialize solver type
+                    physicsEngine.setSolverType(settings.graphPhysics.options.solver)
                 }
                 _renderingSettings.value = settings.graphRendering
             }
@@ -207,8 +210,10 @@ class GraphViewmodel(
         _isProcessingLayout.value = false
     }
 
-    fun updatePhysicsOptions(options: com.tau.nexus_note.codex.graph.physics.PhysicsOptions) {
+    fun updatePhysicsOptions(options: PhysicsOptions) {
         _physicsOptions.value = options
+        // Inject the solver when options change
+        physicsEngine.setSolverType(options.solver)
     }
 
     fun toggleSnap(enabled: Boolean) {
@@ -300,13 +305,6 @@ class GraphViewmodel(
 
                 if (!calculateNewPositions && existingNode != null) {
                     nodeObj.vel = existingNode.vel
-                    // Preserve existing radius if we aren't creating from scratch to avoid snapping
-                    if (existingNode.radius > nodeObj.radius) {
-                        // Use a copy to update radius if needed, but since we are re-creating the object
-                        // from `createGraphNode` we should probably just use the logic below
-                        // or trust onNodeSizeChanged to fix it after render.
-                        // For now, let's trust createGraphNode as the baseline.
-                    }
                 }
 
                 id to nodeObj
@@ -346,19 +344,13 @@ class GraphViewmodel(
     fun onNodeSizeChanged(nodeId: Long, size: IntSize) {
         val width = size.width.toFloat()
         val height = size.height.toFloat()
-        // Calculate radius as half of the diagonal + padding to fully enclose the rectangular card
         val newRadius = (sqrt(width * width + height * height) / 2f) + 10f
 
         _graphNodes.update { currentNodes ->
             val node = currentNodes[nodeId] ?: return@update currentNodes
-
-            // Threshold to prevent jitter/infinite loops if size shifts slightly
             if (abs(node.radius - newRadius) < 5f) return@update currentNodes
 
             val newNodes = currentNodes.toMutableMap()
-
-            // Create a COPY of the node with the new radius.
-            // Since `radius` is a `val` property on the data classes, copy() works perfectly.
             val updatedNode = when (node) {
                 is GenericGraphNode -> node.copy(radius = newRadius)
                 is DocumentGraphNode -> node.copy(radius = newRadius)
@@ -368,7 +360,6 @@ class GraphViewmodel(
                 is TableGraphNode -> node.copy(radius = newRadius)
                 is TagGraphNode -> node.copy(radius = newRadius)
                 is AttachmentGraphNode -> node.copy(radius = newRadius)
-                // If you add more node types, add them here
             }
             newNodes[nodeId] = updatedNode
             newNodes
@@ -460,10 +451,7 @@ class GraphViewmodel(
         }
     }
 
-    // Tap uses screen pos to find logic, but dragging uses direct ID
-    fun onTap(screenPos: Offset, onNodeTapped: (Long) -> Unit) {
-        // Logic handled by NodeWrapper tap, but this remains for background taps if needed
-    }
+    fun onTap(screenPos: Offset, onNodeTapped: (Long) -> Unit) { }
 
     fun onResize(newSize: androidx.compose.ui.unit.IntSize) { size = Size(newSize.width.toFloat(), newSize.height.toFloat()) }
     fun updateDensity(density: Float) { currentDensity = density }
