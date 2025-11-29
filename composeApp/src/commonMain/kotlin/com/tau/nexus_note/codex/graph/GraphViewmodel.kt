@@ -1,8 +1,5 @@
 package com.tau.nexus_note.codex.graph
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.VectorConverter
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -24,6 +21,7 @@ import com.tau.nexus_note.settings.SettingsData
 import com.tau.nexus_note.utils.labelToColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -233,7 +231,7 @@ class GraphViewmodel(
 
                 if (settleFramesRemaining > 0) settleFramesRemaining--
             } else {
-                kotlinx.coroutines.delay(50)
+                delay(50)
             }
         }
     }
@@ -282,24 +280,27 @@ class GraphViewmodel(
 
     private fun animateTransform(targetPan: Offset, targetZoom: Float) {
         viewModelScope.launch {
-            // FIX: Run animations on Main dispatcher to ensure MonotonicFrameClock is available
-            withContext(Dispatchers.Main) {
-                val startPan = _transform.value.pan
-                val startZoom = _transform.value.zoom
+            // FIX: Replaced Compose Animatable with a standard Coroutine loop.
+            // This prevents "MonotonicFrameClock is not available" errors in the ViewModel.
+            val startPan = _transform.value.pan
+            val startZoom = _transform.value.zoom
+            val duration = 500L
+            val startTime = System.currentTimeMillis()
 
-                val panAnim = Animatable(startPan, Offset.VectorConverter)
-                val zoomAnim = Animatable(startZoom)
+            while (true) {
+                val elapsed = System.currentTimeMillis() - startTime
+                val fraction = (elapsed / duration.toFloat()).coerceIn(0f, 1f)
 
-                launch {
-                    panAnim.animateTo(targetPan, animationSpec = tween(500)) {
-                        _transform.update { it.copy(pan = value) }
-                    }
-                }
-                launch {
-                    zoomAnim.animateTo(targetZoom, animationSpec = tween(500)) {
-                        _transform.update { it.copy(zoom = value) }
-                    }
-                }
+                // Cubic Ease Out: 1 - (1-t)^3
+                val t = 1f - (1f - fraction) * (1f - fraction) * (1f - fraction)
+
+                val currentPan = startPan + (targetPan - startPan) * t
+                val currentZoom = startZoom + (targetZoom - startZoom) * t
+
+                _transform.update { it.copy(pan = currentPan, zoom = currentZoom) }
+
+                if (fraction >= 1f) break
+                delay(16) // Approx 60 FPS
             }
         }
     }
@@ -886,6 +887,13 @@ class GraphViewmodel(
             val newPan = (zoomCenterScreen - worldPos * newZoom - sizeCenter) / newZoom
             state.copy(pan = newPan, zoom = newZoom)
         }
+    }
+
+    fun setZoom(targetZoom: Float) {
+        val screenCenter = Offset(size.width / 2f, size.height / 2f)
+        val currentZoom = _transform.value.zoom
+        val zoomFactor = targetZoom / currentZoom
+        onZoom(zoomFactor, screenCenter)
     }
 
     fun onResize(newSize: androidx.compose.ui.unit.IntSize) {

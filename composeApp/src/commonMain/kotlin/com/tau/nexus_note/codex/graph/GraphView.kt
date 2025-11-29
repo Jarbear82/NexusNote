@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Link
@@ -297,12 +298,46 @@ fun GraphView(
         }
 
         // --- LAYER 4: UI Controls ---
+
+        // 4a. Settings Toggle
         SmallFloatingActionButton(
             onClick = { viewModel.toggleSettings() },
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
             containerColor = MaterialTheme.colorScheme.primary
         ) { Icon(Icons.Default.Settings, "Graph Settings") }
 
+        // 4b. Vertical Zoom Slider (Phase 5)
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 24.dp) // Spacing from edge
+                .height(300.dp) // Slider visual length
+        ) {
+            Slider(
+                value = transform.zoom,
+                onValueChange = { viewModel.setZoom(it) },
+                valueRange = 0.1f..5.0f,
+                modifier = Modifier
+                    .graphicsLayer {
+                        rotationZ = 270f
+                        transformOrigin = TransformOrigin(0.5f, 0.5f)
+                    }
+                    .layout { measurable, constraints ->
+                        // Standard rotation doesn't change layout dimensions, so we manually
+                        // swap width/height in layout phase to ensure it takes up vertical space
+                        val placeable = measurable.measure(constraints)
+                        layout(placeable.height, placeable.width) {
+                            placeable.place(
+                                -placeable.width / 2 + placeable.height / 2,
+                                -placeable.height / 2 + placeable.width / 2
+                            )
+                        }
+                    }
+                    .width(300.dp) // This becomes height after rotation
+            )
+        }
+
+        // 4c. Settings Panel
         AnimatedVisibility(visible = showSettings, modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 16.dp)) {
             GraphSettingsView(
                 layoutMode = layoutMode,
@@ -328,6 +363,7 @@ fun GraphView(
             )
         }
 
+        // 4d. Bottom Action Buttons (Create)
         Column(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             AnimatedVisibility(visible = showFabMenu) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -338,6 +374,15 @@ fun GraphView(
             FloatingActionButton(onClick = { viewModel.onFabClick() }, containerColor = MaterialTheme.colorScheme.primary) {
                 Icon(if (showFabMenu) Icons.Default.Close else Icons.Default.Add, "Toggle Create Menu")
             }
+        }
+
+        // 4e. Fit to Screen FAB (Phase 5 - Moved to BottomStart)
+        FloatingActionButton(
+            onClick = { viewModel.fitToScreen() },
+            modifier = Modifier.align(Alignment.BottomStart).padding(16.dp),
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ) {
+            Icon(Icons.Default.CenterFocusStrong, "Fit to Screen")
         }
 
         if(isProcessing) {

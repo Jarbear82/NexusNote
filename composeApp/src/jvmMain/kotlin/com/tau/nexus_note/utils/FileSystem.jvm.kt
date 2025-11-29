@@ -2,6 +2,8 @@ package com.tau.nexus_note.utils
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import java.awt.FileDialog
+import java.awt.Frame
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -21,6 +23,8 @@ actual fun DirectoryPicker(
     initialDirectory: String,
     onResult: (String?) -> Unit
 ) {
+    // Note: AWT FileDialog does not support directory selection reliably on all platforms (Windows/Linux).
+    // We retain JFileChooser here for robustness when selecting folders.
     LaunchedEffect(show) {
         if (show) {
             val fileChooser = JFileChooser(initialDirectory).apply {
@@ -101,33 +105,34 @@ actual fun FilePicker(
     allowMultiple: Boolean,
     onResult: (List<String>) -> Unit
 ) {
+    // Phase 5: Replaced Swing JFileChooser with AWT FileDialog for native look & feel
     LaunchedEffect(show) {
         if (show) {
-            val fileChooser = JFileChooser().apply {
-                fileSelectionMode = JFileChooser.FILES_ONLY
-                isMultiSelectionEnabled = allowMultiple
-                dialogTitle = "Select File(s)"
+            val dialog = FileDialog(null as Frame?, "Select File(s)", FileDialog.LOAD)
+            dialog.isMultipleMode = allowMultiple
 
-                if (fileExtensions.isNotEmpty()) {
-                    val description = fileExtensions.joinToString(", ") { it.uppercase() }
-                    val filter = FileNameExtensionFilter(
-                        description,
-                        *fileExtensions.toTypedArray()
-                    )
-                    addChoosableFileFilter(filter)
-                    fileFilter = filter
-                    isAcceptAllFileFilterUsed = false
+            if (fileExtensions.isNotEmpty()) {
+                // FileDialog filenameFilter is a bit limited compared to JFileChooser,
+                // but allows basic filtering.
+                dialog.filenameFilter = java.io.FilenameFilter { _, name ->
+                    fileExtensions.any { ext -> name.endsWith(".$ext", ignoreCase = true) }
                 }
+                // Also helpful to set file string for Windows, though inconsistent
+                // dialog.file = fileExtensions.joinToString(";") { "*.$it" }
             }
 
-            val result = fileChooser.showOpenDialog(null)
-            if (result == JFileChooser.APPROVE_OPTION) {
-                val files = if (allowMultiple) {
-                    fileChooser.selectedFiles.map { it.absolutePath }
+            dialog.isVisible = true
+
+            if (dialog.directory != null) {
+                // If multiple files selected
+                if (allowMultiple && dialog.files.isNotEmpty()) {
+                    onResult(dialog.files.map { it.absolutePath })
+                } else if (dialog.file != null) {
+                    // Single file fallback
+                    onResult(listOf(dialog.directory + dialog.file))
                 } else {
-                    listOf(fileChooser.selectedFile.absolutePath)
+                    onResult(emptyList())
                 }
-                onResult(files)
             } else {
                 onResult(emptyList())
             }
