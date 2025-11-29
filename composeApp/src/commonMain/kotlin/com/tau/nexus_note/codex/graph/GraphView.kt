@@ -36,6 +36,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.codex.graph.GraphNode
 import com.tau.nexus_note.datamodels.GraphEdge
@@ -131,7 +132,9 @@ fun GraphView(
                 onLongPress = { viewModel.onNodeLockToggle(node.id) },
                 onDragStart = { viewModel.onDragStart(node.id) },
                 onDrag = { delta -> viewModel.onDrag(delta) },
-                onDragEnd = { viewModel.onDragEnd() }
+                onDragEnd = { viewModel.onDragEnd() },
+                // Listen to size changes to update physics radius
+                onSizeChanged = { size -> viewModel.onNodeSizeChanged(node.id, size) }
             )
         }
 
@@ -184,7 +187,8 @@ fun NodeWrapper(
     onLongPress: () -> Unit,
     onDragStart: () -> Unit,
     onDrag: (Offset) -> Unit,
-    onDragEnd: () -> Unit
+    onDragEnd: () -> Unit,
+    onSizeChanged: (IntSize) -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -195,6 +199,7 @@ fun NodeWrapper(
                 scaleY = zoom
                 transformOrigin = TransformOrigin(0f, 0f)
             }
+            .onSizeChanged { onSizeChanged(it) }
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
                 layout(placeable.width, placeable.height) {
@@ -208,12 +213,14 @@ fun NodeWrapper(
                     onLongPress = { onLongPress() }
                 )
             }
-            .pointerInput(Unit) {
+            // FIX: Restart pointerInput when zoom changes so the lambda captures the correct zoom value
+            .pointerInput(zoom) {
                 detectDragGestures(
                     onDragStart = { onDragStart() },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        onDrag(dragAmount)
+                        // Multiply by zoom to convert local scaled coordinates back to screen coordinates
+                        onDrag(dragAmount * zoom)
                     },
                     onDragEnd = { onDragEnd() }
                 )

@@ -3,6 +3,7 @@ package com.tau.nexus_note.codex.graph
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.unit.IntSize
 import com.tau.nexus_note.codex.graph.physics.PhysicsEngine
 import com.tau.nexus_note.codex.graph.physics.runFRLayout
 import com.tau.nexus_note.codex.schema.SchemaData
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.sqrt
 
 class GraphViewmodel(
     private val viewModelScope: CoroutineScope,
@@ -298,6 +300,13 @@ class GraphViewmodel(
 
                 if (!calculateNewPositions && existingNode != null) {
                     nodeObj.vel = existingNode.vel
+                    // Preserve existing radius if we aren't creating from scratch to avoid snapping
+                    if (existingNode.radius > nodeObj.radius) {
+                        // Use a copy to update radius if needed, but since we are re-creating the object
+                        // from `createGraphNode` we should probably just use the logic below
+                        // or trust onNodeSizeChanged to fix it after render.
+                        // For now, let's trust createGraphNode as the baseline.
+                    }
                 }
 
                 id to nodeObj
@@ -308,6 +317,7 @@ class GraphViewmodel(
     }
 
     private fun createGraphNode(node: NodeDisplayItem, pos: Offset, id: Long, isCollapsed: Boolean, isLocked: Boolean): GraphNode {
+        // Initial estimates - these will be corrected by onNodeSizeChanged after first render
         val radius = when(node.style) {
             NodeStyle.DOCUMENT -> 160f * currentDensity
             NodeStyle.SECTION -> 150f * currentDensity
@@ -332,14 +342,50 @@ class GraphViewmodel(
 
     // --- Interaction ---
 
-    // DIRECT ID based dragging - fixes "messed up" hit testing
+    // DYNAMIC SIZING: Called from UI when the composable size changes
+    fun onNodeSizeChanged(nodeId: Long, size: IntSize) {
+        val width = size.width.toFloat()
+        val height = size.height.toFloat()
+        // Calculate radius as half of the diagonal + padding to fully enclose the rectangular card
+        val newRadius = (sqrt(width * width + height * height) / 2f) + 10f
+
+        _graphNodes.update { currentNodes ->
+            val node = currentNodes[nodeId] ?: return@update currentNodes
+
+            // Threshold to prevent jitter/infinite loops if size shifts slightly
+            if (abs(node.radius - newRadius) < 5f) return@update currentNodes
+
+            val newNodes = currentNodes.toMutableMap()
+
+            // Create a COPY of the node with the new radius.
+            // Since `radius` is a `val` property on the data classes, copy() works perfectly.
+            val updatedNode = when (node) {
+                is GenericGraphNode -> node.copy(radius = newRadius)
+                is DocumentGraphNode -> node.copy(radius = newRadius)
+                is SectionGraphNode -> node.copy(radius = newRadius)
+                is BlockGraphNode -> node.copy(radius = newRadius)
+                is CodeBlockGraphNode -> node.copy(radius = newRadius)
+                is TableGraphNode -> node.copy(radius = newRadius)
+                is TagGraphNode -> node.copy(radius = newRadius)
+                is AttachmentGraphNode -> node.copy(radius = newRadius)
+                // If you add more node types, add them here
+            }
+            newNodes[nodeId] = updatedNode
+            newNodes
+        }
+    }
+
     fun onDragStart(nodeId: Long) {
         _draggedNodeId.value = nodeId
         _dragVelocity.value = Offset.Zero
 
         _graphNodes.update { allNodes ->
             val newNodes = allNodes.toMutableMap()
-            newNodes[nodeId]?.isFixed = true
+            newNodes[nodeId]?.let { node ->
+                val newNode = node.copyNode()
+                newNode.isFixed = true
+                newNodes[nodeId] = newNode
+            }
             newNodes
         }
     }
@@ -351,9 +397,10 @@ class GraphViewmodel(
 
         _graphNodes.update { allNodes ->
             val newNodes = allNodes.toMutableMap()
-            // Using standard update, avoiding ambiguity
             newNodes[nodeId]?.let { node ->
-                node.pos += worldDelta
+                val newNode = node.copyNode()
+                newNode.pos += worldDelta
+                newNodes[nodeId] = newNode
             }
             newNodes
         }
@@ -363,14 +410,14 @@ class GraphViewmodel(
         val nodeId = _draggedNodeId.value ?: return
         _graphNodes.update { allNodes ->
             val newNodes = allNodes.toMutableMap()
-            val node = newNodes[nodeId]
-            if (node != null) {
-                // If Snap Back is disabled, keep it locked
+            newNodes[nodeId]?.let { node ->
+                val newNode = node.copyNode()
                 if (!_snapEnabled.value) {
-                    node.isLocked = true
+                    newNode.isLocked = true
                 }
-                node.isFixed = false
-                node.vel = _dragVelocity.value / (1f / 60f)
+                newNode.isFixed = false
+                newNode.vel = _dragVelocity.value / (1f / 60f)
+                newNodes[nodeId] = newNode
             }
             newNodes
         }
@@ -384,8 +431,11 @@ class GraphViewmodel(
     fun onNodeLockToggle(nodeId: Long) {
         _graphNodes.update { allNodes ->
             val newNodes = allNodes.toMutableMap()
-            val node = newNodes[nodeId]
-            if (node != null) node.isLocked = !node.isLocked
+            newNodes[nodeId]?.let { node ->
+                val newNode = node.copyNode()
+                newNode.isLocked = !newNode.isLocked
+                newNodes[nodeId] = newNode
+            }
             newNodes
         }
     }
