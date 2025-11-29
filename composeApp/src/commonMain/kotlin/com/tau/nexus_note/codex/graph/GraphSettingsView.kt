@@ -18,13 +18,17 @@ import kotlin.math.roundToInt
 fun GraphSettingsView(
     layoutMode: GraphLayoutMode,
     onLayoutModeChange: (GraphLayoutMode) -> Unit,
-    layoutDirection: LayoutDirection, // Added
-    onLayoutDirectionChange: (LayoutDirection) -> Unit, // Added
+    layoutDirection: LayoutDirection,
+    onLayoutDirectionChange: (LayoutDirection) -> Unit,
     physicsOptions: PhysicsOptions,
     onPhysicsOptionChange: (PhysicsOptions) -> Unit,
-    onTriggerLayout: () -> Unit, // Re-run / Detangle
+    onTriggerLayout: () -> Unit,
     snapEnabled: Boolean,
     onSnapToggle: (Boolean) -> Unit,
+    // Clustering Callbacks
+    onClusterOutliers: () -> Unit,
+    onClusterHubs: () -> Unit,
+    onClearClustering: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensityTokens.current
@@ -55,12 +59,30 @@ fun GraphSettingsView(
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            // --- Algorithmic Clustering ---
+            Text("Clustering", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(onClick = onClusterOutliers, modifier = Modifier.weight(1f)) {
+                    Text("Outliers", fontSize = density.bodyFontSize)
+                }
+                Button(onClick = onClusterHubs, modifier = Modifier.weight(1f)) {
+                    Text("Hubs", fontSize = density.bodyFontSize)
+                }
+            }
+            Button(
+                onClick = onClearClustering,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                colors = ButtonDefaults.outlinedButtonColors()
+            ) { Text("Clear Clusters") }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             // --- Contextual Controls ---
             when (layoutMode) {
                 GraphLayoutMode.CONTINUOUS -> {
                     Text("Physics Simulation", style = MaterialTheme.typography.labelMedium)
 
-                    // --- Solver Selector ---
                     CodexDropdown(
                         label = "Solver Strategy",
                         options = SolverType.entries,
@@ -87,7 +109,6 @@ fun GraphSettingsView(
                 GraphLayoutMode.HIERARCHICAL -> {
                     Text("Tree Layout", style = MaterialTheme.typography.labelMedium)
 
-                    // Direction Selector
                     CodexDropdown(
                         label = "Direction",
                         options = LayoutDirection.entries,

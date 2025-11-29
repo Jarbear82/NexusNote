@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
@@ -200,7 +201,36 @@ fun TableNodeView(node: TableGraphNode, modifier: Modifier = Modifier) {
     }
 }
 
-// --- 8. Default Fallback ---
+// --- 8. Cluster Node (New) ---
+@Composable
+fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
+    val bgColor = node.colorInfo.composeColor
+
+    Box(
+        modifier = modifier
+            .size(80.dp) // Base size, physics radius might be larger
+            .shadow(8.dp, CircleShape)
+            .background(bgColor, CircleShape)
+            .border(2.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "${node.childCount}",
+                color = node.colorInfo.composeFontColor,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = node.label,
+                color = node.colorInfo.composeFontColor.copy(alpha = 0.8f),
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+    }
+}
+
+// --- 9. Default Fallback ---
 @Composable
 fun DefaultNodeView(node: GenericGraphNode, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }

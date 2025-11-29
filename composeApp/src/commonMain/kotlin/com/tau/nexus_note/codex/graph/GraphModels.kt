@@ -33,6 +33,29 @@ sealed interface GraphNode {
     fun copyNode(): GraphNode
 }
 
+// --- NEW: Cluster Node ---
+data class ClusterNode(
+    override val id: Long,
+    val containedNodes: Set<Long>, // IDs of nodes inside
+    val childCount: Int,
+    override val label: String = "Cluster",
+    override val displayProperty: String = "Group",
+    override var pos: Offset = Offset.Zero,
+    override var vel: Offset = Offset.Zero,
+    override val mass: Float = 30f, // Heavy
+    override val radius: Float = 50f, // Large
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode {
+    override fun copyNode() = this.copy()
+}
+
 // --- Specialized Node Types for Rendering ---
 
 data class GenericGraphNode(

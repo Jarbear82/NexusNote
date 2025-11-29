@@ -41,7 +41,6 @@ class GraphViewmodel(
     private val _layoutMode = MutableStateFlow(GraphLayoutMode.CONTINUOUS)
     val layoutMode = _layoutMode.asStateFlow()
 
-    // New: Local state for Hierarchical Direction (synced initially with settings)
     private val _layoutDirection = MutableStateFlow(LayoutDirection.LEFT_RIGHT)
     val layoutDirection = _layoutDirection.asStateFlow()
 
@@ -80,6 +79,9 @@ class GraphViewmodel(
 
     private val _collapsedNodes = MutableStateFlow<Set<Long>>(emptySet())
 
+    // --- Phase 3: Algorithmic Clustering State ---
+    private val _clusteringResult = MutableStateFlow<ClusteringResult?>(null)
+
     private var size = Size.Zero
     private var currentDensity: Float = 1.0f
 
@@ -117,7 +119,7 @@ class GraphViewmodel(
             val shouldSimulate = when (_layoutMode.value) {
                 GraphLayoutMode.CONTINUOUS -> _simulationRunning.value
                 GraphLayoutMode.COMPUTED -> settleFramesRemaining > 0
-                GraphLayoutMode.HIERARCHICAL -> false // Strictly static unless explicit re-layout
+                GraphLayoutMode.HIERARCHICAL -> false
             }
 
             if (shouldSimulate && _graphNodes.value.isNotEmpty()) {
@@ -128,14 +130,13 @@ class GraphViewmodel(
                     dt.coerceAtMost(0.032f)
                 )
 
-                // Merge the dragged node's live position back into the physics result.
                 val draggedId = _draggedNodeId.value
                 if (draggedId != null) {
                     val currentLiveNode = _graphNodes.value[draggedId]
                     val updatedNode = updatedNodes[draggedId]
                     if (currentLiveNode != null && updatedNode != null) {
                         updatedNode.pos = currentLiveNode.pos
-                        updatedNode.vel = Offset.Zero // Zero out velocity while dragging
+                        updatedNode.vel = Offset.Zero
                     }
                 }
 
@@ -143,7 +144,6 @@ class GraphViewmodel(
 
                 if (settleFramesRemaining > 0) settleFramesRemaining--
             } else {
-                // Throttle loop when idle
                 kotlinx.coroutines.delay(50)
             }
         }
@@ -158,13 +158,36 @@ class GraphViewmodel(
         lastEdgeList = edgeList
         lastSchema = schema
 
-        // If first load, force calculation. Otherwise preserve.
         val isFirstLoad = _graphNodes.value.isEmpty()
         recomputeGraphState(calculateNewPositions = isFirstLoad)
 
         if (isFirstLoad && _layoutMode.value == GraphLayoutMode.CONTINUOUS) {
             _simulationRunning.value = true
         }
+    }
+
+    // --- Clustering Actions ---
+
+    fun clusterOutliers() {
+        // Collect current positions to keep clusters stable relative to their contents
+        val currentPositions = _graphNodes.value.mapValues { it.value.pos }
+
+        val result = ClusteringEngine.clusterOutliers(lastNodeList, lastEdgeList, currentPositions)
+        _clusteringResult.value = result
+        recomputeGraphState(calculateNewPositions = false)
+    }
+
+    fun clusterByHubSize(threshold: Int) {
+        val currentPositions = _graphNodes.value.mapValues { it.value.pos }
+
+        val result = ClusteringEngine.clusterByHubSize(lastNodeList, lastEdgeList, currentPositions, threshold)
+        _clusteringResult.value = result
+        recomputeGraphState(calculateNewPositions = false)
+    }
+
+    fun clearClustering() {
+        _clusteringResult.value = null
+        recomputeGraphState(calculateNewPositions = false)
     }
 
     // --- Mode Switching & Actions ---
@@ -184,7 +207,6 @@ class GraphViewmodel(
         }
     }
 
-    // New: Handle direction change
     fun onLayoutDirectionChanged(direction: LayoutDirection) {
         _layoutDirection.value = direction
         if (_layoutMode.value == GraphLayoutMode.HIERARCHICAL) {
@@ -195,7 +217,6 @@ class GraphViewmodel(
     fun onTriggerLayoutAction() {
         when (_layoutMode.value) {
             GraphLayoutMode.CONTINUOUS -> {
-                // "Detangle" -> Reset positions near center and let physics explode them
                 recomputeGraphState(calculateNewPositions = true)
             }
             GraphLayoutMode.COMPUTED -> triggerComputedLayout()
@@ -206,7 +227,6 @@ class GraphViewmodel(
     private fun triggerComputedLayout() {
         _isProcessingLayout.value = true
         viewModelScope.launch(Dispatchers.Default) {
-            // Run FR Layout for N iterations
             val params = mapOf("iterations" to 1000, "area" to 2.0f, "gravity" to 0.1f)
             val layoutFlow = runFRLayout(_graphNodes.value, _graphEdges.value, params)
             layoutFlow.collect { tickedNodes ->
@@ -220,20 +240,17 @@ class GraphViewmodel(
 
     private fun triggerHierarchicalLayout() {
         _isProcessingLayout.value = true
-        // 1. Ensure basic nodes exist
         recomputeGraphState(calculateNewPositions = false)
 
         viewModelScope.launch(Dispatchers.Default) {
             val currentNodes = _graphNodes.value
             val currentEdges = _graphEdges.value
-            val direction = _layoutDirection.value // Use local state
+            val direction = _layoutDirection.value
 
-            // 2. Run Sugiyama Engine
             val newPositions = HierarchicalLayout.arrange(currentNodes, currentEdges, direction)
 
-            // 3. Apply Positions
             val updatedNodes = currentNodes.mapValues { (id, node) ->
-                val pos = newPositions[id] ?: node.pos // Fallback to current if not in layout
+                val pos = newPositions[id] ?: node.pos
                 node.copyNode().apply {
                     this.pos = pos
                     this.vel = Offset.Zero
@@ -251,7 +268,6 @@ class GraphViewmodel(
 
     fun updatePhysicsOptions(options: PhysicsOptions) {
         _physicsOptions.value = options
-        // Inject the solver when options change
         physicsEngine.setSolverType(options.solver)
     }
 
@@ -264,7 +280,9 @@ class GraphViewmodel(
     private fun recomputeGraphState(calculateNewPositions: Boolean) {
         val collapsedIds = _collapsedNodes.value
         val parentMap = mutableMapOf<Long, Long>()
+        val clusterData = _clusteringResult.value
 
+        // 1. Build Parent Map (Structural Hierarchy)
         lastEdgeList.filter { it.label == StandardSchemas.EDGE_CONTAINS }.forEach { edge ->
             parentMap[edge.dst.id] = edge.src.id
         }
@@ -279,15 +297,24 @@ class GraphViewmodel(
             if (isHidden(node.id)) hiddenNodeIds.add(node.id)
         }
 
+        // 2. Recursive Lookup Logic
         fun getVisualNodeId(actualId: Long): Long {
-            if (!hiddenNodeIds.contains(actualId)) return actualId
+            // First pass: Check structural hiding
             var currentId = actualId
-            while (hiddenNodeIds.contains(currentId)) {
-                val parentId = parentMap[currentId]
-                if (parentId == null) return currentId
-                currentId = parentId
+            if (hiddenNodeIds.contains(actualId)) {
+                // Walk up until we find the visible parent
+                var walker = actualId
+                while (hiddenNodeIds.contains(walker)) {
+                    val parentId = parentMap[walker] ?: break
+                    walker = parentId
+                }
+                currentId = walker
             }
-            return currentId
+
+            // Second pass: Check algorithmic clustering
+            // If the visible structural node is now part of a cluster, return cluster ID
+            val clusterId = clusterData?.nodeMap?.get(currentId)
+            return clusterId ?: currentId
         }
 
         val visibleEdgesMap = mutableMapOf<Pair<Long, Long>, GraphEdge>()
@@ -297,28 +324,34 @@ class GraphViewmodel(
             val visualDst = getVisualNodeId(edge.dst.id)
 
             val isProxy = (visualSrc != edge.src.id) || (visualDst != edge.dst.id)
+
+            // Skip loops if they are hidden inside the same node
+            if (visualSrc == visualDst) return@forEach
+
             val pair = Pair(visualSrc, visualDst)
             val strength = if(edge.label == StandardSchemas.EDGE_CONTAINS) 0.5f else 0.05f
 
             val isBidirectional = lastEdgeList.any {
                 getVisualNodeId(it.src.id) == visualDst && getVisualNodeId(it.dst.id) == visualSrc
             }
-            val isSelfLoop = visualSrc == visualDst
+
+            // Use negative IDs for proxy edges to avoid key collisions with real DB edge IDs
+            val edgeId = if(isProxy) -1L * edge.id else edge.id
 
             if (isProxy) {
-                if (!isSelfLoop || visibleEdgesMap[pair] == null) {
+                if (visibleEdgesMap[pair] == null) {
                     visibleEdgesMap[pair] = GraphEdge(
-                        id = -1L * edge.id, sourceId = visualSrc, targetId = visualDst,
+                        id = edgeId, sourceId = visualSrc, targetId = visualDst,
                         label = "Aggregated", strength = strength, colorInfo = labelToColor("Aggregated"),
                         isProxy = true, representedConnections = listOf("${edge.id}: ${edge.label}"),
-                        isBidirectional = isBidirectional, isSelfLoop = isSelfLoop
+                        isBidirectional = isBidirectional
                     )
                 }
             } else {
                 visibleEdgesMap[pair] = GraphEdge(
-                    id = edge.id, sourceId = visualSrc, targetId = visualDst,
+                    id = edgeId, sourceId = visualSrc, targetId = visualDst,
                     label = edge.label, strength = strength, colorInfo = labelToColor(edge.label),
-                    isProxy = false, isBidirectional = isBidirectional, isSelfLoop = isSelfLoop
+                    isProxy = false, isBidirectional = isBidirectional
                 )
             }
         }
@@ -330,8 +363,16 @@ class GraphViewmodel(
         }
 
         _graphNodes.update { currentNodes ->
-            val newNodeMap = lastNodeList.filter { !hiddenNodeIds.contains(it.id) }.associate { node ->
+            val newNodeMap = mutableMapOf<Long, GraphNode>()
+
+            // A. Process Regular Nodes (Filtered)
+            val clusterHiddenIds = clusterData?.nodeMap?.keys ?: emptySet()
+
+            lastNodeList.forEach { node ->
                 val id = node.id
+                // Skip if hidden structurally OR hidden by cluster
+                if (hiddenNodeIds.contains(id) || clusterHiddenIds.contains(id)) return@forEach
+
                 val existingNode = currentNodes[id]
                 val pos = if (calculateNewPositions) {
                     initialPositions[id] ?: Offset.Zero
@@ -345,16 +386,32 @@ class GraphViewmodel(
                 if (!calculateNewPositions && existingNode != null) {
                     nodeObj.vel = existingNode.vel
                 }
-
-                id to nodeObj
+                newNodeMap[id] = nodeObj
             }
+
+            // B. Add Cluster Nodes
+            clusterData?.clusters?.forEach { (clusterId, clusterNode) ->
+                val existingNode = currentNodes[clusterId]
+
+                // Preserve physics state if cluster existed
+                val finalNode = if (existingNode != null) {
+                    clusterNode.copy(
+                        pos = existingNode.pos,
+                        vel = existingNode.vel,
+                        isLocked = existingNode.isLocked
+                    )
+                } else {
+                    clusterNode
+                }
+                newNodeMap[clusterId] = finalNode
+            }
+
             newNodeMap
         }
         _graphEdges.value = visibleEdgesMap.values.toList()
     }
 
     private fun createGraphNode(node: NodeDisplayItem, pos: Offset, id: Long, isCollapsed: Boolean, isLocked: Boolean): GraphNode {
-        // Initial estimates - these will be corrected by onNodeSizeChanged after first render
         val radius = when(node.style) {
             NodeStyle.DOCUMENT -> 160f * currentDensity
             NodeStyle.SECTION -> 150f * currentDensity
@@ -379,7 +436,6 @@ class GraphViewmodel(
 
     // --- Interaction ---
 
-    // DYNAMIC SIZING: Called from UI when the composable size changes
     fun onNodeSizeChanged(nodeId: Long, size: IntSize) {
         val width = size.width.toFloat()
         val height = size.height.toFloat()
@@ -390,6 +446,7 @@ class GraphViewmodel(
             if (abs(node.radius - newRadius) < 5f) return@update currentNodes
 
             val newNodes = currentNodes.toMutableMap()
+            // Generic update logic relying on copy
             val updatedNode = when (node) {
                 is GenericGraphNode -> node.copy(radius = newRadius)
                 is DocumentGraphNode -> node.copy(radius = newRadius)
@@ -399,6 +456,7 @@ class GraphViewmodel(
                 is TableGraphNode -> node.copy(radius = newRadius)
                 is TagGraphNode -> node.copy(radius = newRadius)
                 is AttachmentGraphNode -> node.copy(radius = newRadius)
+                is ClusterNode -> node.copy(radius = newRadius) // Handle cluster
             }
             newNodes[nodeId] = updatedNode
             newNodes

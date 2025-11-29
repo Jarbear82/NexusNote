@@ -65,7 +65,7 @@ fun GraphView(
     val isProcessing by viewModel.isProcessingLayout.collectAsState()
 
     val layoutMode by viewModel.layoutMode.collectAsState()
-    val layoutDirection by viewModel.layoutDirection.collectAsState() // Added state
+    val layoutDirection by viewModel.layoutDirection.collectAsState()
     val physicsOptions by viewModel.physicsOptions.collectAsState()
     val snapEnabled by viewModel.snapEnabled.collectAsState()
 
@@ -79,7 +79,6 @@ fun GraphView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            // Parent gestures: Handle Panning (Background Drag) and Zooming
             .pointerInput(Unit) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
@@ -117,7 +116,6 @@ fun GraphView(
         }
 
         // --- LAYER 2: Nodes ---
-        // We render nodes as individual Composables with their own gesture detectors
         nodes.values.forEach { node ->
             val worldX = node.pos.x + transform.pan.x
             val worldY = node.pos.y + transform.pan.y
@@ -134,7 +132,6 @@ fun GraphView(
                 onDragStart = { viewModel.onDragStart(node.id) },
                 onDrag = { delta -> viewModel.onDrag(delta) },
                 onDragEnd = { viewModel.onDragEnd() },
-                // Listen to size changes to update physics radius
                 onSizeChanged = { size -> viewModel.onNodeSizeChanged(node.id, size) }
             )
         }
@@ -150,13 +147,16 @@ fun GraphView(
             GraphSettingsView(
                 layoutMode = layoutMode,
                 onLayoutModeChange = viewModel::onLayoutModeChanged,
-                layoutDirection = layoutDirection, // Pass direction state
-                onLayoutDirectionChange = viewModel::onLayoutDirectionChanged, // Pass handler
+                layoutDirection = layoutDirection,
+                onLayoutDirectionChange = viewModel::onLayoutDirectionChanged,
                 physicsOptions = physicsOptions,
                 onPhysicsOptionChange = viewModel::updatePhysicsOptions,
                 onTriggerLayout = viewModel::onTriggerLayoutAction,
                 snapEnabled = snapEnabled,
-                onSnapToggle = viewModel::toggleSnap
+                onSnapToggle = viewModel::toggleSnap,
+                onClusterOutliers = viewModel::clusterOutliers,
+                onClusterHubs = { viewModel.clusterByHubSize(5) }, // Default threshold 5
+                onClearClustering = viewModel::clearClustering
             )
         }
 
@@ -196,7 +196,6 @@ fun NodeWrapper(
     Box(
         modifier = Modifier
             .offset { IntOffset(screenOffset.x.roundToInt(), screenOffset.y.roundToInt()) }
-            // Scale visuals, but keep touch target logic centered
             .graphicsLayer {
                 scaleX = zoom
                 scaleY = zoom
@@ -209,27 +208,23 @@ fun NodeWrapper(
                     placeable.placeRelative(-placeable.width / 2, -placeable.height / 2)
                 }
             }
-            // Gesture Detection specifically for this node
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap() },
                     onLongPress = { onLongPress() }
                 )
             }
-            // FIX: Restart pointerInput when zoom changes so the lambda captures the correct zoom value
             .pointerInput(zoom) {
                 detectDragGestures(
                     onDragStart = { onDragStart() },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        // Multiply by zoom to convert local scaled coordinates back to screen coordinates
                         onDrag(dragAmount * zoom)
                     },
                     onDragEnd = { onDragEnd() }
                 )
             }
     ) {
-        // Selection visual
         if (isSelected) {
             Box(Modifier.matchParentSize().background(Color.Yellow.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape))
         }
@@ -243,10 +238,10 @@ fun NodeWrapper(
             is TableGraphNode -> TableNodeView(node)
             is TagGraphNode -> TagNodeView(node)
             is AttachmentGraphNode -> AttachmentNodeView(node)
+            is ClusterNode -> ClusterNodeView(node)
             else -> DefaultNodeView(node as GenericGraphNode)
         }
 
-        // Lock Icon Badge
         if (node.isLocked) {
             Icon(
                 Icons.Default.Lock,
