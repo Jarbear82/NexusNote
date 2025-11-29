@@ -3,6 +3,7 @@ package com.tau.nexus_note.codex.graph
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -69,6 +70,12 @@ fun GraphView(
     val physicsOptions by viewModel.physicsOptions.collectAsState()
     val snapEnabled by viewModel.snapEnabled.collectAsState()
 
+    // Phase 4 States
+    val selectionRect by viewModel.selectionRect.collectAsState()
+    val isSelectionMode by viewModel.isSelectionMode.collectAsState()
+    val isEditMode by viewModel.isEditMode.collectAsState()
+    val pendingEdgeSourceId by viewModel.pendingEdgeSourceId.collectAsState()
+
     LaunchedEffect(Unit) {
         viewModel.runSimulationLoop()
     }
@@ -79,10 +86,34 @@ fun GraphView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    viewModel.onPan(dragAmount)
+            .pointerInput(isSelectionMode) {
+                // Main Input Handler
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        if (isSelectionMode) {
+                            viewModel.onSelectionDragStart(offset)
+                        }
+                    },
+                    onDragEnd = {
+                        if (isSelectionMode) {
+                            viewModel.onSelectionDragEnd()
+                        }
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        if (isSelectionMode) {
+                            viewModel.onSelectionDrag(change.position)
+                        } else {
+                            viewModel.onPan(dragAmount)
+                        }
+                    }
+                )
+            }
+            .pointerInput(isEditMode) {
+                detectTapGestures { offset ->
+                    if (isEditMode) {
+                        viewModel.onBackgroundTap(offset)
+                    }
                 }
             }
             .onPointerEvent(PointerEventType.Scroll) {
@@ -122,12 +153,22 @@ fun GraphView(
             val screenX = centerX + (worldX * transform.zoom)
             val screenY = centerY + (worldY * transform.zoom)
 
+            val isSelected = node.id == primarySelectedId
+            val isPendingSource = node.id == pendingEdgeSourceId
+
             NodeWrapper(
                 node = node,
                 zoom = transform.zoom,
                 screenOffset = Offset(screenX, screenY),
-                isSelected = node.id == primarySelectedId,
-                onTap = { onNodeTap(node.id) },
+                isSelected = isSelected,
+                isPendingSource = isPendingSource,
+                onTap = {
+                    if (isEditMode) {
+                        viewModel.onNodeTap(node.id)
+                    } else {
+                        onNodeTap(node.id)
+                    }
+                },
                 onLongPress = { viewModel.onNodeLockToggle(node.id) },
                 onDragStart = { viewModel.onDragStart(node.id) },
                 onDrag = { delta -> viewModel.onDrag(delta) },
@@ -136,7 +177,24 @@ fun GraphView(
             )
         }
 
-        // --- LAYER 3: UI Controls ---
+        // --- LAYER 3: Selection Rect ---
+        if (selectionRect != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    color = Color.Blue.copy(alpha = 0.2f),
+                    topLeft = selectionRect!!.topLeft,
+                    size = selectionRect!!.size
+                )
+                drawRect(
+                    color = Color.Blue.copy(alpha = 0.5f),
+                    topLeft = selectionRect!!.topLeft,
+                    size = selectionRect!!.size,
+                    style = Stroke(width = 2f)
+                )
+            }
+        }
+
+        // --- LAYER 4: UI Controls ---
         SmallFloatingActionButton(
             onClick = { viewModel.toggleSettings() },
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
@@ -155,8 +213,14 @@ fun GraphView(
                 snapEnabled = snapEnabled,
                 onSnapToggle = viewModel::toggleSnap,
                 onClusterOutliers = viewModel::clusterOutliers,
-                onClusterHubs = { viewModel.clusterByHubSize(5) }, // Default threshold 5
-                onClearClustering = viewModel::clearClustering
+                onClusterHubs = { viewModel.clusterByHubSize(5) },
+                onClearClustering = viewModel::clearClustering,
+                // Phase 4 Controls
+                isEditMode = isEditMode,
+                onToggleEditMode = viewModel::toggleEditMode,
+                isSelectionMode = isSelectionMode,
+                onToggleSelectionMode = viewModel::toggleSelectionMode,
+                onFitToScreen = viewModel::fitToScreen
             )
         }
 
@@ -186,6 +250,7 @@ fun NodeWrapper(
     zoom: Float,
     screenOffset: Offset,
     isSelected: Boolean,
+    isPendingSource: Boolean, // For Edit Mode Highlighting
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onDragStart: () -> Unit,
@@ -228,6 +293,11 @@ fun NodeWrapper(
         if (isSelected) {
             Box(Modifier.matchParentSize().background(Color.Yellow.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape))
         }
+        if (isPendingSource) {
+            // Highlight source node for edge creation
+            Box(Modifier.matchParentSize().background(Color.Green.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape))
+            Box(Modifier.matchParentSize().border(2.dp, Color.Green, androidx.compose.foundation.shape.CircleShape))
+        }
 
         // Render content
         when(node) {
@@ -262,9 +332,6 @@ private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: Gra
 
     if (edge.isSelfLoop) {
         val loopRadius = 50f
-        val c1 = start + Offset(loopRadius * 2, -loopRadius * 2)
-        val c2 = start + Offset(loopRadius * 2, loopRadius * 2)
-
         val path = Path().apply {
             moveTo(start.x, start.y)
             cubicTo(

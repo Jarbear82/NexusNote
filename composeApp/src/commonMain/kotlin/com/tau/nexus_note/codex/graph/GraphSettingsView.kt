@@ -1,6 +1,11 @@
 package com.tau.nexus_note.codex.graph
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,6 +16,7 @@ import com.tau.nexus_note.codex.graph.physics.SolverType
 import com.tau.nexus_note.settings.GraphLayoutMode
 import com.tau.nexus_note.settings.LayoutDirection
 import com.tau.nexus_note.ui.components.CodexDropdown
+import com.tau.nexus_note.ui.components.Icon
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
 import kotlin.math.roundToInt
 
@@ -25,10 +31,15 @@ fun GraphSettingsView(
     onTriggerLayout: () -> Unit,
     snapEnabled: Boolean,
     onSnapToggle: (Boolean) -> Unit,
-    // Clustering Callbacks
     onClusterOutliers: () -> Unit,
     onClusterHubs: () -> Unit,
     onClearClustering: () -> Unit,
+    // Phase 4
+    isEditMode: Boolean,
+    onToggleEditMode: () -> Unit,
+    isSelectionMode: Boolean,
+    onToggleSelectionMode: () -> Unit,
+    onFitToScreen: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensityTokens.current
@@ -41,6 +52,30 @@ fun GraphSettingsView(
         Column(modifier = Modifier.padding(density.contentPadding)) {
             Text("Graph Settings", style = MaterialTheme.typography.titleMedium, fontSize = density.titleFontSize)
             Spacer(Modifier.height(16.dp))
+
+            // --- Phase 4: Toolbar ---
+            Text("Interaction Mode", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                IconButton(onClick = onToggleSelectionMode, colors = IconButtonDefaults.iconButtonColors(contentColor = if(isSelectionMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)) {
+                    Icon(if(isSelectionMode) Icons.Default.SelectAll else Icons.Default.PanTool, "Selection Mode")
+                }
+                IconButton(onClick = onToggleEditMode, colors = IconButtonDefaults.iconButtonColors(contentColor = if(isEditMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)) {
+                    Icon(Icons.Default.Edit, "Edit Mode")
+                }
+                IconButton(onClick = onFitToScreen) {
+                    Icon(Icons.Default.CenterFocusStrong, "Fit to Screen")
+                }
+            }
+            if (isEditMode) {
+                Text(
+                    "Edit Mode Active: Tap background to add Node. Tap two nodes to link.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // --- Layout Mode Selector ---
             CodexDropdown(
