@@ -724,6 +724,7 @@ class GraphViewmodel(
             is HeadingGraphNode -> measureSquarifiedText(node.text, measurer, style.copy(fontSize = 20.sp), padding)
             is ShortTextGraphNode -> measureSquarifiedText(node.text, measurer, style, padding)
             is LongTextGraphNode -> measureSquarifiedText(node.content, measurer, style, padding)
+            is TagGraphNode -> measureSquarifiedText(node.name, measurer, style, padding)
             is CodeBlockGraphNode -> measureSquarifiedText(node.code, measurer, style, padding)
             is UnorderedListGraphNode -> measureSquarifiedList(node.items, measurer, style, padding)
             is OrderedListGraphNode -> measureSquarifiedList(node.items, measurer, style, padding)
@@ -814,8 +815,14 @@ class GraphViewmodel(
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
-            NodeStyle.SHORT_TEXT, NodeStyle.TAG, NodeStyle.GENERIC -> ShortTextGraphNode(
+            NodeStyle.SHORT_TEXT, NodeStyle.GENERIC -> ShortTextGraphNode(
                 text = node.displayProperty,
+                id = id, label = node.label, pos = pos, vel = Offset.Zero,
+                mass = mass, radius = radius, width = width, height = height,
+                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+            )
+            NodeStyle.TAG -> TagGraphNode(
+                name = node.displayProperty,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath

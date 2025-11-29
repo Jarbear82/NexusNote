@@ -273,12 +273,14 @@ fun OrderedListRenderer(node: OrderedListGraphNode, modifier: Modifier = Modifie
 fun TagRenderer(node: TagGraphNode, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(50),
         color = node.colorInfo.composeColor,
-        border = androidx.compose.foundation.BorderStroke(1.dp, node.colorInfo.composeFontColor.copy(alpha=0.2f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, node.colorInfo.composeFontColor.copy(alpha=0.2f)),
+        shadowElevation = 2.dp
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            Text("#", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor.copy(alpha=0.5f))
+            Text("#", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor.copy(alpha=0.6f))
+            Spacer(Modifier.width(2.dp))
             Text(node.name, fontWeight = FontWeight.Medium, color = node.colorInfo.composeFontColor)
         }
     }
