@@ -6,32 +6,25 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tau.nexus_note.ui.components.Icon
 import dev.snipme.highlights.Highlights
 import dev.snipme.highlights.model.BoldHighlight
 import dev.snipme.highlights.model.ColorHighlight
@@ -41,57 +34,58 @@ import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import java.io.File
 
-// --- 1. Heading Renderer (Documents, Sections) ---
+// --- 1. Title Renderer ---
 @Composable
-fun HeadingRenderer(node: HeadingGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
-    val fontSize = if (node.level == 1) 24.sp else 18.sp
-
+fun TitleRenderer(node: TitleGraphNode, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.width(if(isExpanded) node.width.dp else 200.dp),
-        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor.copy(alpha = 0.8f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = if(node.level == 1) 8.dp else 4.dp),
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 250.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
         Box(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = node.title,
                 color = node.colorInfo.composeFontColor,
-                fontSize = fontSize,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = if(isExpanded) Int.MAX_VALUE else 2,
+                maxLines = if(node.isExpanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-// --- 2. Short Text Renderer (Tags, Attachments) ---
+// --- 2. Heading Renderer ---
 @Composable
-fun ShortTextRenderer(node: ShortTextGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
-
-    if (node.backgroundImagePath != null && File(node.backgroundImagePath).exists()) {
-        Card(
-            modifier = modifier.size(if(isExpanded) 200.dp else 80.dp),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-        ) {
-            KamelImage(
-                resource = { asyncPainterResource(data = File(node.backgroundImagePath).toURI().toString()) },
-                contentDescription = node.label,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+fun HeadingRenderer(node: HeadingGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 200.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor.copy(alpha = 0.9f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Box(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = node.text,
+                color = node.colorInfo.composeFontColor,
+                fontSize = (22 - (node.level * 2)).coerceAtLeast(14).sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = if(node.isExpanded) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
-        return
     }
+}
 
+// --- 3. Short Text Renderer ---
+@Composable
+fun ShortTextRenderer(node: ShortTextGraphNode, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier.defaultMinSize(minWidth = 100.dp),
+        modifier = modifier.defaultMinSize(minWidth = 120.dp),
         shape = RoundedCornerShape(50),
         color = node.colorInfo.composeColor,
-        shadowElevation = 4.dp,
+        shadowElevation = 2.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha=0.3f))
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -99,7 +93,6 @@ fun ShortTextRenderer(node: ShortTextGraphNode, modifier: Modifier = Modifier) {
                 text = node.text,
                 color = node.colorInfo.composeFontColor,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -107,13 +100,11 @@ fun ShortTextRenderer(node: ShortTextGraphNode, modifier: Modifier = Modifier) {
     }
 }
 
-// --- 3. Long Text Renderer (Blocks, Content) ---
+// --- 4. Long Text Renderer ---
 @Composable
 fun LongTextRenderer(node: LongTextGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
-
     Card(
-        modifier = modifier.width(if(isExpanded) node.width.dp else 250.dp),
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 250.dp),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -124,81 +115,16 @@ fun LongTextRenderer(node: LongTextGraphNode, modifier: Modifier = Modifier) {
                 color = node.colorInfo.composeFontColor,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
-                maxLines = if(isExpanded) Int.MAX_VALUE else 6,
+                maxLines = if(node.isExpanded) Int.MAX_VALUE else 6,
                 overflow = TextOverflow.Ellipsis
             )
         }
     }
 }
 
-// --- 4. Map Renderer (Key-Value Tables) ---
+// --- 5. Code Block Renderer ---
 @Composable
-fun MapRenderer(node: MapGraphNode, modifier: Modifier = Modifier) {
-    var expanded by remember { mutableStateOf(false) }
-    val fontColor = node.colorInfo.composeFontColor
-
-    Card(
-        modifier = modifier.width(280.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    text = node.label.uppercase(),
-                    color = fontColor.copy(alpha = 0.7f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            if (node.title != null) {
-                Text(
-                    text = node.title,
-                    color = fontColor,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = fontColor.copy(alpha = 0.2f))
-
-            if (node.data.isNotEmpty()) {
-                val propertyLimit = 3
-                val shouldCollapse = node.data.size > propertyLimit
-                val propertiesToShow = if (expanded || !shouldCollapse) node.data.entries.toList() else node.data.entries.take(propertyLimit).toList()
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    propertiesToShow.forEach { (key, value) ->
-                        Row(verticalAlignment = Alignment.Top) {
-                            Text("$key: ", color = fontColor.copy(alpha = 0.8f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(value, color = fontColor, fontSize = 12.sp, maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                }
-
-                if (shouldCollapse) {
-                    Text(
-                        text = if (expanded) "Show Less" else "Show More...",
-                        color = fontColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier.clickable { expanded = !expanded }.padding(top = 8.dp).align(Alignment.End)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// --- 5. Code Renderer ---
-@Composable
-fun CodeRenderer(node: CodeGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
-
+fun CodeBlockRenderer(node: CodeBlockGraphNode, modifier: Modifier = Modifier) {
     val highlights = remember(node.code, node.language) {
         Highlights.Builder()
             .code(node.code)
@@ -221,7 +147,7 @@ fun CodeRenderer(node: CodeGraphNode, modifier: Modifier = Modifier) {
     }
 
     Card(
-        modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp),
+        modifier = modifier.width(if (node.isExpanded) node.width.dp else 300.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2B2B)),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         shape = RoundedCornerShape(8.dp)
@@ -233,97 +159,146 @@ fun CodeRenderer(node: CodeGraphNode, modifier: Modifier = Modifier) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(node.language.uppercase(), color = Color(0xFFA9B7C6), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                if (node.filename.isNotBlank()) Text(node.filename, color = Color.Gray, fontSize = 10.sp)
             }
-
             Box(modifier = Modifier.padding(12.dp)) {
-                if (isExpanded) {
-                    Text(
-                        text = highlights.toAnnotatedString(),
-                        color = Color(0xFFA9B7C6),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                } else {
-                    Text(
-                        text = node.code.lines().take(3).joinToString("\n"),
-                        color = Color(0xFFA9B7C6),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                }
+                Text(
+                    text = node.code.lines().take(if(node.isExpanded) Int.MAX_VALUE else 3).joinToString("\n"),
+                    color = Color(0xFFA9B7C6),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
             }
         }
     }
 }
 
-// --- 6. List Renderer ---
+// --- 6. Map Renderer ---
 @Composable
-fun ListRenderer(node: ListGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
-
+fun MapRenderer(node: MapGraphNode, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.width(if(isExpanded) node.width.dp else 220.dp),
+        modifier = modifier.width(280.dp),
+        shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            if (node.title != null) {
-                Text(node.title, fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor)
-                HorizontalDivider(color = node.colorInfo.composeFontColor.copy(alpha=0.5f), modifier = Modifier.padding(vertical=4.dp))
-            }
-
-            if (isExpanded) {
-                node.items.forEach { item ->
-                    Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 4.dp)) {
-                        Text("•", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor, modifier = Modifier.width(12.dp))
-                        Text(item, fontSize = 12.sp, color = node.colorInfo.composeFontColor)
-                    }
-                }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("•", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = node.items.firstOrNull() ?: "Empty List",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontSize = 12.sp,
-                        color = node.colorInfo.composeFontColor
-                    )
-                }
-                if (node.items.size > 1) {
-                    Text(
-                        text = "+ ${node.items.size - 1} more...",
-                        fontSize = 10.sp,
-                        color = node.colorInfo.composeFontColor.copy(alpha=0.7f),
-                        modifier = Modifier.padding(start = 16.dp)
-                    )
+            Text(node.label, fontWeight = FontWeight.Bold, fontSize=12.sp, color = node.colorInfo.composeFontColor.copy(alpha=0.6f))
+            HorizontalDivider(modifier=Modifier.padding(vertical=4.dp))
+            node.data.entries.take(if(node.isExpanded) Int.MAX_VALUE else 3).forEach { (k, v) ->
+                Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                    Text("$k: ", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = node.colorInfo.composeFontColor)
+                    Text(v, fontSize = 12.sp, color = node.colorInfo.composeFontColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
     }
 }
 
-// --- 7. Table Renderer ---
+// --- 7. Set Renderer (Chips) ---
+@Composable
+fun SetRenderer(node: SetGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 250.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text("SET (Unique)", fontWeight = FontWeight.Bold, fontSize=10.sp, color=node.colorInfo.composeFontColor.copy(alpha=0.6f))
+            Spacer(Modifier.height(4.dp))
+            OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                node.items.take(if(node.isExpanded) Int.MAX_VALUE else 5).forEach { item ->
+                    Surface(
+                        color = Color.Black.copy(alpha=0.1f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(item, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = node.colorInfo.composeFontColor)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- 8. Unordered List Renderer ---
+@Composable
+fun UnorderedListRenderer(node: UnorderedListGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 220.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            node.items.take(if(node.isExpanded) Int.MAX_VALUE else 4).forEach { item ->
+                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 2.dp)) {
+                    Text("•", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor, modifier = Modifier.padding(end=6.dp))
+                    Text(item, fontSize = 14.sp, color = node.colorInfo.composeFontColor)
+                }
+            }
+            if(!node.isExpanded && node.items.size > 4) {
+                Text("+ ${node.items.size - 4} more...", fontSize=10.sp, color=node.colorInfo.composeFontColor.copy(alpha=0.7f))
+            }
+        }
+    }
+}
+
+// --- 9. Ordered List Renderer ---
+@Composable
+fun OrderedListRenderer(node: OrderedListGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 220.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            node.items.take(if(node.isExpanded) Int.MAX_VALUE else 4).forEachIndexed { index, item ->
+                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 2.dp)) {
+                    Text("${index + 1}.", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor, modifier = Modifier.width(20.dp))
+                    Text(item, fontSize = 14.sp, color = node.colorInfo.composeFontColor)
+                }
+            }
+            if(!node.isExpanded && node.items.size > 4) {
+                Text("+ ${node.items.size - 4} more...", fontSize=10.sp, color=node.colorInfo.composeFontColor.copy(alpha=0.7f))
+            }
+        }
+    }
+}
+
+// --- 10. Tag Renderer ---
+@Composable
+fun TagRenderer(node: TagGraphNode, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = node.colorInfo.composeColor,
+        border = androidx.compose.foundation.BorderStroke(1.dp, node.colorInfo.composeFontColor.copy(alpha=0.2f))
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Text("#", fontWeight = FontWeight.Bold, color = node.colorInfo.composeFontColor.copy(alpha=0.5f))
+            Text(node.name, fontWeight = FontWeight.Medium, color = node.colorInfo.composeFontColor)
+        }
+    }
+}
+
+// --- 11. Table Renderer ---
 @Composable
 fun TableRenderer(node: TableGraphNode, modifier: Modifier = Modifier) {
-    val isExpanded = node.isExpanded
     val fontColor = node.colorInfo.composeFontColor
     val borderColor = fontColor.copy(alpha = 0.2f)
 
     Card(
-        modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp),
+        modifier = modifier.width(if (node.isExpanded) node.width.dp else 300.dp),
         colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Caption / Title
             if (!node.caption.isNullOrBlank()) {
                 Text(
-                    text = node.caption,
+                    node.caption,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = fontColor,
@@ -331,58 +306,126 @@ fun TableRenderer(node: TableGraphNode, modifier: Modifier = Modifier) {
                 )
             }
 
-            // Table Content
+            // Table Container
             Column(modifier = Modifier.border(1.dp, borderColor, RoundedCornerShape(4.dp))) {
-                // Header Row
-                Row(modifier = Modifier.background(borderColor).padding(4.dp)) {
-                    node.headers.forEach { header ->
-                        Text(
-                            text = header,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = fontColor,
-                            modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                // Headers
+                Row(modifier = Modifier.background(borderColor.copy(alpha = 0.1f)).padding(4.dp)) {
+                    if (node.headers.isNotEmpty()) {
+                        node.headers.forEach { header ->
+                            Text(
+                                text = header,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = fontColor,
+                                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    } else {
+                        // Empty header fallback
+                        Text("Empty Table", fontSize=12.sp, color=fontColor, modifier=Modifier.padding(4.dp))
                     }
                 }
 
-                if (isExpanded) {
-                    // Data Rows
-                    node.rows.forEachIndexed { index, row ->
-                        HorizontalDivider(color = borderColor, thickness = 0.5.dp)
-                        Row(modifier = Modifier.padding(4.dp)) {
+                // Rows
+                val rowsToShow = if (node.isExpanded) node.rows else node.rows.take(5)
+
+                rowsToShow.forEachIndexed { index, row ->
+                    HorizontalDivider(color = borderColor, thickness = 0.5.dp)
+                    Row(modifier = Modifier.padding(4.dp)) {
+                        if (node.headers.isNotEmpty()) {
                             node.headers.forEach { header ->
                                 Text(
                                     text = row[header] ?: "",
                                     fontSize = 12.sp,
                                     color = fontColor,
                                     modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-                                    maxLines = 2,
+                                    maxLines = 1, // Compact rows
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                        } else {
+                            // Fallback if no headers but data exists
+                            Text(
+                                text = row.values.joinToString(", "),
+                                fontSize = 12.sp,
+                                color = fontColor,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
                         }
                     }
-                } else {
-                    // Collapsed Hint
-                    if (node.rows.isNotEmpty()) {
-                        HorizontalDivider(color = borderColor, thickness = 0.5.dp)
-                        Text(
-                            text = "${node.rows.size} rows hidden...",
-                            fontSize = 10.sp,
-                            color = fontColor.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(8.dp).align(Alignment.CenterHorizontally)
-                        )
-                    }
+                }
+
+                if (!node.isExpanded && node.rows.size > 5) {
+                    HorizontalDivider(color = borderColor, thickness = 0.5.dp)
+                    Text(
+                        "${node.rows.size - 5} more rows...",
+                        fontSize = 10.sp,
+                        color = fontColor.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(8.dp).align(Alignment.CenterHorizontally)
+                    )
                 }
             }
         }
     }
 }
 
-// --- 8. Cluster Node Renderer ---
+// --- 12. Image Renderer (New) ---
+@Composable
+fun ImageRenderer(node: ImageGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if (node.isExpanded) 400.dp else 200.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column {
+            KamelImage(
+                resource = { asyncPainterResource(data = File(node.uri).toURI().toString()) },
+                contentDescription = node.altText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (node.isExpanded) 300.dp else 150.dp)
+                    .background(Color.Black.copy(alpha = 0.1f)),
+                contentScale = ContentScale.Crop,
+                onFailure = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.BrokenImage, "Error", tint = Color.Red.copy(alpha = 0.5f))
+                    }
+                }
+            )
+
+            Box(modifier = Modifier.padding(8.dp)) {
+                Text(
+                    text = node.altText.ifBlank { "Image" },
+                    color = node.colorInfo.composeFontColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+// --- 13. Legacy List Renderer ---
+@Composable
+fun ListRenderer(node: ListGraphNode, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.width(if(node.isExpanded) node.width.dp else 220.dp),
+        colors = CardDefaults.cardColors(containerColor = node.colorInfo.composeColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            node.items.take(if(node.isExpanded) Int.MAX_VALUE else 4).forEach { item ->
+                Text("• $item", fontSize = 14.sp, color = node.colorInfo.composeFontColor)
+            }
+        }
+    }
+}
+
 @Composable
 fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
     Box(
@@ -394,17 +437,8 @@ fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "${node.childCount}",
-                color = node.colorInfo.composeFontColor,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = node.label,
-                color = node.colorInfo.composeFontColor.copy(alpha = 0.8f),
-                style = MaterialTheme.typography.labelSmall
-            )
+            Text("${node.childCount}", color = node.colorInfo.composeFontColor, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(node.label, color = node.colorInfo.composeFontColor.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
         }
     }
 }

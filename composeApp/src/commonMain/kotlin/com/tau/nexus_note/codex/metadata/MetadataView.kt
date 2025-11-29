@@ -5,12 +5,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.CodexRepository
 import com.tau.nexus_note.datamodels.EdgeDisplayItem
+import com.tau.nexus_note.datamodels.EdgeEditState
 import com.tau.nexus_note.datamodels.NodeDisplayItem
+import com.tau.nexus_note.datamodels.NodeEditState
 import com.tau.nexus_note.ui.components.CodexSectionHeader
 import com.tau.nexus_note.ui.components.display.SmartPropertyRenderer
 import com.tau.nexus_note.ui.theme.LocalDensityTokens
@@ -35,7 +38,6 @@ fun MetadataView(
     onListEdgesClick: () -> Unit,
     repository: CodexRepository
 ) {
-    // UPDATED: Get the media path directly
     val mediaRootPath = repository.mediaDirectoryPath
     val density = LocalDensityTokens.current
 
@@ -45,7 +47,10 @@ fun MetadataView(
         CodexSectionHeader("Selection Details")
 
         if (primarySelectedItem is NodeDisplayItem) {
-            val nodeEditState = repository.getNodeEditState(primarySelectedItem.id)
+            val nodeEditState = produceState<NodeEditState?>(initialValue = null, primarySelectedItem.id) {
+                value = repository.getNodeEditState(primarySelectedItem.id)
+            }.value
+
             if (nodeEditState != null) {
                 Text(primarySelectedItem.label, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontSize = density.titleFontSize)
                 Spacer(Modifier.height(8.dp))
@@ -63,7 +68,10 @@ fun MetadataView(
                 Button(onClick = { onEditNodeClick(primarySelectedItem) }, modifier = Modifier.height(density.buttonHeight)) { Text("Edit Node") }
             }
         } else if (primarySelectedItem is EdgeDisplayItem) {
-            val edgeEditState = repository.getEdgeEditState(primarySelectedItem)
+            val edgeEditState = produceState<EdgeEditState?>(initialValue = null, primarySelectedItem.id) {
+                value = repository.getEdgeEditState(primarySelectedItem)
+            }.value
+
             if (edgeEditState != null) {
                 Text(primarySelectedItem.label, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontSize = density.titleFontSize)
                 Text("${primarySelectedItem.src.displayProperty} -> ${primarySelectedItem.dst.displayProperty}", fontSize = density.bodyFontSize)

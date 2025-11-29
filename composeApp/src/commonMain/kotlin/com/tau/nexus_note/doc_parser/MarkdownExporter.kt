@@ -34,6 +34,7 @@ class MarkdownExporter(private val repository: CodexRepository) {
     }
 
     private suspend fun buildMarkdownForNode(nodeId: Long, level: Int = 1): String {
+        // Fixed: Use the alias added to Repository
         val nodeEditState = repository.getNodeById(nodeId) ?: return ""
         val node = nodeEditState.schema
         val props = nodeEditState.properties
@@ -79,7 +80,8 @@ class MarkdownExporter(private val repository: CodexRepository) {
             }
             StandardSchemas.DOC_NODE_TASK_ITEM -> {
                 val content = resolveTemplates(props[StandardSchemas.PROP_CONTENT] ?: "")
-                val checked = props[StandardSchemas.PROP_IS_CHECKED].toBoolean()
+                // Fixed: Safe nullable boolean check
+                val checked = props[StandardSchemas.PROP_IS_CHECKED]?.toBoolean() ?: false
                 val marker = if (checked) "[x]" else "[ ]"
                 sb.append("- $marker $content\n")
             }
@@ -115,7 +117,9 @@ class MarkdownExporter(private val repository: CodexRepository) {
             val id = match.groupValues[1].toLong()
             val node = repository.getNodeById(id)
             if (node != null) {
-                "#${node.schema.properties.find{it.isDisplayProperty}?.let{ p -> node.properties[p.name]} ?: "tag"}"
+                // Resolved: explicit type parameter on let not strictly needed but logic fixed by getNodeById existence
+                val label = node.schema.properties.find{it.isDisplayProperty}?.let{ p -> node.properties[p.name]} ?: "tag"
+                "#$label"
             } else match.value
         }
     }

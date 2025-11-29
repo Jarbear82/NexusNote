@@ -1,5 +1,3 @@
-// src/commonMain/kotlin/com/tau/nexus_note/codex/graph/GraphModels.kt
-
 package com.tau.nexus_note.codex.graph
 
 import androidx.compose.ui.geometry.Offset
@@ -8,44 +6,28 @@ import com.tau.nexus_note.datamodels.ColorInfo
 // --- Sealed Base for all visual Graph Nodes ---
 sealed interface GraphNode {
     val id: Long
-    val label: String // Schema Name (e.g., "Document", "Tag")
-
-    // Physics properties
+    val label: String
     var pos: Offset
     var vel: Offset
     val mass: Float
     val radius: Float
-
-    // Dimensions for Rectangular Repulsion
     val width: Float
     val height: Float
-
     val colorInfo: ColorInfo
-
-    // Physics State
-    var isFixed: Boolean // Used for dragging or temp locks
-    var isLocked: Boolean // User explicitly locked this node (Persistent in session)
-
-    // Transient UI State
+    var isFixed: Boolean
+    var isLocked: Boolean
     var isExpanded: Boolean
-
-    // Physics internals (FA2)
     var oldForce: Offset
     var swinging: Float
     var traction: Float
-
-    // Common Visualization
     val isCollapsed: Boolean
     val backgroundImagePath: String?
-
-    // Abstract copy method for Physics Engine
     fun copyNode(): GraphNode
 }
 
-// --- 1. Heading Node (Structure) ---
-data class HeadingGraphNode(
+// 1. Title (Root)
+data class TitleGraphNode(
     val title: String,
-    val level: Int = 1, // 1 for Doc, 2+ for Sections
     override val id: Long,
     override val label: String,
     override var pos: Offset,
@@ -63,14 +45,34 @@ data class HeadingGraphNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }
 
-// --- 2. Short Text Node (Concepts/Ribs) ---
+// 2. Heading (Branch)
+data class HeadingGraphNode(
+    val text: String,
+    val level: Int,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 3. Short Text
 data class ShortTextGraphNode(
     val text: String,
-    val iconName: String? = null,
     override val id: Long,
     override val label: String,
     override var pos: Offset,
@@ -88,11 +90,9 @@ data class ShortTextGraphNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }
 
-// --- 3. Long Text Node (Content) ---
+// 4. Long Text
 data class LongTextGraphNode(
     val content: String,
     override val id: Long,
@@ -112,11 +112,167 @@ data class LongTextGraphNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }
 
-// --- 4. List Node (Structure) ---
+// 5. Code Block
+data class CodeBlockGraphNode(
+    val code: String,
+    val language: String,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 6. Map
+data class MapGraphNode(
+    val data: Map<String, String>,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 7. Set (Unique Values)
+data class SetGraphNode(
+    val items: List<String>,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 8. Unordered List
+data class UnorderedListGraphNode(
+    val items: List<String>,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 9. Ordered List
+data class OrderedListGraphNode(
+    val items: List<String>,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 10. Table Graph Node
+data class TableGraphNode(
+    val headers: List<String>,
+    val rows: List<Map<String, String>>,
+    val caption: String?,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 11. Image Graph Node (New)
+data class ImageGraphNode(
+    val uri: String, // Absolute path
+    val altText: String,
+    override val id: Long,
+    override val label: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode { override fun copyNode() = this.copy() }
+
+// 12. Legacy List Graph Node (For robustness if referenced)
 data class ListGraphNode(
     val items: List<String>,
     val title: String? = null,
@@ -137,14 +293,11 @@ data class ListGraphNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }
 
-// --- 5. Map Node (Metadata/Key-Value) ---
-data class MapGraphNode(
-    val data: Map<String, String>,
-    val title: String? = null,
+// 13. Tag (Leaf)
+data class TagGraphNode(
+    val name: String,
     override val id: Long,
     override val label: String,
     override var pos: Offset,
@@ -162,63 +315,9 @@ data class MapGraphNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }
 
-// --- 6. Code Node (Syntax Highlighted) ---
-data class CodeGraphNode(
-    val code: String,
-    val language: String,
-    val filename: String = "",
-    override val id: Long,
-    override val label: String,
-    override var pos: Offset,
-    override var vel: Offset,
-    override val mass: Float,
-    override val radius: Float,
-    override val width: Float,
-    override val height: Float,
-    override val colorInfo: ColorInfo,
-    override var isFixed: Boolean = false,
-    override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
-    override var oldForce: Offset = Offset.Zero,
-    override var swinging: Float = 0f,
-    override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
-    override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
-
-// --- 7. Table Node (Grids) ---
-data class TableGraphNode(
-    val headers: List<String>,
-    val rows: List<Map<String, String>>,
-    val caption: String? = null,
-    override val id: Long,
-    override val label: String,
-    override var pos: Offset,
-    override var vel: Offset,
-    override val mass: Float,
-    override val radius: Float,
-    override val width: Float,
-    override val height: Float,
-    override val colorInfo: ColorInfo,
-    override var isFixed: Boolean = false,
-    override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
-    override var oldForce: Offset = Offset.Zero,
-    override var swinging: Float = 0f,
-    override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
-    override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
-
-// --- 8. Cluster Node (Grouping) ---
+// Helper: Cluster
 data class ClusterNode(
     override val id: Long,
     val containedNodes: Set<Long>,
@@ -239,6 +338,4 @@ data class ClusterNode(
     override var traction: Float = 0f,
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
-) : GraphNode {
-    override fun copyNode() = this.copy()
-}
+) : GraphNode { override fun copyNode() = this.copy() }

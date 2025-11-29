@@ -24,52 +24,64 @@ data class ConnectionPair(
 
 /**
  * Defines the visual rendering style for nodes of a specific schema.
- * Now acts as the registry for Node Topology definitions.
+ * Implements the requested Zig types fully.
  */
 @Serializable
 enum class NodeStyle(val displayName: String, val definition: NodeDefinition) {
-    GENERIC(
-        "Generic Card",
-        NodeDefinition(NodeTopology.LEAF, "Standard Node container", supportsChildren = true)
-    ),
+    // --- Requested Zig Types ---
 
-    // --- Structural Roots & Branches ---
-    DOCUMENT(
-        "Document Root",
-        NodeDefinition(NodeTopology.ROOT, "Root node, no parents, heavy mass.", supportsChildren = true)
+    TITLE(
+        "Title (Root)",
+        NodeDefinition(NodeTopology.ROOT, "Has no parent nodes, but may have child nodes.")
     ),
-    SECTION(
-        "Section Header",
-        NodeDefinition(NodeTopology.BRANCH, "Structural divider within a document", supportsChildren = true)
+    HEADING(
+        "Heading",
+        NodeDefinition(NodeTopology.BRANCH, "May have parent nodes, may have child nodes.")
     ),
-    LIST(
-        "List Group",
-        NodeDefinition(NodeTopology.BRANCH, "Container for list items", supportsChildren = true)
+    SHORT_TEXT(
+        "Short Text",
+        NodeDefinition(NodeTopology.BRANCH, "Short. Can be rendered as one line.")
     ),
-
-    // --- Content Leaves ---
-    BLOCK(
-        "Text Block",
-        NodeDefinition(NodeTopology.LEAF, "Atomic unit of text content", supportsChildren = false)
+    LONG_TEXT(
+        "Long Text",
+        NodeDefinition(NodeTopology.BRANCH, "Long. Rendered as multiple lines.")
     ),
     CODE_BLOCK(
         "Code Block",
-        NodeDefinition(NodeTopology.LEAF, "Syntax highlighted code snippet", supportsChildren = false)
+        NodeDefinition(NodeTopology.BRANCH, "Code. Language and filename may be specified.")
+    ),
+    MAP(
+        "Map",
+        NodeDefinition(NodeTopology.BRANCH, "Contains simple key-value pairs")
+    ),
+    SET(
+        "Set",
+        NodeDefinition(NodeTopology.BRANCH, "Contains simple unique values (no duplicates)")
+    ),
+    UNORDERED_LIST(
+        "Unordered List",
+        NodeDefinition(NodeTopology.BRANCH, "Contains simple values, order doesn't matter.")
+    ),
+    ORDERED_LIST(
+        "Ordered List",
+        NodeDefinition(NodeTopology.BRANCH, "Contains simple values, order is specified.")
+    ),
+    TAG(
+        "Tag",
+        NodeDefinition(NodeTopology.LEAF, "Simple node like an idea to connect other nodes")
     ),
     TABLE(
-        "Data Table",
-        NodeDefinition(NodeTopology.LEAF, "Structured data grid", supportsChildren = false)
+        "Table",
+        NodeDefinition(NodeTopology.BRANCH, "Tabular data with headers and rows")
     ),
 
-    // --- Concept / Asset Leaves ---
-    TAG(
-        "Tag / Pill",
-        NodeDefinition(NodeTopology.LEAF, "Conceptual label or category", supportsChildren = false)
-    ),
-    ATTACHMENT(
-        "Media / Attachment",
-        NodeDefinition(NodeTopology.LEAF, "External file reference (Image, Audio, etc)", supportsChildren = false)
-    )
+    // --- Legacy / Helpers (Optional, kept for safety or mapped to above in logic) ---
+    GENERIC("Generic", NodeDefinition(NodeTopology.LEAF, "Fallback")),
+    DOCUMENT("Document (Legacy)", NodeDefinition(NodeTopology.ROOT, "Legacy")),
+    SECTION("Section (Legacy)", NodeDefinition(NodeTopology.BRANCH, "Legacy")),
+    BLOCK("Block (Legacy)", NodeDefinition(NodeTopology.LEAF, "Legacy")),
+    LIST("List (Legacy)", NodeDefinition(NodeTopology.BRANCH, "Legacy")),
+    ATTACHMENT("Attachment", NodeDefinition(NodeTopology.LEAF, "File Attachment"))
 }
 
 /**
