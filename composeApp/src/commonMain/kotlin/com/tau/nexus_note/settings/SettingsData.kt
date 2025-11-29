@@ -91,7 +91,8 @@ data class GraphRenderingSettings(
     val showNodeLabels: Boolean = true,
     val showEdgeLabels: Boolean = true,
     val showCrosshairs: Boolean = true,
-    val startSimulationOnLoad: Boolean = true
+    val startSimulationOnLoad: Boolean = true,
+    val lodThreshold: Float = 0.4f // Threshold below which nodes are rendered simply
 ) {
     companion object {
         val Default = GraphRenderingSettings()

@@ -22,6 +22,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -36,10 +37,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.tau.nexus_note.codex.graph.GraphNode
+import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.datamodels.GraphEdge
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -68,6 +71,7 @@ fun GraphView(
     val layoutMode by viewModel.layoutMode.collectAsState()
     val layoutDirection by viewModel.layoutDirection.collectAsState()
     val physicsOptions by viewModel.physicsOptions.collectAsState()
+    val renderingSettings by viewModel.renderingSettings.collectAsState()
     val snapEnabled by viewModel.snapEnabled.collectAsState()
 
     // Phase 4 States
@@ -82,6 +86,8 @@ fun GraphView(
 
     val density = LocalDensity.current.density
     LaunchedEffect(density) { viewModel.updateDensity(density) }
+
+    val textMeasurer = rememberTextMeasurer()
 
     BoxWithConstraints(
         modifier = Modifier
@@ -129,7 +135,27 @@ fun GraphView(
         val centerX = constraints.maxWidth / 2f
         val centerY = constraints.maxHeight / 2f
 
-        // --- LAYER 1: Edges ---
+        // --- Culling & LOD Calculation ---
+        // 1. Calculate World Viewport
+        // ScreenPos = Center + (WorldPos + Pan) * Zoom
+        // WorldPos = (ScreenPos - Center) / Zoom - Pan
+        val buffer = 500f // Buffer pixels to avoid popping
+        val visibleMinX = ((0f - centerX) / transform.zoom) - transform.pan.x - buffer
+        val visibleMinY = ((0f - centerY) / transform.zoom) - transform.pan.y - buffer
+        val visibleMaxX = ((constraints.maxWidth.toFloat() - centerX) / transform.zoom) - transform.pan.x + buffer
+        val visibleMaxY = ((constraints.maxHeight.toFloat() - centerY) / transform.zoom) - transform.pan.y + buffer
+
+        val visibleBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
+
+        // 2. Filter Nodes
+        val visibleNodes = remember(nodes, visibleBounds) {
+            nodes.values.filter { visibleBounds.contains(it.pos) }
+        }
+
+        // 3. LOD Switch
+        val isLowDetail = transform.zoom < renderingSettings.lodThreshold
+
+        // --- LAYER 1: Edges (Always Canvas) ---
         Canvas(modifier = Modifier.fillMaxSize()) {
             withTransform({
                 translate(left = centerX, top = centerY)
@@ -137,44 +163,87 @@ fun GraphView(
                 translate(left = transform.pan.x, top = transform.pan.y)
             }) {
                 edges.forEach { edge ->
+                    // Optimization: Only draw edges if at least one node is visible
                     val nodeA = nodes[edge.sourceId]
                     val nodeB = nodes[edge.targetId]
                     if (nodeA != null && nodeB != null) {
-                        drawRichEdge(nodeA, nodeB, edge)
+                        val aVisible = visibleBounds.contains(nodeA.pos)
+                        val bVisible = visibleBounds.contains(nodeB.pos)
+                        if (aVisible || bVisible) {
+                            drawRichEdge(nodeA, nodeB, edge, isLowDetail)
+                        }
                     }
                 }
             }
         }
 
         // --- LAYER 2: Nodes ---
-        nodes.values.forEach { node ->
-            val worldX = node.pos.x + transform.pan.x
-            val worldY = node.pos.y + transform.pan.y
-            val screenX = centerX + (worldX * transform.zoom)
-            val screenY = centerY + (worldY * transform.zoom)
-
-            val isSelected = node.id == primarySelectedId
-            val isPendingSource = node.id == pendingEdgeSourceId
-
-            NodeWrapper(
-                node = node,
-                zoom = transform.zoom,
-                screenOffset = Offset(screenX, screenY),
-                isSelected = isSelected,
-                isPendingSource = isPendingSource,
-                onTap = {
-                    if (isEditMode) {
-                        viewModel.onNodeTap(node.id)
-                    } else {
-                        onNodeTap(node.id)
+        if (isLowDetail) {
+            // LOD MODE: Draw Simple Circles via Canvas (Bypasses Composition)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                withTransform({
+                    translate(left = centerX, top = centerY)
+                    scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
+                    translate(left = transform.pan.x, top = transform.pan.y)
+                }) {
+                    visibleNodes.forEach { node ->
+                        // Simple dot
+                        drawCircle(
+                            color = node.colorInfo.composeColor,
+                            radius = node.radius,
+                            center = node.pos
+                        )
+                        // Simple text (optional, only if zoom isn't TINY)
+                        if (transform.zoom > 0.2f) {
+                            val textResult = textMeasurer.measure(
+                                text = node.label,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 20.sp,
+                                    color = Color.Black
+                                )
+                            )
+                            drawText(
+                                textLayoutResult = textResult,
+                                topLeft = node.pos + Offset(-textResult.size.width / 2f, node.radius + 5f)
+                            )
+                        }
                     }
-                },
-                onLongPress = { viewModel.onNodeLockToggle(node.id) },
-                onDragStart = { viewModel.onDragStart(node.id) },
-                onDrag = { delta -> viewModel.onDrag(delta) },
-                onDragEnd = { viewModel.onDragEnd() },
-                onSizeChanged = { size -> viewModel.onNodeSizeChanged(node.id, size) }
-            )
+                }
+            }
+        } else {
+            // FULL MODE: Render Composables
+            visibleNodes.forEach { node ->
+                val worldX = node.pos.x + transform.pan.x
+                val worldY = node.pos.y + transform.pan.y
+                val screenX = centerX + (worldX * transform.zoom)
+                val screenY = centerY + (worldY * transform.zoom)
+
+                val isSelected = node.id == primarySelectedId
+                val isPendingSource = node.id == pendingEdgeSourceId
+
+                // Use key to prevent unnecessary recomposition during filter changes
+                key(node.id) {
+                    NodeWrapper(
+                        node = node,
+                        zoom = transform.zoom,
+                        screenOffset = Offset(screenX, screenY),
+                        isSelected = isSelected,
+                        isPendingSource = isPendingSource,
+                        onTap = {
+                            if (isEditMode) {
+                                viewModel.onNodeTap(node.id)
+                            } else {
+                                onNodeTap(node.id)
+                            }
+                        },
+                        onLongPress = { viewModel.onNodeLockToggle(node.id) },
+                        onDragStart = { viewModel.onDragStart(node.id) },
+                        onDrag = { delta -> viewModel.onDrag(delta) },
+                        onDragEnd = { viewModel.onDragEnd() },
+                        onSizeChanged = { size -> viewModel.onNodeSizeChanged(node.id, size) }
+                    )
+                }
+            }
         }
 
         // --- LAYER 3: Selection Rect ---
@@ -215,6 +284,8 @@ fun GraphView(
                 onClusterOutliers = viewModel::clusterOutliers,
                 onClusterHubs = { viewModel.clusterByHubSize(5) },
                 onClearClustering = viewModel::clearClustering,
+                lodThreshold = renderingSettings.lodThreshold,
+                onLodThresholdChange = viewModel::updateLodThreshold,
                 // Phase 4 Controls
                 isEditMode = isEditMode,
                 onToggleEditMode = viewModel::toggleEditMode,
@@ -323,8 +394,8 @@ fun NodeWrapper(
     }
 }
 
-private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: GraphEdge) {
-    val color = edge.colorInfo.composeColor.copy(alpha = 0.6f)
+private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: GraphEdge, isLowDetail: Boolean) {
+    val color = edge.colorInfo.composeColor.copy(alpha = if (isLowDetail) 0.4f else 0.6f)
     val strokeWidth = if (edge.label == "CONTAINS") 4f else 2f
 
     val start = nodeA.pos
@@ -355,7 +426,9 @@ private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: Gra
             quadraticBezierTo(cx.toFloat(), cy.toFloat(), end.x, end.y)
         }
         drawPath(path, color, style = Stroke(strokeWidth))
-        drawArrow(color, Offset(cx.toFloat(), cy.toFloat()), end)
+        if (!isLowDetail) {
+            drawArrow(color, Offset(cx.toFloat(), cy.toFloat()), end)
+        }
     }
     else {
         drawLine(
@@ -365,7 +438,9 @@ private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: Gra
             strokeWidth = strokeWidth,
             pathEffect = if(edge.isProxy) PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) else null
         )
-        drawArrow(color, start, end)
+        if (!isLowDetail) {
+            drawArrow(color, start, end)
+        }
     }
 }
 

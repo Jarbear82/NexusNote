@@ -147,6 +147,13 @@ class SettingsViewModel(
         onUpdateSettings(newSettings)
     }
 
+    fun onLodThresholdChange(value: Float) {
+        val newSettings = settingsFlow.value.copy(
+            graphRendering = settingsFlow.value.graphRendering.copy(lodThreshold = value)
+        )
+        onUpdateSettings(newSettings)
+    }
+
     // --- Graph Interaction ---
     fun onZoomSensitivityChange(value: Float) {
         val newSettings = settingsFlow.value.copy(

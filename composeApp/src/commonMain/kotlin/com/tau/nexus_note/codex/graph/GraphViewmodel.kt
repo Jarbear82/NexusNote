@@ -453,6 +453,10 @@ class GraphViewmodel(
         physicsEngine.setSolverType(options.solver)
     }
 
+    fun updateLodThreshold(threshold: Float) {
+        _renderingSettings.update { it.copy(lodThreshold = threshold) }
+    }
+
     fun toggleSnap(enabled: Boolean) {
         _snapEnabled.value = enabled
     }

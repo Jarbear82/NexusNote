@@ -34,6 +34,9 @@ fun GraphSettingsView(
     onClusterOutliers: () -> Unit,
     onClusterHubs: () -> Unit,
     onClearClustering: () -> Unit,
+    // Phase 1: LOD
+    lodThreshold: Float,
+    onLodThresholdChange: (Float) -> Unit,
     // Phase 4
     isEditMode: Boolean,
     onToggleEditMode: () -> Unit,
@@ -91,6 +94,13 @@ fun GraphSettingsView(
                 Text("Snap Back on Drag", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = snapEnabled, onCheckedChange = onSnapToggle, modifier = Modifier.scale(0.8f))
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // --- Rendering & LOD ---
+            Text("Level of Detail (LOD)", style = MaterialTheme.typography.labelMedium)
+            SettingSlider("LOD Threshold", lodThreshold, onLodThresholdChange, 0.1f..1.0f)
+            Text("Switch to dots when zoom < ${String.format("%.2f", lodThreshold)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

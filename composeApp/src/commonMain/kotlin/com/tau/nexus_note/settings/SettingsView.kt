@@ -192,6 +192,7 @@ private fun GraphRenderingSubSection(rendering: GraphRenderingSettings, viewMode
     SettingToggle("Show Node Labels by Default", rendering.showNodeLabels, viewModel::onShowNodeLabelsChange)
     SettingToggle("Show Edge Labels by Default", rendering.showEdgeLabels, viewModel::onShowEdgeLabelsChange)
     SettingToggle("Show Center Crosshairs", rendering.showCrosshairs, viewModel::onShowCrosshairsChange)
+    SettingSlider("LOD Zoom Threshold", rendering.lodThreshold, viewModel::onLodThresholdChange, 0.1f..1.0f)
 }
 
 @Composable
