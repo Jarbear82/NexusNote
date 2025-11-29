@@ -12,7 +12,10 @@ object StandardSchemas {
     const val DOC_NODE_CALLOUT = "Callout"
     const val DOC_NODE_TABLE = "Table"
 
-    // List Items (Specific Containers)
+    // NEW: Consolidated List Node
+    const val DOC_NODE_LIST = "List"
+
+    // Deprecated List Item Nodes (Kept for backward compat/legacy data)
     const val DOC_NODE_ORDERED_ITEM = "OrderedListItem"
     const val DOC_NODE_UNORDERED_ITEM = "UnorderedListItem"
     const val DOC_NODE_TASK_ITEM = "TaskListItem"
@@ -52,7 +55,11 @@ object StandardSchemas {
     const val PROP_HEADERS = "headers"         // List<String>
     const val PROP_DATA = "data"               // List<Map<String, String>> (Rows)
 
-    // List Specific
+    // NEW: List Specific
+    const val PROP_LIST_TYPE = "list_type" // "ordered", "unordered", "task"
+    const val PROP_LIST_ITEMS = "list_items" // List<String> (JSON)
+
+    // List Specific (Deprecated/Legacy)
     const val PROP_NUMBER = "number"           // Int
     const val PROP_BULLET_CHAR = "bullet_char" // -, *, +
     const val PROP_IS_CHECKED = "is_checked"   // Boolean

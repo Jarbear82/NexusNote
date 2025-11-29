@@ -53,9 +53,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun saveSettings(settings: SettingsData) {
         dataStore.edit { preferences ->
             // Serialize the object into a JSON string
-            // --- THIS IS THE FIX ---
             val jsonString = json.encodeToString(SettingsData.serializer(), settings)
-            // --- END FIX ---
             preferences[SETTINGS_KEY] = jsonString
         }
     }

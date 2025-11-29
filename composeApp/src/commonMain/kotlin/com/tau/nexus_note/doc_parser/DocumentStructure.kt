@@ -90,7 +90,20 @@ data class TableNode(
     )
 }
 
-// --- List Items ---
+// --- NEW: Consolidated List Node ---
+
+data class ListNode(
+    val itemsJson: String, // List<String> - JSON Array
+    val listType: String   // "unordered", "ordered", "task"
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_LIST
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_LIST_ITEMS to itemsJson,
+        StandardSchemas.PROP_LIST_TYPE to listType
+    )
+}
+
+// --- List Items (Legacy/Deprecated in Parser, kept for types) ---
 
 data class OrderedListItemNode(
     val content: String,

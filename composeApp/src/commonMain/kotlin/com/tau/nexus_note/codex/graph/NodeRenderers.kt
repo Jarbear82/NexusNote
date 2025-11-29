@@ -6,10 +6,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,19 +23,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tau.nexus_note.ui.components.Icon
+import com.tau.nexus_note.ui.components.IconButton
+import dev.snipme.highlights.Highlights
+import dev.snipme.highlights.model.BoldHighlight
+import dev.snipme.highlights.model.ColorHighlight
+import dev.snipme.highlights.model.SyntaxLanguage
+import dev.snipme.highlights.model.SyntaxThemes
 import io.kamel.image.KamelImage
 import io.kamel.image.asyncPainterResource
 import java.io.File
+
+// --- Helper: Convert SnipMe Highlights to Compose AnnotatedString ---
+fun Highlights.toAnnotatedString(): AnnotatedString {
+    return buildAnnotatedString {
+        append(getCode())
+        getHighlights().forEach { highlight ->
+            val style = when (highlight) {
+                is ColorHighlight -> SpanStyle(color = Color(highlight.rgb.toLong() and 0xFFFFFFFFL))
+                is BoldHighlight -> SpanStyle(fontWeight = FontWeight.Bold)
+            }
+            addStyle(style, highlight.location.start, highlight.location.end)
+        }
+    }
+}
 
 // --- 1. Section Node (The Blue Header) ---
 @Composable
@@ -86,8 +115,10 @@ fun DocumentNodeView(node: DocumentGraphNode, modifier: Modifier = Modifier) {
 // --- 3. Block Node (The Content) ---
 @Composable
 fun BlockNodeView(node: BlockGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+
     Card(
-        modifier = modifier.width(250.dp),
+        modifier = modifier.width(if(isExpanded) node.width.dp else 250.dp), // Use physics width if expanded
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFEEEEEE)), // Light Gray
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
@@ -97,9 +128,13 @@ fun BlockNodeView(node: BlockGraphNode, modifier: Modifier = Modifier) {
                 text = node.content,
                 color = Color.Black,
                 fontSize = 14.sp,
-                maxLines = 5,
-                lineHeight = 20.sp
+                maxLines = if(isExpanded) Int.MAX_VALUE else 5,
+                lineHeight = 20.sp,
+                overflow = TextOverflow.Ellipsis
             )
+            if (!isExpanded && node.content.length > 100) {
+                Text("...", color = Color.Gray, fontSize = 12.sp)
+            }
         }
     }
 }
@@ -164,30 +199,96 @@ fun AttachmentNodeView(node: AttachmentGraphNode, modifier: Modifier = Modifier)
 // --- 6. Code Block ---
 @Composable
 fun CodeBlockView(node: CodeBlockGraphNode, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.width(300.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2B2B)) // Dark IDE theme
-    ) {
-        Column {
-            // Header
-            Row(
+    val isExpanded = node.isExpanded
+
+    // Highlight Logic using SnipMe Highlights
+    val highlights = remember(node.code, node.language) {
+        Highlights.Builder()
+            .code(node.code)
+            .theme(SyntaxThemes.darcula())
+            .language(SyntaxLanguage.getByName(node.language) ?: SyntaxLanguage.DEFAULT)
+            .build()
+    }
+
+    Column(modifier = modifier.width(if (isExpanded) node.width.dp else 300.dp)) {
+        // Main Card (Code Content)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF2B2B2B)), // Dark IDE theme
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Column {
+                // Header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF3C3F41))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        node.language.uppercase(),
+                        color = Color(0xFFA9B7C6),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (node.filename.isNotBlank()) {
+                        Text(node.filename, color = Color.Gray, fontSize = 10.sp)
+                    }
+                }
+
+                // Content Body
+                Box(modifier = Modifier.padding(12.dp)) {
+                    if (isExpanded) {
+                        // Use AnnotatedString for highlighting - ACTUAL USAGE HERE
+                        Text(
+                            text = highlights.toAnnotatedString(),
+                            color = Color(0xFFA9B7C6),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                    } else {
+                        // Collapsed: First few lines + ellipsis
+                        Column {
+                            val lines = node.code.lines().take(3)
+                            Text(
+                                text = lines.joinToString("\n"),
+                                color = Color(0xFFA9B7C6),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                            if (node.code.lines().size > 3) {
+                                Text("...", color = Color.Gray, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Caption Footer (Photo-caption style)
+        if (node.caption.isNotBlank()) {
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF3C3F41))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(top = 2.dp, start = 4.dp, end = 4.dp),
+                color = Color.White,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray),
+                shape = RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp),
+                shadowElevation = 2.dp
             ) {
-                Text(node.language, color = Color.Gray, fontSize = 12.sp)
-                Text(node.caption, color = Color.Gray, fontSize = 12.sp)
+                Text(
+                    text = node.caption,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Black,
+                    modifier = Modifier.padding(8.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    fontStyle = FontStyle.Italic
+                )
             }
-            // Code
-            Text(
-                text = node.code,
-                color = Color(0xFFA9B7C6), // Darcula text
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(12.dp)
-            )
         }
     }
 }
@@ -195,23 +296,134 @@ fun CodeBlockView(node: CodeBlockGraphNode, modifier: Modifier = Modifier) {
 // --- 7. Table Node ---
 @Composable
 fun TableNodeView(node: TableGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+
     Card(
-        modifier = modifier.width(280.dp),
+        modifier = modifier.width(if(isExpanded) node.width.dp else 280.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray)
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.Gray),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            Text("Table Data", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 4.dp))
-            // Minimal representation
-            node.headers.take(3).forEach { header ->
-                Text("- $header", fontSize = 12.sp)
+            // Header Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5))
+                    .padding(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Show ALL headers, letting them share space
+                node.headers.forEach { h ->
+                    Text(
+                        text = h,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f).padding(end = 4.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
-            if (node.headers.size > 3) Text("...", fontSize = 10.sp)
+
+            HorizontalDivider(color = Color.LightGray)
+
+            if (isExpanded) {
+                // Expanded: Render Data Rows
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    node.data.forEachIndexed { index, row ->
+                        Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)) {
+                            node.headers.forEach { h ->
+                                Text(
+                                    text = row[h] ?: "",
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.weight(1f).padding(end = 4.dp),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (index < node.data.lastIndex) {
+                            HorizontalDivider(thickness = 0.5.dp, color = Color.LightGray.copy(alpha = 0.5f))
+                        }
+                    }
+                }
+            } else {
+                // Collapsed: Visual cue
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${node.data.size} rows hidden",
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        fontStyle = FontStyle.Italic
+                    )
+                }
+            }
         }
     }
 }
 
-// --- 8. Cluster Node (New) ---
+// --- 8. List Node View ---
+@Composable
+fun ListNodeView(node: ListGraphNode, modifier: Modifier = Modifier) {
+    val isExpanded = node.isExpanded
+    val type = node.listType // "ordered", "unordered", "task"
+
+    Card(
+        modifier = modifier.width(if(isExpanded) node.width.dp else 220.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)), // Light Yellow
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBC02D)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            if (isExpanded) {
+                // Render Full List
+                node.items.forEachIndexed { index, item ->
+                    Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(bottom = 4.dp)) {
+                        when (type) {
+                            "ordered" -> Text("${index + 1}.", fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.width(24.dp))
+                            "task" -> Icon(Icons.Default.CheckBoxOutlineBlank, null, modifier = Modifier.size(16.dp))
+                            else -> Text("•", fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.width(16.dp))
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        Text(item, fontSize = 12.sp)
+                    }
+                }
+            } else {
+                // Render Collapsed: First Item + Cue
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    when (type) {
+                        "ordered" -> Text("1.", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        "task" -> Icon(Icons.Default.CheckBoxOutlineBlank, null, modifier = Modifier.size(14.dp))
+                        else -> Text("•", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = node.items.firstOrNull() ?: "Empty List",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 12.sp
+                    )
+                }
+                if (node.items.size > 1) {
+                    Text(
+                        text = "+ ${node.items.size - 1} more items...",
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(start = 20.dp, top = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// --- 9. Cluster Node (New) ---
 @Composable
 fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
     val bgColor = node.colorInfo.composeColor
@@ -240,7 +452,7 @@ fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
     }
 }
 
-// --- 9. Default Fallback ---
+// --- 10. Default Fallback ---
 @Composable
 fun DefaultNodeView(node: GenericGraphNode, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }

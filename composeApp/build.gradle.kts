@@ -29,6 +29,7 @@ kotlin {
             implementation(libs.kamel.image.default)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.ktor.client.cio)
+            implementation(libs.snipme.highlights)
             implementation(libs.sqldelight.runtime)
             implementation(libs.sqldelight.sqlite.driver)
         }

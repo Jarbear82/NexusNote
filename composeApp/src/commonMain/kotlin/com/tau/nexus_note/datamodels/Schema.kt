@@ -34,7 +34,9 @@ enum class NodeStyle(val displayName: String) {
     CODE_BLOCK("Code Block"),
     TABLE("Data Table"),
     TAG("Tag / Pill"),
-    ATTACHMENT("Media / Attachment")
+    ATTACHMENT("Media / Attachment"),
+    // NEW: List Style
+    LIST("List Group")
 }
 
 /**

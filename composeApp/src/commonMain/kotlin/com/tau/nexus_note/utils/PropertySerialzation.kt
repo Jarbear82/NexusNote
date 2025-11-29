@@ -54,4 +54,23 @@ object PropertySerialization {
             emptyMap()
         }
     }
+
+    // --- List<Map<String, String>> (For Tables) ---
+
+    fun serializeListOfMaps(list: List<Map<String, String>>): String {
+        return try {
+            json.encodeToString(ListSerializer(MapSerializer(String.serializer(), String.serializer())), list)
+        } catch (e: Exception) {
+            "[]"
+        }
+    }
+
+    fun deserializeListOfMaps(data: String): List<Map<String, String>> {
+        return try {
+            if (data.isBlank()) return emptyList()
+            json.decodeFromString(ListSerializer(MapSerializer(String.serializer(), String.serializer())), data)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
 }

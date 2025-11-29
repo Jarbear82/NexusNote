@@ -25,13 +25,16 @@ sealed interface GraphNode {
     var isFixed: Boolean // Used for dragging or temp locks
     var isLocked: Boolean // User explicitly locked this node (Persistent in session)
 
+    // NEW: Transient UI State for Expandable Nodes
+    var isExpanded: Boolean
+
     // Physics internals (FA2)
     var oldForce: Offset
     var swinging: Float
     var traction: Float
 
     // Common Visualization
-    val isCollapsed: Boolean
+    val isCollapsed: Boolean // Collapsed in terms of Hierarchy (folding)
     val backgroundImagePath: String?
 
     // Abstract copy method for Physics Engine
@@ -47,13 +50,14 @@ data class ClusterNode(
     override val displayProperty: String = "Group",
     override var pos: Offset = Offset.Zero,
     override var vel: Offset = Offset.Zero,
-    override val mass: Float = 30f, // Heavy
-    override val radius: Float = 50f, // Large
+    override val mass: Float = 30f,
+    override val radius: Float = 50f,
     override val width: Float = 100f,
     override val height: Float = 100f,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false, // Not used heavily but required by interface
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -79,6 +83,7 @@ data class GenericGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -104,6 +109,7 @@ data class DocumentGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -128,6 +134,7 @@ data class SectionGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -152,6 +159,7 @@ data class BlockGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -164,6 +172,7 @@ data class BlockGraphNode(
 data class CodeBlockGraphNode(
     val code: String,
     val language: String,
+    val filename: String,
     val caption: String,
     override val id: Long,
     override val label: String,
@@ -177,6 +186,7 @@ data class CodeBlockGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -201,6 +211,33 @@ data class TableGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
+    override var oldForce: Offset = Offset.Zero,
+    override var swinging: Float = 0f,
+    override var traction: Float = 0f,
+    override val isCollapsed: Boolean = false,
+    override val backgroundImagePath: String? = null
+) : GraphNode {
+    override fun copyNode() = this.copy()
+}
+
+// --- NEW: List Graph Node ---
+data class ListGraphNode(
+    val items: List<String>,
+    val listType: String, // "ordered", "unordered", "task"
+    override val id: Long,
+    override val label: String,
+    override val displayProperty: String,
+    override var pos: Offset,
+    override var vel: Offset,
+    override val mass: Float,
+    override val radius: Float,
+    override val width: Float,
+    override val height: Float,
+    override val colorInfo: ColorInfo,
+    override var isFixed: Boolean = false,
+    override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -225,6 +262,7 @@ data class TagGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
@@ -250,6 +288,7 @@ data class AttachmentGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
+    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,

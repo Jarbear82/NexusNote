@@ -76,14 +76,19 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             return
         }
 
+        // --- NEW: Consolidated List Handling ---
+        // If we hit a list container, process it as a single node instead of recursing immediately
+        if (node.type == MarkdownElementTypes.ORDERED_LIST || node.type == MarkdownElementTypes.UNORDERED_LIST) {
+            processConsolidatedList(node, rawText, spineStack, sourceDir)
+            return
+        }
+
         // 1. Map AST to DocumentNode
         val docNode = mapAstToDocumentNode(node, rawText)
 
-        // 2. Recursion for Containers (Lists, BlockQuotes)
+        // 2. Recursion for Containers (BlockQuotes)
         if (docNode == null) {
-            if (node.type == MarkdownElementTypes.ORDERED_LIST ||
-                node.type == MarkdownElementTypes.UNORDERED_LIST ||
-                node.type == MarkdownElementTypes.BLOCK_QUOTE) {
+            if (node.type == MarkdownElementTypes.BLOCK_QUOTE) {
                 node.children.forEach { walkTree(it, rawText, spineStack, sourceDir) }
             }
             return
@@ -99,9 +104,10 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         // 4. Templating & Rib Extraction
         val finalDocNode = when (docNode) {
             is BlockNode -> processBlockContent(docNode, sourceDir)
-            is OrderedListItemNode -> processListItemContent(docNode, sourceDir)
-            is UnorderedListItemNode -> processListItemContent(docNode, sourceDir)
-            is TaskListItemNode -> processListItemContent(docNode, sourceDir)
+            // Lists are now handled separately, so these cases are unreachable via mapAst, but good to keep safe
+            is OrderedListItemNode -> docNode
+            is UnorderedListItemNode -> docNode
+            is TaskListItemNode -> docNode
             else -> docNode
         }
 
@@ -136,29 +142,87 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
+    private suspend fun processConsolidatedList(
+        listNode: ASTNode,
+        rawText: String,
+        spineStack: Stack<SpineContext>,
+        sourceDir: String
+    ) {
+        val items = mutableListOf<String>()
+        val allEdgeActions = mutableListOf<suspend (Long) -> Unit>()
+
+        // Determine list type based on AST type initially
+        // Note: Task lists are typically Unordered Lists in AST but check contents
+        var listType = if (listNode.type == MarkdownElementTypes.ORDERED_LIST) "ordered" else "unordered"
+
+        // Walk children (List Items)
+        listNode.children.forEach { child ->
+            if (child.type == MarkdownElementTypes.LIST_ITEM) {
+                // Get full text of item including bullet/number
+                val itemText = child.getTextInNode(rawText).toString().trim()
+
+                // Detect Task List based on content
+                if (itemText.startsWith("- [ ]") || itemText.startsWith("- [x]") ||
+                    itemText.startsWith("* [ ]") || itemText.startsWith("* [x]")) {
+                    listType = "task"
+                }
+
+                // Clean the text (remove bullet/number/checkbox) to store just content
+                val cleanedText = cleanListItemText(itemText)
+
+                // Process content for tags/links extraction
+                val extraction = extractAndLinkConcepts(cleanedText, sourceDir)
+
+                // Add templated text to list
+                items.add(extraction.templatedText)
+
+                // Accumulate edge actions (tags linked to this List Node)
+                allEdgeActions.addAll(extraction.edges)
+            }
+        }
+
+        if (items.isEmpty()) return
+
+        // Create the consolidated node
+        val listDocNode = ListNode(
+            itemsJson = json.encodeToString(items),
+            listType = listType
+        )
+
+        // Insert Node
+        val nodeId = repository.insertDocumentNode(listDocNode)
+
+        // Execute all collected edge actions on this single List Node
+        allEdgeActions.forEach { action -> action(nodeId) }
+
+        // Connect to Spine
+        val currentParent = spineStack.peek()
+        repository.insertDocumentEdge(
+            StandardSchemas.EDGE_CONTAINS,
+            currentParent.nodeId,
+            nodeId,
+            mapOf(StandardSchemas.PROP_ORDER to currentParent.childOrderCounter.toString())
+        )
+        currentParent.childOrderCounter++
+    }
+
+    private fun cleanListItemText(raw: String): String {
+        // 1. Remove task markers: "- [x] ", "- [ ] ", "* [ ] "
+        var text = raw.replace(Regex("^[-*+] \\[[x ]\\]"), "").trim()
+
+        // 2. Remove ordered markers: "1. ", "1) "
+        text = text.replace(Regex("^\\d+[.)]"), "").trim()
+
+        // 3. Remove unordered markers: "- ", "* ", "+ "
+        text = text.replace(Regex("^[-*+]"), "").trim()
+
+        return text
+    }
+
     private suspend fun processBlockContent(node: BlockNode, sourceDir: String): BlockNode {
         val extraction = extractAndLinkConcepts(node.content, sourceDir)
         currentEdgeActions = extraction.edges
         return node.copy(content = extraction.templatedText)
-    }
-
-    private suspend fun processListItemContent(node: DocumentNode, sourceDir: String): DocumentNode {
-        val text = when (node) {
-            is OrderedListItemNode -> node.content
-            is UnorderedListItemNode -> node.content
-            is TaskListItemNode -> node.content
-            else -> return node
-        }
-
-        val extraction = extractAndLinkConcepts(text, sourceDir)
-        currentEdgeActions = extraction.edges
-
-        return when (node) {
-            is OrderedListItemNode -> node.copy(content = extraction.templatedText)
-            is UnorderedListItemNode -> node.copy(content = extraction.templatedText)
-            is TaskListItemNode -> node.copy(content = extraction.templatedText)
-            else -> node
-        }
     }
 
     private data class ExtractionResult(
@@ -280,9 +344,11 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
             MarkdownElementTypes.BLOCK_QUOTE -> parseBlockQuote(node, rawText)
 
+            // Lists are handled at the higher level now, this is fallback
             MarkdownElementTypes.ORDERED_LIST -> null
             MarkdownElementTypes.UNORDERED_LIST -> null
 
+            // Individual List Items should not be reached via this call in normal flow
             MarkdownElementTypes.LIST_ITEM -> parseListItem(text)
 
             GFMElementTypes.TABLE -> parseTable(node, rawText)
@@ -305,6 +371,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
     }
 
+    // Retained for robustness if mapAstToDocumentNode encounters a stray item
     private fun parseListItem(text: String): DocumentNode {
         val trimmed = text.trim()
         return if (trimmed.startsWith("- [ ]") || trimmed.startsWith("- [x]")) {
@@ -339,29 +406,56 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             }
         }
 
-        val (language, filename) = parseCodeFenceInfo(infoString)
+        val meta = parseCodeFenceInfo(infoString)
 
         return CodeBlockNode(
             content = contentBuilder.toString().trim(),
-            language = language,
-            filename = filename
+            language = meta.language,
+            filename = meta.title,
+            caption = meta.caption
         )
     }
 
-    private fun parseCodeFenceInfo(info: String): Pair<String, String> {
-        if (info.isBlank()) return Pair("", "")
-        if (info.contains(":")) {
-            val parts = info.split(":", limit = 2)
-            return Pair(parts[0].trim(), parts[1].trim())
+    private data class CodeFenceMeta(
+        val language: String,
+        val title: String,
+        val caption: String
+    )
+
+    private fun parseCodeFenceInfo(info: String): CodeFenceMeta {
+        if (info.isBlank()) return CodeFenceMeta("", "", "")
+
+        // 1. Extract Language (first word)
+        val parts = info.split(Regex("\\s+"), limit = 2)
+        val language = parts.getOrNull(0) ?: ""
+        val attributes = parts.getOrNull(1) ?: ""
+
+        // 2. Extract Attributes using Regex
+        // Matches key="value" or key='value'
+        val attrRegex = Regex("(\\w+)=[\"'](.*?)[\"']")
+        val matches = attrRegex.findAll(attributes)
+
+        var title = ""
+        var caption = ""
+
+        matches.forEach { match ->
+            val key = match.groupValues[1]
+            val value = match.groupValues[2]
+            when (key) {
+                "title", "filename" -> title = value
+                "caption" -> caption = value
+            }
         }
-        val titleRegex = Regex("(?:title|filename)=[\"'](.*?)[\"']")
-        val match = titleRegex.find(info)
-        if (match != null) {
-            val filename = match.groupValues[1]
-            val language = info.substringBefore(" ").trim()
-            return Pair(language, filename)
+
+        // Fallback for simple "rust:main.rs" format
+        if (title.isBlank() && info.contains(":") && !info.contains("=")) {
+            val simpleParts = info.split(":", limit = 2)
+            if (simpleParts.size == 2) {
+                return CodeFenceMeta(simpleParts[0].trim(), simpleParts[1].trim(), "")
+            }
         }
-        return Pair(info.trim(), "")
+
+        return CodeFenceMeta(language, title, caption)
     }
 
     private fun parseIndentedCodeBlock(node: ASTNode, rawText: String): CodeBlockNode {
