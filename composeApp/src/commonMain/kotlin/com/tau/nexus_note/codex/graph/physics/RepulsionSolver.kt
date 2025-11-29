@@ -3,11 +3,12 @@ package com.tau.nexus_note.codex.graph.physics
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.codex.graph.GraphNode
 import com.tau.nexus_note.datamodels.GraphEdge
+import kotlin.math.abs
 
 /**
- * Simple O(N^2) Solver.
- * Iterates every pair of nodes to calculate repulsion.
- * Accurate but slow. Best for graphs < 100 nodes.
+ * Rectangular-Aware Solver.
+ * Checks for bounding box overlap first, applying massive repulsion if found.
+ * Falls back to distance-based repulsion otherwise.
  */
 class RepulsionSolver : ForceSolver {
 
@@ -28,15 +29,54 @@ class RepulsionSolver : ForceSolver {
             for (j in (i + 1) until nodeList.size) {
                 val nodeB = nodeList[j]
 
-                val delta = nodeA.pos - nodeB.pos
-                val dist = delta.getDistance()
-                if (dist == 0f) continue // Ignore overlap for simple logic
+                // --- Rectangular Overlap Logic ---
+                // We use half-dimensions to check bounds from center
+                val halfWA = nodeA.width / 2f
+                val halfHA = nodeA.height / 2f
+                val halfWB = nodeB.width / 2f
+                val halfHB = nodeB.height / 2f
 
-                // Force = k * m1 * m2 / dist
-                val repulsion = delta.normalized() * (options.repulsion * nodeA.mass * nodeB.mass / dist)
+                val dx = nodeA.pos.x - nodeB.pos.x
+                val dy = nodeA.pos.y - nodeB.pos.y
+                val absDx = abs(dx)
+                val absDy = abs(dy)
 
-                if (!nodeA.isFixed && !nodeA.isLocked) forces[nodeA.id] = forces[nodeA.id]!! + repulsion
-                if (!nodeB.isFixed && !nodeB.isLocked) forces[nodeB.id] = forces[nodeB.id]!! - repulsion
+                // Minimum distance required to NOT overlap (plus a small buffer from options)
+                val minW = halfWA + halfWB + (options.minDistance * 5)
+                val minH = halfHA + halfHB + (options.minDistance * 5)
+
+                if (absDx < minW && absDy < minH) {
+                    // --- OVERLAP DETECTED ---
+                    // Apply massive repulsion force to push them apart
+                    // We push along the axis of least overlap to resolve it quickly
+                    val overlapX = minW - absDx
+                    val overlapY = minH - absDy
+
+                    val force: Offset = if (overlapX < overlapY) {
+                        // Push horizontally
+                        val sign = if (dx > 0) 1f else -1f
+                        Offset(sign * options.repulsion * 50f, 0f)
+                    } else {
+                        // Push vertically
+                        val sign = if (dy > 0) 1f else -1f
+                        Offset(0f, sign * options.repulsion * 50f)
+                    }
+
+                    if (!nodeA.isFixed && !nodeA.isLocked) forces[nodeA.id] = forces[nodeA.id]!! + force
+                    if (!nodeB.isFixed && !nodeB.isLocked) forces[nodeB.id] = forces[nodeB.id]!! - force
+
+                } else {
+                    // --- STANDARD DISTANCE REPULSION ---
+                    val delta = nodeA.pos - nodeB.pos
+                    val dist = delta.getDistance()
+                    if (dist == 0f) continue
+
+                    // Force = k * m1 * m2 / dist
+                    val repulsion = delta.normalized() * (options.repulsion * nodeA.mass * nodeB.mass / dist)
+
+                    if (!nodeA.isFixed && !nodeA.isLocked) forces[nodeA.id] = forces[nodeA.id]!! + repulsion
+                    if (!nodeB.isFixed && !nodeB.isLocked) forces[nodeB.id] = forces[nodeB.id]!! - repulsion
+                }
             }
         }
 
@@ -47,6 +87,8 @@ class RepulsionSolver : ForceSolver {
             if (nodeA != null && nodeB != null) {
                 val delta = nodeB.pos - nodeA.pos
                 val dist = delta.getDistance()
+                // Ideal length should take node dimensions into account somewhat,
+                // effectively radius is a good approximation for spring length logic.
                 val idealLength = nodeA.radius + nodeB.radius + (options.minDistance * 2)
 
                 val displacement = dist - idealLength

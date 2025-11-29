@@ -14,6 +14,11 @@ sealed interface GraphNode {
     var vel: Offset
     val mass: Float
     val radius: Float
+
+    // Dimensions for Rectangular Repulsion
+    val width: Float
+    val height: Float
+
     val colorInfo: ColorInfo
 
     // Physics State
@@ -44,6 +49,8 @@ data class ClusterNode(
     override var vel: Offset = Offset.Zero,
     override val mass: Float = 30f, // Heavy
     override val radius: Float = 50f, // Large
+    override val width: Float = 100f,
+    override val height: Float = 100f,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -67,6 +74,8 @@ data class GenericGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -90,6 +99,8 @@ data class DocumentGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -112,6 +123,8 @@ data class SectionGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -134,6 +147,8 @@ data class BlockGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -157,6 +172,8 @@ data class CodeBlockGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -179,6 +196,8 @@ data class TableGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -201,6 +220,8 @@ data class TagGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
@@ -224,6 +245,8 @@ data class AttachmentGraphNode(
     override var vel: Offset,
     override val mass: Float,
     override val radius: Float,
+    override val width: Float,
+    override val height: Float,
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,

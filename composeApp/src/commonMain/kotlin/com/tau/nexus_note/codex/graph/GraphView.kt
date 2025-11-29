@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.datamodels.GraphEdge
+import com.tau.nexus_note.settings.GraphLayoutMode
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -171,7 +172,7 @@ fun GraphView(
                         val aVisible = visibleBounds.contains(nodeA.pos)
                         val bVisible = visibleBounds.contains(nodeB.pos)
                         if (aVisible || bVisible) {
-                            drawRichEdge(nodeA, nodeB, edge, isLowDetail)
+                            drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
                         }
                     }
                 }
@@ -412,13 +413,43 @@ fun NodeWrapper(
     }
 }
 
-private fun DrawScope.drawRichEdge(nodeA: GraphNode, nodeB: GraphNode, edge: GraphEdge, isLowDetail: Boolean) {
+private fun DrawScope.drawRichEdge(
+    nodeA: GraphNode,
+    nodeB: GraphNode,
+    edge: GraphEdge,
+    isLowDetail: Boolean,
+    layoutMode: GraphLayoutMode
+) {
     val color = edge.colorInfo.composeColor.copy(alpha = if (isLowDetail) 0.4f else 0.6f)
     val strokeWidth = if (edge.label == "CONTAINS") 4f else 2f
 
     val start = nodeA.pos
     val end = nodeB.pos
 
+    // --- NEW: Orthogonal Routing for Hierarchical Layout ---
+    if (layoutMode == GraphLayoutMode.HIERARCHICAL) {
+        // Orthogonal Logic
+        // Calculate midY, halfway between layers
+        // Edge Bundling: Offset midY (horizontal channel) slightly based on source hash
+        val offset = (edge.sourceId.hashCode() % 10) * 5f - 25f
+        val midY = (start.y + end.y) / 2f + offset
+
+        val path = Path().apply {
+            moveTo(start.x, start.y)
+            lineTo(start.x, midY)
+            lineTo(end.x, midY)
+            lineTo(end.x, end.y)
+        }
+
+        drawPath(path, color, style = Stroke(strokeWidth))
+
+        if (!isLowDetail) {
+            drawArrow(color, Offset(end.x, midY), end) // Arrow at end of vertical segment? No, just end point
+        }
+        return
+    }
+
+    // --- Standard Logic (Continuous/Computed) ---
     if (edge.isSelfLoop) {
         val loopRadius = 50f
         val path = Path().apply {

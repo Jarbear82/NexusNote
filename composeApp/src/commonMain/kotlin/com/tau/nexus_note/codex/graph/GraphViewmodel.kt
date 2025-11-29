@@ -619,6 +619,10 @@ class GraphViewmodel(
         isCollapsed: Boolean,
         isLocked: Boolean
     ): GraphNode {
+        // Init dimensions - these will be corrected by onNodeSizeChanged shortly after render
+        val width = 200f * currentDensity
+        val height = 100f * currentDensity
+
         val radius = when (node.style) {
             NodeStyle.DOCUMENT -> 160f * currentDensity
             NodeStyle.SECTION -> 150f * currentDensity
@@ -644,6 +648,7 @@ class GraphViewmodel(
                 Offset.Zero,
                 mass,
                 radius,
+                width, height,
                 colorInfo,
                 false,
                 isLocked,
@@ -664,6 +669,7 @@ class GraphViewmodel(
                 Offset.Zero,
                 mass,
                 radius,
+                width, height,
                 colorInfo,
                 false,
                 isLocked,
@@ -683,6 +689,7 @@ class GraphViewmodel(
                 Offset.Zero,
                 mass,
                 radius,
+                width, height,
                 colorInfo,
                 false,
                 isLocked,
@@ -702,6 +709,7 @@ class GraphViewmodel(
                 Offset.Zero,
                 mass,
                 radius,
+                width, height,
                 colorInfo,
                 false,
                 isLocked,
@@ -721,19 +729,20 @@ class GraphViewmodel(
 
         _graphNodes.update { currentNodes ->
             val node = currentNodes[nodeId] ?: return@update currentNodes
-            if (abs(node.radius - newRadius) < 5f) return@update currentNodes
+            // Update if dimensions changed significantly
+            if (abs(node.width - width) < 1f && abs(node.height - height) < 1f) return@update currentNodes
 
             val newNodes = currentNodes.toMutableMap()
             val updatedNode = when (node) {
-                is GenericGraphNode -> node.copy(radius = newRadius)
-                is DocumentGraphNode -> node.copy(radius = newRadius)
-                is SectionGraphNode -> node.copy(radius = newRadius)
-                is BlockGraphNode -> node.copy(radius = newRadius)
-                is CodeBlockGraphNode -> node.copy(radius = newRadius)
-                is TableGraphNode -> node.copy(radius = newRadius)
-                is TagGraphNode -> node.copy(radius = newRadius)
-                is AttachmentGraphNode -> node.copy(radius = newRadius)
-                is ClusterNode -> node.copy(radius = newRadius)
+                is GenericGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is DocumentGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is SectionGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is BlockGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is CodeBlockGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is TableGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is TagGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is AttachmentGraphNode -> node.copy(radius = newRadius, width = width, height = height)
+                is ClusterNode -> node.copy(radius = newRadius, width = width, height = height)
             }
             newNodes[nodeId] = updatedNode
             newNodes
