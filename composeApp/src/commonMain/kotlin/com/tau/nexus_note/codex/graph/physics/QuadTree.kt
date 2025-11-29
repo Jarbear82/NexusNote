@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 // Use new GraphNode
 import com.tau.nexus_note.codex.graph.GraphNode
+import kotlin.random.Random
 
 /**
  * Implements a QuadTree for Barnes-Hut optimization.
@@ -11,8 +12,9 @@ import com.tau.nexus_note.codex.graph.GraphNode
  * approximate forces from distant groups of nodes.
  *
  * @param boundary The rectangular region this QuadTree node represents.
+ * @param depth The current depth of this node in the tree (used for stack overflow protection).
  */
-class QuadTree(val boundary: Rect) {
+class QuadTree(val boundary: Rect, private val depth: Int = 0) {
     // Stores the (degree + 1) mass from ForceAtlas2
     var totalMass: Float = 0f
         private set
@@ -28,12 +30,28 @@ class QuadTree(val boundary: Rect) {
     private var children: Array<QuadTree>? = null
     private var isSubdivided = false
 
+    // Safety limit to prevent StackOverflow on overlapping nodes
+    private val MAX_DEPTH = 30
+
     /**
      * Inserts a node into this QuadTree.
      * @return true if the node was successfully inserted into this quadrant or a child,
      * false if it was outside the boundary.
      */
     fun insert(newNode: GraphNode): Boolean {
+        // --- HARD GUARD: Stack Overflow Protection ---
+        // Stop recursing if we hit the limit, regardless of subdivision state.
+        if (depth > MAX_DEPTH) {
+            return true // Treat as "inserted" (absorbed) to stop recursion
+        }
+
+        // --- HARD GUARD: Invalid Positions ---
+        // Prevent NaN/Infinite positions from breaking boundary math
+        // Fix: Manual check for finite coordinates
+        if (!newNode.pos.x.isFinite() || !newNode.pos.y.isFinite()) {
+            return false
+        }
+
         if (!boundary.contains(newNode.pos)) {
             return false // Node is not in this quadrant
         }
@@ -50,6 +68,22 @@ class QuadTree(val boundary: Rect) {
 
         // This is an internal node, or a leaf that needs to be subdivided
         if (!isSubdivided) {
+            // --- JITTER LOGIC ---
+            // If nodes are stacked exactly on top of each other, the tree tries to subdivide infinitely.
+            // We detect this and apply a small random jitter to separate them.
+            if (node != null) {
+                val dist = (node!!.pos - newNode.pos).getDistance()
+                // Use a larger epsilon to catch "very close" nodes
+                if (dist < 0.1f) {
+                    // Jitter the new node slightly to break the symmetry/overlap
+                    val jitter = Offset(
+                        (Random.nextFloat() - 0.5f) * 1.0f,
+                        (Random.nextFloat() - 0.5f) * 1.0f
+                    )
+                    newNode.pos += jitter
+                }
+            }
+
             subdivide()
             // Move the original node (which was at this leaf) down into a child
             val originalNode = node!!
@@ -80,11 +114,12 @@ class QuadTree(val boundary: Rect) {
         val left = boundary.left
         val top = boundary.top
 
+        // Pass depth + 1 to children
         children = arrayOf(
-            QuadTree(Rect(left, top, left + halfWidth, top + halfHeight)), // NW
-            QuadTree(Rect(left + halfWidth, top, boundary.right, top + halfHeight)), // NE
-            QuadTree(Rect(left, top + halfHeight, left + halfWidth, boundary.bottom)), // SW
-            QuadTree(Rect(left + halfWidth, top + halfHeight, boundary.right, boundary.bottom))  // SE
+            QuadTree(Rect(left, top, left + halfWidth, top + halfHeight), depth + 1), // NW
+            QuadTree(Rect(left + halfWidth, top, boundary.right, top + halfHeight), depth + 1), // NE
+            QuadTree(Rect(left, top + halfHeight, left + halfWidth, boundary.bottom), depth + 1), // SW
+            QuadTree(Rect(left + halfWidth, top + halfHeight, boundary.right, boundary.bottom), depth + 1)  // SE
         )
     }
 

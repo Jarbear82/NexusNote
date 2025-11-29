@@ -26,9 +26,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,6 +107,30 @@ class GraphViewmodel(
     private val _pendingEdgeSourceId = MutableStateFlow<Long?>(null)
     val pendingEdgeSourceId = _pendingEdgeSourceId.asStateFlow()
 
+    // Ego Graph: Track selected node internally to calculate dimming
+    private val _selectedNodeId = MutableStateFlow<Long?>(null)
+
+    // Derived State: Set of Node IDs that should be dimmed (Not selected AND not a neighbor)
+    val dimmedNodeIds: StateFlow<Set<Long>> = combine(
+        _selectedNodeId,
+        _graphEdges,
+        _graphNodes
+    ) { selectedId, edges, nodes ->
+        if (selectedId == null) {
+            emptySet()
+        } else {
+            // Find neighbors
+            val neighbors = edges.mapNotNull { edge ->
+                if (edge.sourceId == selectedId) edge.targetId
+                else if (edge.targetId == selectedId) edge.sourceId
+                else null
+            }.toSet()
+
+            // All nodes except (selected + neighbors) are dimmed
+            nodes.keys.filter { it != selectedId && !neighbors.contains(it) }.toSet()
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     // Events to signal Parent View
     private val _nodeSelectionRequest = MutableSharedFlow<List<Long>>()
     val nodeSelectionRequest = _nodeSelectionRequest.asSharedFlow()
@@ -142,6 +169,20 @@ class GraphViewmodel(
                     physicsEngine.setSolverType(settings.graphPhysics.options.solver)
                 }
                 _renderingSettings.value = settings.graphRendering
+            }
+        }
+
+        // --- Phase 4: Zoom-based Clustering Monitor ---
+        viewModelScope.launch {
+            _transform.collect { transform ->
+                // Hysteresis to prevent flickering:
+                // Cluster when zooming OUT far (< 0.3)
+                // Clear when zooming IN closer (> 0.4)
+                if (transform.zoom < 0.3f && _clusteringResult.value == null) {
+                    clusterOutliers()
+                } else if (transform.zoom > 0.4f && _clusteringResult.value != null) {
+                    clearClustering()
+                }
             }
         }
     }
@@ -241,23 +282,31 @@ class GraphViewmodel(
 
     private fun animateTransform(targetPan: Offset, targetZoom: Float) {
         viewModelScope.launch {
-            val startPan = _transform.value.pan
-            val startZoom = _transform.value.zoom
+            // FIX: Run animations on Main dispatcher to ensure MonotonicFrameClock is available
+            withContext(Dispatchers.Main) {
+                val startPan = _transform.value.pan
+                val startZoom = _transform.value.zoom
 
-            val panAnim = Animatable(startPan, Offset.VectorConverter)
-            val zoomAnim = Animatable(startZoom)
+                val panAnim = Animatable(startPan, Offset.VectorConverter)
+                val zoomAnim = Animatable(startZoom)
 
-            launch {
-                panAnim.animateTo(targetPan, animationSpec = tween(500)) {
-                    _transform.update { it.copy(pan = value) }
+                launch {
+                    panAnim.animateTo(targetPan, animationSpec = tween(500)) {
+                        _transform.update { it.copy(pan = value) }
+                    }
                 }
-            }
-            launch {
-                zoomAnim.animateTo(targetZoom, animationSpec = tween(500)) {
-                    _transform.update { it.copy(zoom = value) }
+                launch {
+                    zoomAnim.animateTo(targetZoom, animationSpec = tween(500)) {
+                        _transform.update { it.copy(zoom = value) }
+                    }
                 }
             }
         }
+    }
+
+    // Used by GraphView to notify when selection changes in the UI
+    fun setSelectedNode(id: Long?) {
+        _selectedNodeId.value = id
     }
 
     // --- Rectangular Selection API (Phase 4) ---

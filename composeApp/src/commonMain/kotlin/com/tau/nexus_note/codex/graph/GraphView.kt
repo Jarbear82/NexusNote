@@ -1,6 +1,9 @@
 package com.tau.nexus_note.codex.graph
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -34,6 +38,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -45,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.datamodels.GraphEdge
 import com.tau.nexus_note.settings.GraphLayoutMode
+import kotlinx.coroutines.launch
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -81,6 +87,12 @@ fun GraphView(
     val isSelectionMode by viewModel.isSelectionMode.collectAsState()
     val isEditMode by viewModel.isEditMode.collectAsState()
     val pendingEdgeSourceId by viewModel.pendingEdgeSourceId.collectAsState()
+    val dimmedNodeIds by viewModel.dimmedNodeIds.collectAsState()
+
+    // Sync selection with ViewModel for Ego Graph
+    LaunchedEffect(primarySelectedId) {
+        viewModel.setSelectedNode(primarySelectedId)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.runSimulationLoop()
@@ -90,14 +102,17 @@ fun GraphView(
     LaunchedEffect(density) { viewModel.updateDensity(density) }
 
     val textMeasurer = rememberTextMeasurer()
+    val velocityTracker = remember { VelocityTracker() }
+    val coroutineScope = rememberCoroutineScope()
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(isSelectionMode) {
-                // Main Input Handler
+                // Main Input Handler with Inertia
                 detectDragGestures(
                     onDragStart = { offset ->
+                        velocityTracker.resetTracking()
                         if (isSelectionMode) {
                             viewModel.onSelectionDragStart(offset)
                         }
@@ -105,10 +120,28 @@ fun GraphView(
                     onDragEnd = {
                         if (isSelectionMode) {
                             viewModel.onSelectionDragEnd()
+                        } else {
+                            // --- Phase 4: Inertia (Pan Decay) ---
+                            val velocity = velocityTracker.calculateVelocity()
+                            val velocityOffset = Offset(velocity.x, velocity.y)
+
+                            coroutineScope.launch {
+                                var prevValue = Offset.Zero
+                                Animatable(Offset.Zero, Offset.VectorConverter).animateDecay(
+                                    initialVelocity = velocityOffset,
+                                    animationSpec = exponentialDecay(frictionMultiplier = 2.0f)
+                                ) {
+                                    val delta = value - prevValue
+                                    viewModel.onPan(delta)
+                                    prevValue = value
+                                }
+                            }
                         }
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+
                         if (isSelectionMode) {
                             viewModel.onSelectionDrag(change.position)
                         } else {
@@ -138,9 +171,6 @@ fun GraphView(
         val centerY = constraints.maxHeight / 2f
 
         // --- Culling & LOD Calculation ---
-        // 1. Calculate World Viewport
-        // ScreenPos = Center + (WorldPos + Pan) * Zoom
-        // WorldPos = (ScreenPos - Center) / Zoom - Pan
         val buffer = 500f // Buffer pixels to avoid popping
         val visibleMinX = ((0f - centerX) / transform.zoom) - transform.pan.x - buffer
         val visibleMinY = ((0f - centerY) / transform.zoom) - transform.pan.y - buffer
@@ -149,12 +179,10 @@ fun GraphView(
 
         val visibleBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
 
-        // 2. Filter Nodes
         val visibleNodes = remember(nodes, visibleBounds) {
             nodes.values.filter { visibleBounds.contains(it.pos) }
         }
 
-        // 3. LOD Switch
         val isLowDetail = transform.zoom < renderingSettings.lodThreshold
 
         // --- LAYER 1: Edges (Always Canvas) ---
@@ -165,7 +193,6 @@ fun GraphView(
                 translate(left = transform.pan.x, top = transform.pan.y)
             }) {
                 edges.forEach { edge ->
-                    // Optimization: Only draw edges if at least one node is visible
                     val nodeA = nodes[edge.sourceId]
                     val nodeB = nodes[edge.targetId]
                     if (nodeA != null && nodeB != null) {
@@ -181,7 +208,7 @@ fun GraphView(
 
         // --- LAYER 2: Nodes ---
         if (isLowDetail) {
-            // LOD MODE: Draw Simple Circles via Canvas (Bypasses Composition)
+            // LOD MODE: Draw Simple Circles via Canvas
             Canvas(modifier = Modifier.fillMaxSize()) {
                 withTransform({
                     translate(left = centerX, top = centerY)
@@ -189,19 +216,22 @@ fun GraphView(
                     translate(left = transform.pan.x, top = transform.pan.y)
                 }) {
                     visibleNodes.forEach { node ->
-                        // Simple dot
+                        // Apply dimming color logic if needed for dots too?
+                        // For simple dots, we might skip heavy dimming logic for performance, or simply alpha blend color.
+                        val isDimmed = dimmedNodeIds.contains(node.id)
+                        val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
+
                         drawCircle(
-                            color = node.colorInfo.composeColor,
+                            color = color,
                             radius = node.radius,
                             center = node.pos
                         )
-                        // Simple text (optional, only if zoom isn't TINY)
                         if (transform.zoom > 0.2f) {
                             val textResult = textMeasurer.measure(
                                 text = node.label,
                                 style = androidx.compose.ui.text.TextStyle(
                                     fontSize = 20.sp,
-                                    color = Color.Black
+                                    color = Color.Black.copy(alpha = if(isDimmed) 0.2f else 1.0f)
                                 )
                             )
                             drawText(
@@ -222,8 +252,8 @@ fun GraphView(
 
                 val isSelected = node.id == primarySelectedId
                 val isPendingSource = node.id == pendingEdgeSourceId
+                val isDimmed = dimmedNodeIds.contains(node.id)
 
-                // Use key to prevent unnecessary recomposition during filter changes
                 key(node.id) {
                     NodeWrapper(
                         node = node,
@@ -231,6 +261,7 @@ fun GraphView(
                         screenOffset = Offset(screenX, screenY),
                         isSelected = isSelected,
                         isPendingSource = isPendingSource,
+                        isDimmed = isDimmed, // Phase 4
                         onTap = {
                             if (isEditMode) {
                                 viewModel.onNodeTap(node.id)
@@ -340,7 +371,8 @@ fun NodeWrapper(
     zoom: Float,
     screenOffset: Offset,
     isSelected: Boolean,
-    isPendingSource: Boolean, // For Edit Mode Highlighting
+    isPendingSource: Boolean,
+    isDimmed: Boolean, // Phase 4
     onTap: () -> Unit,
     onLongPress: () -> Unit,
     onDragStart: () -> Unit,
@@ -356,6 +388,7 @@ fun NodeWrapper(
                 scaleY = zoom
                 transformOrigin = TransformOrigin(0f, 0f)
             }
+            .alpha(if (isDimmed) 0.2f else 1.0f) // Phase 4: Dimming
             .onSizeChanged { onSizeChanged(it) }
             .layout { measurable, constraints ->
                 val placeable = measurable.measure(constraints)
