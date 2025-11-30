@@ -316,26 +316,3 @@ data class TagGraphNode(
     override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
-
-// Helper: Cluster
-data class ClusterNode(
-    override val id: Long,
-    val containedNodes: Set<Long>,
-    val childCount: Int,
-    override val label: String = "Cluster",
-    override var pos: Offset = Offset.Zero,
-    override var vel: Offset = Offset.Zero,
-    override val mass: Float = 30f,
-    override val radius: Float = 50f,
-    override val width: Float = 100f,
-    override val height: Float = 100f,
-    override val colorInfo: ColorInfo,
-    override var isFixed: Boolean = false,
-    override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
-    override var oldForce: Offset = Offset.Zero,
-    override var swinging: Float = 0f,
-    override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
-    override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }

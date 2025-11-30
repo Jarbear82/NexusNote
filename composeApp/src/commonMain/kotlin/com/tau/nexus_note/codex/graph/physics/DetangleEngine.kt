@@ -28,17 +28,20 @@ fun runFRLayout(
         return@flow
     }
 
-    // --- 1. Get Parameters ---
-    val iterations = params["iterations"] as? Int ?: 500
-    val area = (params["area"] as? Float ?: 1.0f) * 10000f // Scale area for visual space
-    val gravity = params["gravity"] as? Float ?: 0.1f
+    // --- 1. Get Parameters with defaults ---
+    val iterations = (params["iterations"] as? Number)?.toInt() ?: 500
+    // Visual area scaling: The dialog gives small floats (0.1 - 5.0), we scale them up to pixel space
+    val areaInput = (params["area"] as? Number)?.toFloat() ?: 1.0f
+    val area = areaInput * 10000f
+    val gravity = (params["gravity"] as? Number)?.toFloat() ?: 0.1f
+
     val speed = 2.0f // A constant speed factor for displacement
 
     // Optimal distance
     val k = sqrt(area / nodes.size)
 
     // --- 2. Initialize Node Positions ---
-    // Start nodes at small random positions near the center
+    // Start nodes at small random positions near the center to explode outward
     var currentNodes = nodes.mapValues { (_, node) ->
         val copy = node.copyNode()
         copy.pos = Offset(
@@ -51,7 +54,7 @@ fun runFRLayout(
     // --- 3. Run Iterations ---
     for (i in 0 until iterations) {
         val forces = mutableMapOf<Long, Offset>()
-        // Copy using copyNode()
+        // Copy using copyNode() for immutability during calc
         val nextNodeMap = currentNodes.mapValues { it.value.copyNode() }
 
         // Initialize forces
@@ -109,6 +112,7 @@ fun runFRLayout(
             val forceMag = force.getDistance()
 
             // Apply displacement, limited by speed and temperature
+            // The 0.01f factor helps tame the force magnitude into a reasonable step size
             val displacement = force.normalized() * (forceMag * 0.01f * speed).coerceAtMost(coolingFactor * 50f)
             node.pos += displacement
         }

@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,6 +81,9 @@ fun GraphView(
     val showSettings by viewModel.showSettings.collectAsState()
     val isProcessing by viewModel.isProcessingLayout.collectAsState()
     val loadingProgress by viewModel.loadingProgress.collectAsState()
+
+    // Phase 1/3 State
+    val isGraphReady by viewModel.isGraphReady.collectAsState()
 
     val layoutMode by viewModel.layoutMode.collectAsState()
     val layoutDirection by viewModel.layoutDirection.collectAsState()
@@ -163,42 +168,64 @@ fun GraphView(
         val visibleMaxY = ((constraints.maxHeight.toFloat() - centerY) / transform.zoom) - transform.pan.y + buffer
         val visibleBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
 
-        val visibleNodes = remember(nodes, visibleBounds) { nodes.values.filter { visibleBounds.contains(it.pos) } }
+        // Phase 1 Logic: Force render all nodes to capture dimensions if not ready
+        val visibleNodes = remember(nodes, visibleBounds, isGraphReady) {
+            if (!isGraphReady) {
+                nodes.values // Render ALL to trigger onSizeChanged
+            } else {
+                nodes.values.filter { visibleBounds.contains(it.pos) }
+            }
+        }
+
         val isLowDetail = transform.zoom < renderingSettings.lodThreshold
 
-        // 1. Edges
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            withTransform({
-                translate(left = centerX, top = centerY)
-                scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
-                translate(left = transform.pan.x, top = transform.pan.y)
-            }) {
-                edges.forEach { edge ->
-                    val nodeA = nodes[edge.sourceId]
-                    val nodeB = nodes[edge.targetId]
-                    if (nodeA != null && nodeB != null && (visibleBounds.contains(nodeA.pos) || visibleBounds.contains(nodeB.pos))) {
-                        drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
+        // Phase 3: Reveal Animation
+        AnimatedVisibility(
+            visible = isGraphReady,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                // 1. Edges
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    withTransform({
+                        translate(left = centerX, top = centerY)
+                        scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
+                        translate(left = transform.pan.x, top = transform.pan.y)
+                    }) {
+                        edges.forEach { edge ->
+                            val nodeA = nodes[edge.sourceId]
+                            val nodeB = nodes[edge.targetId]
+                            if (nodeA != null && nodeB != null && (visibleBounds.contains(nodeA.pos) || visibleBounds.contains(nodeB.pos))) {
+                                drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Nodes (Low Detail Mode)
+                if (isLowDetail) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        withTransform({
+                            translate(left = centerX, top = centerY)
+                            scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
+                            translate(left = transform.pan.x, top = transform.pan.y)
+                        }) {
+                            visibleNodes.forEach { node ->
+                                val isDimmed = dimmedNodeIds.contains(node.id)
+                                val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
+                                drawCircle(color = color, radius = node.radius, center = node.pos)
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 2. Nodes
-        if (isLowDetail) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                withTransform({
-                    translate(left = centerX, top = centerY)
-                    scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
-                    translate(left = transform.pan.x, top = transform.pan.y)
-                }) {
-                    visibleNodes.forEach { node ->
-                        val isDimmed = dimmedNodeIds.contains(node.id)
-                        val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
-                        drawCircle(color = color, radius = node.radius, center = node.pos)
-                    }
-                }
-            }
-        } else {
+        // 3. Nodes (Interactive Mode) - Always composed to capture events/size, but alpha modulated
+        // Note: We place this OUTSIDE AnimatedVisibility to ensure Composition happens during Phase 1
+        if (!isLowDetail) {
             visibleNodes.forEach { node ->
                 val worldX = node.pos.x + transform.pan.x
                 val worldY = node.pos.y + transform.pan.y
@@ -209,9 +236,14 @@ fun GraphView(
                 val isDimmed = dimmedNodeIds.contains(node.id)
 
                 key(node.id) {
+                    // Invisible during Phase 1/2, visible in Phase 3
+                    val nodeAlpha = if(isGraphReady) (if (isDimmed) 0.2f else 1.0f) else 0f
+
                     NodeWrapper(
                         node = node, zoom = transform.zoom, screenOffset = Offset(screenX, screenY),
                         isSelected = isSelected, isPendingSource = isPendingSource, isDimmed = isDimmed,
+                        // Override alpha manually here since wrapper handles it too
+                        modifier = Modifier.alpha(nodeAlpha),
                         onTap = { if (isEditMode) viewModel.onNodeTap(node.id) else onNodeTap(node.id) },
                         onLongPress = { viewModel.onNodeLockToggle(node.id) },
                         onDragStart = { viewModel.onDragStart(node.id) },
@@ -224,7 +256,7 @@ fun GraphView(
             }
         }
 
-        // 3. Selection Box
+        // 4. Selection Box
         if (selectionRect != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRect(color = Color.Blue.copy(alpha = 0.2f), topLeft = selectionRect!!.topLeft, size = selectionRect!!.size)
@@ -232,7 +264,23 @@ fun GraphView(
             }
         }
 
-        // 4. UI Controls
+        // 5. UI Controls & Overlay
+
+        // Loading Overlay (Phase 1/2)
+        if (!isGraphReady) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text(loadingProgress ?: "Preparing Graph...", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+
+        // Standard Controls
         SmallFloatingActionButton(onClick = { viewModel.toggleSettings() }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Settings, "Graph Settings") }
 
         Box(modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp).height(300.dp)) {
@@ -246,7 +294,7 @@ fun GraphView(
             GraphSettingsView(
                 layoutMode, viewModel::onLayoutModeChanged, layoutDirection, viewModel::onLayoutDirectionChanged,
                 physicsOptions, viewModel::updatePhysicsOptions, viewModel::onTriggerLayoutAction,
-                snapEnabled, viewModel::toggleSnap, viewModel::clusterOutliers, { viewModel.clusterByHubSize(5) }, viewModel::clearClustering,
+                snapEnabled, viewModel::toggleSnap,
                 renderingSettings.lodThreshold, viewModel::updateLodThreshold, isEditMode, viewModel::toggleEditMode,
                 isSelectionMode, viewModel::toggleSelectionMode, viewModel::fitToScreen
             )
@@ -268,10 +316,14 @@ fun GraphView(
             Icon(Icons.Default.CenterFocusStrong, "Fit to Screen")
         }
 
-        if(isProcessing) Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        // Processing Overlay (For manual layout triggers)
+        if(isProcessing && isGraphReady) Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+
         loadingProgress?.let { progress ->
-            Box(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f), MaterialTheme.shapes.medium).padding(horizontal = 24.dp, vertical = 12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(progress, style = MaterialTheme.typography.bodyMedium) }
+            if (isGraphReady) { // Only show mini-progress if graph is already revealed
+                Box(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f), MaterialTheme.shapes.medium).padding(horizontal = 24.dp, vertical = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(progress, style = MaterialTheme.typography.bodyMedium) }
+                }
             }
         }
     }
@@ -280,14 +332,14 @@ fun GraphView(
 @Composable
 fun NodeWrapper(
     node: GraphNode, zoom: Float, screenOffset: Offset, isSelected: Boolean, isPendingSource: Boolean, isDimmed: Boolean,
+    modifier: Modifier = Modifier, // Added modifier param
     onTap: () -> Unit, onLongPress: () -> Unit, onDragStart: () -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit,
     onSizeChanged: (IntSize) -> Unit, onToggleExpand: () -> Unit
 ) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .offset { IntOffset(screenOffset.x.roundToInt(), screenOffset.y.roundToInt()) }
             .graphicsLayer { scaleX = zoom; scaleY = zoom; transformOrigin = TransformOrigin(0f, 0f) }
-            .alpha(if (isDimmed) 0.2f else 1.0f)
             .onSizeChanged { onSizeChanged(it) }
             .layout { measurable, constraints -> val placeable = measurable.measure(constraints); layout(placeable.width, placeable.height) { placeable.placeRelative(-placeable.width / 2, -placeable.height / 2) } }
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onLongPress() }) }
@@ -306,7 +358,6 @@ fun NodeWrapper(
             is CodeBlockGraphNode -> CodeBlockRenderer(node)
             is TableGraphNode -> TableRenderer(node)
             is ImageGraphNode -> ImageRenderer(node) // Added
-            is ClusterNode -> ClusterNodeView(node)
             // New Types
             is SetGraphNode -> SetRenderer(node)
             is UnorderedListGraphNode -> UnorderedListRenderer(node)

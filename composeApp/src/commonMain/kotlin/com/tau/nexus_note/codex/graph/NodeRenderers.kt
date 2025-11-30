@@ -427,20 +427,3 @@ fun ListRenderer(node: ListGraphNode, modifier: Modifier = Modifier) {
         }
     }
 }
-
-@Composable
-fun ClusterNodeView(node: ClusterNode, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .size(node.radius.dp * 2)
-            .shadow(8.dp, CircleShape)
-            .background(node.colorInfo.composeColor, CircleShape)
-            .border(2.dp, Color.White, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${node.childCount}", color = node.colorInfo.composeFontColor, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(node.label, color = node.colorInfo.composeFontColor.copy(alpha = 0.8f), style = MaterialTheme.typography.labelSmall)
-        }
-    }
-}
