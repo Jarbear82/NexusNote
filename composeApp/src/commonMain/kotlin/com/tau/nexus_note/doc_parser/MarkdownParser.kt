@@ -14,6 +14,8 @@ import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 import org.intellij.markdown.parser.MarkdownParser as IntelliJMarkdownParser
 import java.io.File
+import java.awt.image.BufferedImage
+import javax.imageio.ImageIO
 
 class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
@@ -32,6 +34,8 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
     private val tagRegex = Regex("#([\\w/-]+)")
     private val wikiEmbedRegex = Regex("!\\[\\[(.*?)(?:\\|(.*?))?\\]\\]")
     private val mdImageRegex = Regex("!\\[(.*?)\\]\\((.*?)\\)")
+
+    private val imageExtensions = setOf("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg")
 
     private data class SpineContext(
         val nodeId: Long,
@@ -176,7 +180,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
 
         if (items.isEmpty()) return
 
-        // Use DynamicDocumentNode instead of anonymous object
         val schemaName = if (isOrdered) StandardSchemas.DOC_NODE_ORDERED_LIST else StandardSchemas.DOC_NODE_UNORDERED_LIST
         val specializedNode = DynamicDocumentNode(
             schemaName = schemaName,
@@ -219,6 +222,7 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val sb = StringBuilder()
         var lastIndex = 0
         val matches = regex.findAll(input)
+
         for (match in matches) {
             sb.append(input, lastIndex, match.range.first)
             val replacement = transform(match)
@@ -227,6 +231,37 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         }
         if (lastIndex < input.length) sb.append(input, lastIndex, input.length)
         return sb.toString()
+    }
+
+    // Helper to decide node type based on extension
+    private suspend fun createAttachmentOrImage(rawFilename: String, altText: String = "", sourceDir: String): Long {
+        val storedPath = handleAttachmentImport(rawFilename, sourceDir)
+        val extension = File(rawFilename).extension.lowercase()
+        val mimeType = "application/octet-stream" // Can be improved
+
+        return if (imageExtensions.contains(extension)) {
+            // It's an Image -> Measure it!
+            val (w, h) = getImageDimensions(storedPath, repository.mediaDirectoryPath)
+            repository.insertDocumentNode(
+                ImageNode(
+                    filename = rawFilename,
+                    mimeType = "image/$extension",
+                    path = storedPath,
+                    altText = altText,
+                    width = w,
+                    height = h
+                )
+            )
+        } else {
+            // Generic Attachment
+            repository.insertDocumentNode(
+                AttachmentNode(
+                    filename = rawFilename,
+                    mimeType = mimeType,
+                    path = storedPath
+                )
+            )
+        }
     }
 
     private suspend fun extractAndLinkConcepts(text: String, sourceDir: String): ExtractionResult {
@@ -241,19 +276,20 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             "{{tag:$tagId}}"
         }
 
+        // Wiki Embeds ![[filename]]
         processedText = replaceAsync(processedText, wikiEmbedRegex) { match ->
             val rawFilename = match.groupValues[1]
-            val storedPath = handleAttachmentImport(rawFilename, sourceDir)
-            val attachId = repository.insertDocumentNode(AttachmentNode(filename = rawFilename, mimeType = "image/auto", path = storedPath))
+            // Optional pipe for alt text not fully implemented in wiki regex group, usually group 2 is alias
+            val attachId = createAttachmentOrImage(rawFilename, "", sourceDir)
             edgeActions.add { blockId -> repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId) }
             "{{embed:$attachId}}"
         }
 
+        // MD Images ![alt](url)
         processedText = replaceAsync(processedText, mdImageRegex) { match ->
+            val alt = match.groupValues[1]
             val path = match.groupValues[2]
-            val filename = path.substringAfterLast('/')
-            val storedPath = handleAttachmentImport(path, sourceDir)
-            val attachId = repository.insertDocumentNode(AttachmentNode(filename = filename, path = storedPath, mimeType = "image/auto"))
+            val attachId = createAttachmentOrImage(path, alt, sourceDir)
             edgeActions.add { blockId -> repository.insertDocumentEdge(StandardSchemas.EDGE_EMBEDS, blockId, attachId) }
             "{{embed:$attachId}}"
         }
@@ -267,6 +303,22 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         val absFile = File(relativePath)
         if (absFile.exists()) return copyFileToMediaDir(absFile.absolutePath, repository.mediaDirectoryPath)
         return relativePath
+    }
+
+    // Read dimensions without fully loading image into memory if possible (using ImageIO)
+    private fun getImageDimensions(relativePath: String, mediaRoot: String): Pair<Int, Int> {
+        return try {
+            val file = File(mediaRoot, relativePath)
+            if (!file.exists()) return Pair(0, 0)
+            val img: BufferedImage? = ImageIO.read(file)
+            if (img != null) {
+                Pair(img.width, img.height)
+            } else {
+                Pair(0, 0)
+            }
+        } catch (e: Exception) {
+            Pair(0, 0)
+        }
     }
 
     private fun mapAstToDocumentNode(node: ASTNode, rawText: String): DocumentNode? {
@@ -310,7 +362,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
         var headerNode: ASTNode? = null
         val rowNodes = mutableListOf<ASTNode>()
 
-        // 1. Traverse children to find Header and Rows
         for (child in node.children) {
             if (child.type == GFMElementTypes.HEADER) {
                 headerNode = child
@@ -319,7 +370,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             }
         }
 
-        // 2. Parse Headers
         if (headerNode != null) {
             headerNode.children.forEach { cell ->
                 if (cell.type == GFMTokenTypes.CELL) {
@@ -328,15 +378,12 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             }
         }
 
-        // 3. Parse Rows
         rowNodes.forEach { rowNode ->
             val rowMap = mutableMapOf<String, String>()
             var cellIndex = 0
             rowNode.children.forEach { cell ->
                 if (cell.type == GFMTokenTypes.CELL) {
                     val content = cell.getTextInNode(rawText).toString().trim()
-
-                    // Map content to header key. If more cells than headers, use "Col X"
                     val key = if (cellIndex < headers.size) headers[cellIndex] else "Col ${cellIndex + 1}"
                     rowMap[key] = content
                     cellIndex++
@@ -347,7 +394,6 @@ class MarkdownParser(private val repository: CodexRepository) : DocumentParser {
             }
         }
 
-        // 4. Serialize using the shared Utility
         val headersJson = PropertySerialization.serializeList(headers)
         val rowsJson = PropertySerialization.serializeListOfMaps(rows)
 

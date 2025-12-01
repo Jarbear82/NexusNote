@@ -12,15 +12,18 @@ object StandardSchemas {
     const val DOC_NODE_UNORDERED_LIST = "UnorderedList"
     const val DOC_NODE_ORDERED_LIST = "OrderedList"
     const val DOC_NODE_TAG = "Tag"
-    const val DOC_NODE_TABLE = "Table" // Added missing TABLE
+    const val DOC_NODE_TABLE = "Table"
+
+    // NEW: Specific Image Node (Visual)
+    const val DOC_NODE_IMAGE = "Image"
 
     // --- Legacy Constants (Mapped during parsing/bootstrapping) ---
     const val DOC_NODE_DOCUMENT = "Document" // -> Title
     const val DOC_NODE_SECTION = "Section"   // -> Heading
     const val DOC_NODE_BLOCK = "Block"       // -> LongText
-    const val DOC_NODE_ATTACHMENT = "Attachment"
+    const val DOC_NODE_ATTACHMENT = "Attachment" // Kept for non-image files
     const val DOC_NODE_URL = "URL"
-    const val DOC_NODE_CALLOUT = "Callout"   // Re-added
+    const val DOC_NODE_CALLOUT = "Callout"
 
     // Legacy List Item Nodes (for Exporter compatibility)
     const val DOC_NODE_ORDERED_ITEM = "OrderedListItem"
@@ -71,4 +74,9 @@ object StandardSchemas {
     const val PROP_MIME_TYPE = "mime_type"
     const val PROP_ADDRESS = "address"
     const val PROP_DOMAIN = "domain"
+    const val PROP_ALT_TEXT = "alt_text"
+
+    // NEW: Dimensions (Specific to Image Node)
+    const val PROP_IMG_WIDTH = "img_width"
+    const val PROP_IMG_HEIGHT = "img_height"
 }

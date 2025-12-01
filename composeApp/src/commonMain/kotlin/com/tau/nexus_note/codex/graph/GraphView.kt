@@ -4,8 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.exponentialDecay
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,12 +46,9 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.datamodels.GraphEdge
 import com.tau.nexus_note.settings.GraphLayoutMode
 import kotlinx.coroutines.launch
@@ -80,10 +75,6 @@ fun GraphView(
     val showFabMenu by viewModel.showFabMenu.collectAsState()
     val showSettings by viewModel.showSettings.collectAsState()
     val isProcessing by viewModel.isProcessingLayout.collectAsState()
-    val loadingProgress by viewModel.loadingProgress.collectAsState()
-
-    // Phase 1/3 State
-    val isGraphReady by viewModel.isGraphReady.collectAsState()
 
     val layoutMode by viewModel.layoutMode.collectAsState()
     val layoutDirection by viewModel.layoutDirection.collectAsState()
@@ -97,6 +88,9 @@ fun GraphView(
     val pendingEdgeSourceId by viewModel.pendingEdgeSourceId.collectAsState()
     val dimmedNodeIds by viewModel.dimmedNodeIds.collectAsState()
 
+    // --- Local UI State for Dialogs ---
+    var showDetangleDialog by remember { mutableStateOf(false) }
+
     LaunchedEffect(primarySelectedId) {
         viewModel.setSelectedNode(primarySelectedId)
     }
@@ -107,9 +101,6 @@ fun GraphView(
 
     val density = LocalDensity.current.density
     LaunchedEffect(density) { viewModel.updateDensity(density) }
-
-    val textMeasurer = rememberTextMeasurer()
-    LaunchedEffect(textMeasurer) { viewModel.updateTextMeasurer(textMeasurer) }
 
     val velocityTracker = remember { VelocityTracker() }
     val coroutineScope = rememberCoroutineScope()
@@ -168,63 +159,50 @@ fun GraphView(
         val visibleMaxY = ((constraints.maxHeight.toFloat() - centerY) / transform.zoom) - transform.pan.y + buffer
         val visibleBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
 
-        // Phase 1 Logic: Force render all nodes to capture dimensions if not ready
-        val visibleNodes = remember(nodes, visibleBounds, isGraphReady) {
-            if (!isGraphReady) {
-                nodes.values // Render ALL to trigger onSizeChanged
-            } else {
-                nodes.values.filter { visibleBounds.contains(it.pos) }
-            }
+        val visibleNodes = remember(nodes, visibleBounds) {
+            nodes.values.filter { visibleBounds.contains(it.pos) }
         }
 
         val isLowDetail = transform.zoom < renderingSettings.lodThreshold
 
-        // Phase 3: Reveal Animation
-        AnimatedVisibility(
-            visible = isGraphReady,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                // 1. Edges
+        Box(Modifier.fillMaxSize()) {
+            // 1. Edges
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                withTransform({
+                    translate(left = centerX, top = centerY)
+                    scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
+                    translate(left = transform.pan.x, top = transform.pan.y)
+                }) {
+                    edges.forEach { edge ->
+                        val nodeA = nodes[edge.sourceId]
+                        val nodeB = nodes[edge.targetId]
+                        if (nodeA != null && nodeB != null && (visibleBounds.contains(nodeA.pos) || visibleBounds.contains(nodeB.pos))) {
+                            drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
+                        }
+                    }
+                }
+            }
+
+            // 2. Nodes (Low Detail Mode)
+            if (isLowDetail) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     withTransform({
                         translate(left = centerX, top = centerY)
                         scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
                         translate(left = transform.pan.x, top = transform.pan.y)
                     }) {
-                        edges.forEach { edge ->
-                            val nodeA = nodes[edge.sourceId]
-                            val nodeB = nodes[edge.targetId]
-                            if (nodeA != null && nodeB != null && (visibleBounds.contains(nodeA.pos) || visibleBounds.contains(nodeB.pos))) {
-                                drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
-                            }
-                        }
-                    }
-                }
-
-                // 2. Nodes (Low Detail Mode)
-                if (isLowDetail) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        withTransform({
-                            translate(left = centerX, top = centerY)
-                            scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
-                            translate(left = transform.pan.x, top = transform.pan.y)
-                        }) {
-                            visibleNodes.forEach { node ->
-                                val isDimmed = dimmedNodeIds.contains(node.id)
-                                val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
-                                drawCircle(color = color, radius = node.radius, center = node.pos)
-                            }
+                        visibleNodes.forEach { node ->
+                            val isDimmed = dimmedNodeIds.contains(node.id)
+                            val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
+                            drawCircle(color = color, radius = node.radius, center = node.pos)
                         }
                     }
                 }
             }
         }
 
-        // 3. Nodes (Interactive Mode) - Always composed to capture events/size, but alpha modulated
-        // Note: We place this OUTSIDE AnimatedVisibility to ensure Composition happens during Phase 1
+        // 3. Nodes (Interactive Mode)
+        // Render deterministically sized nodes immediately
         if (!isLowDetail) {
             visibleNodes.forEach { node ->
                 val worldX = node.pos.x + transform.pan.x
@@ -236,20 +214,17 @@ fun GraphView(
                 val isDimmed = dimmedNodeIds.contains(node.id)
 
                 key(node.id) {
-                    // Invisible during Phase 1/2, visible in Phase 3
-                    val nodeAlpha = if(isGraphReady) (if (isDimmed) 0.2f else 1.0f) else 0f
+                    val nodeAlpha = if (isDimmed) 0.2f else 1.0f
 
                     NodeWrapper(
                         node = node, zoom = transform.zoom, screenOffset = Offset(screenX, screenY),
                         isSelected = isSelected, isPendingSource = isPendingSource, isDimmed = isDimmed,
-                        // Override alpha manually here since wrapper handles it too
                         modifier = Modifier.alpha(nodeAlpha),
                         onTap = { if (isEditMode) viewModel.onNodeTap(node.id) else onNodeTap(node.id) },
                         onLongPress = { viewModel.onNodeLockToggle(node.id) },
                         onDragStart = { viewModel.onDragStart(node.id) },
                         onDrag = { delta -> viewModel.onDrag(delta) },
                         onDragEnd = { viewModel.onDragEnd() },
-                        onSizeChanged = { size -> viewModel.onNodeSizeChanged(node.id, size) },
                         onToggleExpand = { viewModel.toggleNodeExpansion(node.id) }
                     )
                 }
@@ -266,20 +241,6 @@ fun GraphView(
 
         // 5. UI Controls & Overlay
 
-        // Loading Overlay (Phase 1/2)
-        if (!isGraphReady) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(loadingProgress ?: "Preparing Graph...", style = MaterialTheme.typography.titleMedium)
-                }
-            }
-        }
-
         // Standard Controls
         SmallFloatingActionButton(onClick = { viewModel.toggleSettings() }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Settings, "Graph Settings") }
 
@@ -292,11 +253,39 @@ fun GraphView(
 
         AnimatedVisibility(visible = showSettings, modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 16.dp)) {
             GraphSettingsView(
-                layoutMode, viewModel::onLayoutModeChanged, layoutDirection, viewModel::onLayoutDirectionChanged,
-                physicsOptions, viewModel::updatePhysicsOptions, viewModel::onTriggerLayoutAction,
-                snapEnabled, viewModel::toggleSnap,
-                renderingSettings.lodThreshold, viewModel::updateLodThreshold, isEditMode, viewModel::toggleEditMode,
-                isSelectionMode, viewModel::toggleSelectionMode, viewModel::fitToScreen
+                layoutMode = layoutMode,
+                onLayoutModeChange = viewModel::onLayoutModeChanged,
+                layoutDirection = layoutDirection,
+                onLayoutDirectionChange = viewModel::onLayoutDirectionChanged,
+                physicsOptions = physicsOptions,
+                onPhysicsOptionChange = viewModel::updatePhysicsOptions,
+                onTriggerLayout = {
+                    if (layoutMode == GraphLayoutMode.HIERARCHICAL) {
+                        viewModel.onTriggerLayoutAction()
+                    } else {
+                        showDetangleDialog = true
+                    }
+                },
+                snapEnabled = snapEnabled,
+                onSnapToggle = viewModel::toggleSnap,
+                lodThreshold = renderingSettings.lodThreshold,
+                onLodThresholdChange = viewModel::updateLodThreshold,
+                isEditMode = isEditMode,
+                onToggleEditMode = viewModel::toggleEditMode,
+                isSelectionMode = isSelectionMode,
+                onToggleSelectionMode = viewModel::toggleSelectionMode,
+                onFitToScreen = viewModel::fitToScreen
+            )
+        }
+
+        // --- Detangle Dialog Overlay ---
+        if (showDetangleDialog) {
+            DetangleSettingsDialog(
+                onDismiss = { showDetangleDialog = false },
+                onDetangle = { algorithm, params ->
+                    showDetangleDialog = false
+                    viewModel.runDetangle(algorithm, params)
+                }
             )
         }
 
@@ -317,31 +306,28 @@ fun GraphView(
         }
 
         // Processing Overlay (For manual layout triggers)
-        if(isProcessing && isGraphReady) Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-
-        loadingProgress?.let { progress ->
-            if (isGraphReady) { // Only show mini-progress if graph is already revealed
-                Box(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 80.dp).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f), MaterialTheme.shapes.medium).padding(horizontal = 24.dp, vertical = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(12.dp)); Text(progress, style = MaterialTheme.typography.bodyMedium) }
-                }
-            }
-        }
+        if(isProcessing) Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
 }
 
 @Composable
 fun NodeWrapper(
     node: GraphNode, zoom: Float, screenOffset: Offset, isSelected: Boolean, isPendingSource: Boolean, isDimmed: Boolean,
-    modifier: Modifier = Modifier, // Added modifier param
+    modifier: Modifier = Modifier,
     onTap: () -> Unit, onLongPress: () -> Unit, onDragStart: () -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit,
-    onSizeChanged: (IntSize) -> Unit, onToggleExpand: () -> Unit
+    onToggleExpand: () -> Unit
 ) {
     Box(
         modifier = modifier
             .offset { IntOffset(screenOffset.x.roundToInt(), screenOffset.y.roundToInt()) }
             .graphicsLayer { scaleX = zoom; scaleY = zoom; transformOrigin = TransformOrigin(0f, 0f) }
-            .onSizeChanged { onSizeChanged(it) }
-            .layout { measurable, constraints -> val placeable = measurable.measure(constraints); layout(placeable.width, placeable.height) { placeable.placeRelative(-placeable.width / 2, -placeable.height / 2) } }
+            .layout { measurable, constraints ->
+                // Force layout to match the pre-computed node dimensions
+                val placeable = measurable.measure(
+                    androidx.compose.ui.unit.Constraints.fixed(node.width.roundToInt(), node.height.roundToInt())
+                )
+                layout(placeable.width, placeable.height) { placeable.placeRelative(-placeable.width / 2, -placeable.height / 2) }
+            }
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onLongPress() }) }
             .pointerInput(zoom) { detectDragGestures(onDragStart = { onDragStart() }, onDrag = { change, dragAmount -> change.consume(); onDrag(dragAmount * zoom) }, onDragEnd = { onDragEnd() }) }
     ) {
@@ -353,12 +339,11 @@ fun NodeWrapper(
             is HeadingGraphNode -> HeadingRenderer(node)
             is ShortTextGraphNode -> ShortTextRenderer(node)
             is LongTextGraphNode -> LongTextRenderer(node)
-            is ListGraphNode -> ListRenderer(node) // Legacy
+            is ListGraphNode -> ListRenderer(node)
             is MapGraphNode -> MapRenderer(node)
             is CodeBlockGraphNode -> CodeBlockRenderer(node)
             is TableGraphNode -> TableRenderer(node)
-            is ImageGraphNode -> ImageRenderer(node) // Added
-            // New Types
+            is ImageGraphNode -> ImageRenderer(node)
             is SetGraphNode -> SetRenderer(node)
             is UnorderedListGraphNode -> UnorderedListRenderer(node)
             is OrderedListGraphNode -> OrderedListRenderer(node)

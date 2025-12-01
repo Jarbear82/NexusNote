@@ -194,7 +194,7 @@ class CodexRepository(
 
     suspend fun findRootDocuments(): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
         val allNodes = _nodeList.value
-        val docNodes = allNodes.filter { it.label == StandardSchemas.DOC_NODE_TITLE } // Updated to TITLE
+        val docNodes = allNodes.filter { it.label == StandardSchemas.DOC_NODE_TITLE }
         val containsEdges = _edgeList.value.filter { it.label == StandardSchemas.EDGE_CONTAINS }
         val containedNodeIds = containsEdges.map { it.dst.id }.toSet()
         docNodes.filter { it.id !in containedNodeIds }
@@ -214,7 +214,6 @@ class CodexRepository(
         NodeEditState(id = dbNode.id, schema = schema, properties = properties)
     }
 
-    // Alias for MarkdownExporter usage
     suspend fun getNodeById(itemId: Long): NodeEditState? = getNodeEditState(itemId)
 
     suspend fun getEdgeEditState(item: EdgeDisplayItem): EdgeEditState? = withContext(Dispatchers.IO) {
@@ -319,7 +318,6 @@ class CodexRepository(
                 val rawLabel = state.properties[displayKey] ?: "Node"
                 val displayLabel = rawLabel.take(20)
                 val dbJson = mapToJson(state.properties, state.selectedSchema.nodeStyle, state.selectedSchema)
-                // Correct Argument Order for SQLDelight
                 dbService.database.appDatabaseQueries.insertNode(
                     schema_id = state.selectedSchema.id,
                     display_label = displayLabel,
@@ -337,14 +335,12 @@ class CodexRepository(
                 val rawLabel = state.properties[displayKey] ?: "Node ${state.id}"
                 val displayLabel = rawLabel.take(20)
                 val dbJson = mapToJson(state.properties, state.schema.nodeStyle, state.schema)
-                // Correct Argument Order for SQLDelight
                 dbService.database.appDatabaseQueries.updateNodeProperties(
                     display_label = displayLabel,
                     properties_json = dbJson,
                     id = state.id
                 )
 
-                // Optimistic UI Update
                 val bgProp = state.schema.properties.find { it.isBackgroundProperty }
                 val bgPath = if(bgProp != null) state.properties[bgProp.name] else null
                 val updatedItem = NodeDisplayItem(state.id, state.schema.name, displayLabel, state.schema.id, bgPath, state.properties, state.schema.nodeStyle)
@@ -407,7 +403,21 @@ class CodexRepository(
             StandardSchemas.DOC_NODE_ORDERED_LIST to Pair(listOf(StandardSchemas.PROP_LIST_ITEMS), NodeStyle.ORDERED_LIST),
             StandardSchemas.DOC_NODE_TAG to Pair(listOf(StandardSchemas.PROP_NAME), NodeStyle.TAG),
             StandardSchemas.DOC_NODE_TABLE to Pair(listOf(StandardSchemas.PROP_HEADERS, StandardSchemas.PROP_DATA, StandardSchemas.PROP_CAPTION), NodeStyle.TABLE),
-            // Added Missing Attachment Schema
+
+            // NEW: Image Schema (Visual)
+            StandardSchemas.DOC_NODE_IMAGE to Pair(
+                listOf(
+                    StandardSchemas.PROP_NAME,
+                    StandardSchemas.PROP_URI,
+                    StandardSchemas.PROP_ALT_TEXT,
+                    StandardSchemas.PROP_MIME_TYPE,
+                    StandardSchemas.PROP_IMG_WIDTH,
+                    StandardSchemas.PROP_IMG_HEIGHT
+                ),
+                NodeStyle.IMAGE
+            ),
+
+            // UPDATED: Attachment Schema (Generic)
             StandardSchemas.DOC_NODE_ATTACHMENT to Pair(
                 listOf(StandardSchemas.PROP_NAME, StandardSchemas.PROP_MIME_TYPE, StandardSchemas.PROP_URI),
                 NodeStyle.ATTACHMENT
@@ -425,7 +435,7 @@ class CodexRepository(
             return when (name) {
                 StandardSchemas.PROP_LIST_ITEMS, StandardSchemas.PROP_HEADERS -> CodexPropertyDataTypes.LIST
                 StandardSchemas.PROP_MAP_DATA, StandardSchemas.PROP_FRONTMATTER -> CodexPropertyDataTypes.MAP
-                StandardSchemas.PROP_LEVEL, StandardSchemas.PROP_ORDER, StandardSchemas.PROP_CREATED_AT -> CodexPropertyDataTypes.NUMBER
+                StandardSchemas.PROP_LEVEL, StandardSchemas.PROP_ORDER, StandardSchemas.PROP_CREATED_AT, StandardSchemas.PROP_IMG_WIDTH, StandardSchemas.PROP_IMG_HEIGHT -> CodexPropertyDataTypes.NUMBER
                 StandardSchemas.PROP_CONTENT, StandardSchemas.PROP_DATA -> CodexPropertyDataTypes.MARKDOWN
                 StandardSchemas.PROP_MIME_TYPE -> CodexPropertyDataTypes.TEXT
                 StandardSchemas.PROP_URI -> CodexPropertyDataTypes.IMAGE // Or TEXT depending on how you want to edit it

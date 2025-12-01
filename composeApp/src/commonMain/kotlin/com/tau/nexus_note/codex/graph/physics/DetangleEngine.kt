@@ -2,21 +2,18 @@ package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.datamodels.GraphEdge
-// Use new GraphNode
 import com.tau.nexus_note.codex.graph.GraphNode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
 /**
  * Runs a Fruchterman-Reingold static layout algorithm.
  * Emits the state of the graph at each iteration (tick).
- *
- * @param nodes The initial map of nodes.
- * @param edges The list of edges.
- * @param params A map containing parameters like "iterations", "area", and "gravity".
- * @return A flow that emits the updated node map for each iteration.
  */
 fun runFRLayout(
     nodes: Map<Long, GraphNode>,
@@ -28,25 +25,27 @@ fun runFRLayout(
         return@flow
     }
 
-    // --- 1. Get Parameters with defaults ---
     val iterations = (params["iterations"] as? Number)?.toInt() ?: 500
-    // Visual area scaling: The dialog gives small floats (0.1 - 5.0), we scale them up to pixel space
     val areaInput = (params["area"] as? Number)?.toFloat() ?: 1.0f
-    val area = areaInput * 10000f
+    val area = areaInput * 35000f
     val gravity = (params["gravity"] as? Number)?.toFloat() ?: 0.1f
+    val speed = 2.0f
 
-    val speed = 2.0f // A constant speed factor for displacement
-
-    // Optimal distance
     val k = sqrt(area / nodes.size)
 
-    // --- 2. Initialize Node Positions ---
-    // Start nodes at small random positions near the center to explode outward
+    // --- 2. Initialize Node Positions (Spiral) ---
+    var spiralIndex = 0
     var currentNodes = nodes.mapValues { (_, node) ->
         val copy = node.copyNode()
+
+        // Phyllotaxis Spiral
+        val angle = spiralIndex * 0.5f
+        val radius = 50f * sqrt(spiralIndex.toFloat())
+        spiralIndex++
+
         copy.pos = Offset(
-            Random.nextFloat() * 10f - 5f,
-            Random.nextFloat() * 10f - 5f
+            radius * cos(angle),
+            radius * sin(angle)
         )
         copy
     }
@@ -54,35 +53,61 @@ fun runFRLayout(
     // --- 3. Run Iterations ---
     for (i in 0 until iterations) {
         val forces = mutableMapOf<Long, Offset>()
-        // Copy using copyNode() for immutability during calc
         val nextNodeMap = currentNodes.mapValues { it.value.copyNode() }
 
-        // Initialize forces
         for (node in nextNodeMap.values) {
             forces[node.id] = Offset.Zero
         }
 
-        // --- Calculate Repulsion (all pairs) ---
+        // Calculate Repulsion
         val nodeList = nextNodeMap.values.toList()
         for (idxA in nodeList.indices) {
             for (idxB in (idxA + 1) until nodeList.size) {
                 val nodeA = nodeList[idxA]
                 val nodeB = nodeList[idxB]
 
-                val delta = nodeA.pos - nodeB.pos
-                var dist = delta.getDistance()
-                if (dist == 0f) dist = 0.01f
+                val dx = nodeA.pos.x - nodeB.pos.x
+                val dy = nodeA.pos.y - nodeB.pos.y
+                val absDx = abs(dx)
+                val absDy = abs(dy)
 
-                // f_r = (k*k) / d
-                val repulsionForce = (k * k) / dist
-                val forceVec = delta.normalized() * repulsionForce
+                // --- COLLISION LOGIC (Hard) ---
+                val spacing = 50f
+                val minW = (nodeA.width / 2f) + (nodeB.width / 2f) + spacing
+                val minH = (nodeA.height / 2f) + (nodeB.height / 2f) + spacing
 
-                forces[nodeA.id] = forces[nodeA.id]!! + forceVec
-                forces[nodeB.id] = forces[nodeB.id]!! - forceVec
+                if (absDx < minW && absDy < minH) {
+                    // Collision detected - Strong Repulsion
+                    val overlapX = minW - absDx
+                    val overlapY = minH - absDy
+                    val repulsionStrength = k * 1000f
+
+                    val forceVec = if (overlapX < overlapY) {
+                        val sign = if (dx > 0) 1f else -1f
+                        Offset(sign * repulsionStrength, 0f)
+                    } else {
+                        val sign = if (dy > 0) 1f else -1f
+                        Offset(0f, sign * repulsionStrength)
+                    }
+
+                    forces[nodeA.id] = forces[nodeA.id]!! + forceVec
+                    forces[nodeB.id] = forces[nodeB.id]!! - forceVec
+                } else {
+                    // Standard Repulsion
+                    val delta = nodeA.pos - nodeB.pos
+                    var dist = delta.getDistance()
+                    if (dist == 0f) dist = 0.01f
+
+                    val repulsionForce = (k * k) / dist
+                    val forceVec = delta.normalized() * repulsionForce
+
+                    forces[nodeA.id] = forces[nodeA.id]!! + forceVec
+                    forces[nodeB.id] = forces[nodeB.id]!! - forceVec
+                }
             }
         }
 
-        // --- Calculate Attraction (edges only) ---
+        // Attraction
         for (edge in edges) {
             val nodeA = nextNodeMap[edge.sourceId] ?: continue
             val nodeB = nextNodeMap[edge.targetId] ?: continue
@@ -91,7 +116,6 @@ fun runFRLayout(
             var dist = delta.getDistance()
             if (dist == 0f) dist = 0.01f
 
-            // f_a = (d*d) / k
             val attractionForce = (dist * dist) / k
             val forceVec = delta.normalized() * attractionForce
 
@@ -99,26 +123,23 @@ fun runFRLayout(
             forces[nodeB.id] = forces[nodeB.id]!! + forceVec
         }
 
-        // --- Calculate Gravity ---
+        // Gravity
         for (node in nextNodeMap.values) {
             val gravityForce = -node.pos.normalized() * gravity * k
             forces[node.id] = forces[node.id]!! + gravityForce
         }
 
-        // --- Apply Forces (Displacement) ---
+        // Apply Forces
         val coolingFactor = 1.0f - (i.toFloat() / iterations.toFloat())
         for (node in nextNodeMap.values) {
             val force = forces[node.id]!!
             val forceMag = force.getDistance()
-
-            // Apply displacement, limited by speed and temperature
-            // The 0.01f factor helps tame the force magnitude into a reasonable step size
-            val displacement = force.normalized() * (forceMag * 0.01f * speed).coerceAtMost(coolingFactor * 50f)
+            val displacement = force.normalized() * (forceMag * 0.05f * speed).coerceAtMost(coolingFactor * 200f)
             node.pos += displacement
         }
 
-        currentNodes = nextNodeMap // Update state for next iteration
-        emit(currentNodes) // Emit the new state for visualization
+        currentNodes = nextNodeMap
+        emit(currentNodes)
     }
 }
 

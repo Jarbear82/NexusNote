@@ -5,8 +5,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.TextMeasurer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.tau.nexus_note.codex.graph.physics.PhysicsEngine
@@ -23,7 +21,6 @@ import com.tau.nexus_note.doc_parser.StandardSchemas
 import com.tau.nexus_note.settings.GraphLayoutMode
 import com.tau.nexus_note.settings.LayoutDirection
 import com.tau.nexus_note.settings.SettingsData
-import com.tau.nexus_note.utils.PropertySerialization
 import com.tau.nexus_note.utils.labelToColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,10 +38,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.random.Random
 
 class GraphViewmodel(
     private val viewModelScope: CoroutineScope,
@@ -52,7 +50,6 @@ class GraphViewmodel(
     private val mediaPath: String
 ) {
     private val physicsEngine = PhysicsEngine()
-    private var textMeasurer: TextMeasurer? = null
 
     // Local State overrides
     private val _layoutMode = MutableStateFlow(GraphLayoutMode.CONTINUOUS)
@@ -73,17 +70,7 @@ class GraphViewmodel(
     private val _simulationRunning = MutableStateFlow(false)
     val simulationRunning = _simulationRunning.asStateFlow()
 
-    // Loading State for Stabilization
-    private val _loadingProgress = MutableStateFlow<String?>(null)
-    val loadingProgress = _loadingProgress.asStateFlow()
-
-    // --- Two-Pass Rendering State ---
-    private val _isGraphReady = MutableStateFlow(false) // Phase 3: True when layout is done
-    val isGraphReady = _isGraphReady.asStateFlow()
-
-    private val _measuredNodeIds = MutableStateFlow<Set<Long>>(emptySet())
-    // -------------------------------
-
+    // --- Graph Data ---
     private val _graphNodes = MutableStateFlow<Map<Long, GraphNode>>(emptyMap())
     val graphNodes = _graphNodes.asStateFlow()
 
@@ -106,8 +93,6 @@ class GraphViewmodel(
     val isProcessingLayout = _isProcessingLayout.asStateFlow()
 
     private val _collapsedNodes = MutableStateFlow<Set<Long>>(emptySet())
-
-    // Track expanded state visually
     private val _expandedNodes = MutableStateFlow<Set<Long>>(emptySet())
 
     // Selection & Navigation State
@@ -125,7 +110,7 @@ class GraphViewmodel(
 
     private val _selectedNodeId = MutableStateFlow<Long?>(null)
 
-    // Derived State: Set of Node IDs that should be dimmed (Not selected AND not a neighbor)
+    // Derived State: Set of Node IDs that should be dimmed
     val dimmedNodeIds: StateFlow<Set<Long>> = combine(
         _selectedNodeId,
         _graphEdges,
@@ -156,12 +141,24 @@ class GraphViewmodel(
     private var size = Size.Zero
     private var currentDensity: Float = 1.0f
 
+    // --- Sizing Context (Dynamic based on window density) ---
+    private var sizingContext = SizingContext(
+        charWidthPx = 9f,
+        lineHeightPx = 20f,
+        paddingPx = 32f
+    )
+
     private var lastNodeList: List<NodeDisplayItem> = emptyList()
     private var lastEdgeList: List<EdgeDisplayItem> = emptyList()
     private var lastSchema: SchemaData? = null
 
     private var settleFramesRemaining = 0
     private var selectionStartPos: Offset? = null
+
+    // Kept for signature compatibility if GraphView calls it, though unused locally now
+    fun updateTextMeasurer(measurer: TextMeasurer) {
+        // No-op with new deterministic sizing
+    }
 
     init {
         viewModelScope.launch {
@@ -175,10 +172,6 @@ class GraphViewmodel(
                 _renderingSettings.value = settings.graphRendering
             }
         }
-    }
-
-    fun updateTextMeasurer(measurer: TextMeasurer) {
-        this.textMeasurer = measurer
     }
 
     suspend fun runSimulationLoop() {
@@ -228,6 +221,48 @@ class GraphViewmodel(
                 delay(50)
             }
         }
+    }
+
+    // --- Sizing & Density Logic ---
+
+    fun updateDensity(density: Float) {
+        if (abs(currentDensity - density) > 0.1f) {
+            currentDensity = density
+
+            // Calculate constants based on Monospace 14sp
+            // 14sp * density = pixels.
+            // Monospace char width is approx 0.6 * fontSize
+            val fontSizePx = 14f * density
+            val charW = fontSizePx * 0.65f // Tuning: slightly wider than 0.6
+            val lineH = fontSizePx * 1.4f // standard line height multiplier
+
+            sizingContext = SizingContext(
+                charWidthPx = charW,
+                lineHeightPx = lineH,
+                paddingPx = 16f * density * 2 // 32dp padding total
+            )
+
+            // Trigger Recalculation of all nodes
+            recalculateAllNodeSizes()
+        }
+    }
+
+    private fun recalculateAllNodeSizes() {
+        val current = _graphNodes.value
+        if (current.isEmpty()) return
+
+        val updated = current.mapValues { (id, node) ->
+            // Find original data to get content
+            val displayItem = lastNodeList.find { it.id == id }
+            if (displayItem != null) {
+                // Recalculate dimensions deterministically
+                val newSize = NodeSizeCalculator.calculate(displayItem, node.isExpanded, sizingContext)
+                updateNodeDimensions(node, newSize, node.isExpanded)
+            } else {
+                node
+            }
+        }
+        _graphNodes.value = updated
     }
 
     // --- Navigation API ---
@@ -393,14 +428,8 @@ class GraphViewmodel(
         lastEdgeList = edgeList
         lastSchema = schema
 
-        // Phase 1: Reset for loading
-        _isGraphReady.value = false
-        _measuredNodeIds.value = emptySet()
-        _loadingProgress.value = "Measuring content..."
-
         val isFirstLoad = _graphNodes.value.isEmpty()
         recomputeGraphState(calculateNewPositions = isFirstLoad, runStabilization = false)
-        // We do NOT start simulation yet. We wait for onNodeSizeChanged.
     }
 
     fun onLayoutModeChanged(mode: GraphLayoutMode) {
@@ -409,7 +438,7 @@ class GraphViewmodel(
             GraphLayoutMode.CONTINUOUS -> _simulationRunning.value = true
             GraphLayoutMode.COMPUTED -> {
                 _simulationRunning.value = false
-                triggerComputedLayout()
+                triggerComputedLayout(emptyMap())
             }
 
             GraphLayoutMode.HIERARCHICAL -> {
@@ -426,22 +455,37 @@ class GraphViewmodel(
         }
     }
 
+    /**
+     * Executes a specific detangle algorithm with user parameters.
+     */
+    fun runDetangle(algorithm: DetangleAlgorithm, params: Map<String, Any>) {
+        _simulationRunning.value = false // Stop any active simulation to prevent fighting
+
+        when (algorithm) {
+            DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> triggerComputedLayout(params)
+            else -> triggerComputedLayout(params) // Fallback for other algo keys
+        }
+    }
+
     fun onTriggerLayoutAction() {
         when (_layoutMode.value) {
             GraphLayoutMode.CONTINUOUS -> {
                 viewModelScope.launch { recomputeGraphState(calculateNewPositions = true, runStabilization = true) }
             }
 
-            GraphLayoutMode.COMPUTED -> triggerComputedLayout()
+            GraphLayoutMode.COMPUTED -> triggerComputedLayout(emptyMap())
             GraphLayoutMode.HIERARCHICAL -> triggerHierarchicalLayout()
         }
     }
 
-    private fun triggerComputedLayout() {
+    private fun triggerComputedLayout(params: Map<String, Any>) {
         _isProcessingLayout.value = true
         viewModelScope.launch(Dispatchers.Default) {
-            val params = mapOf("iterations" to 1000, "area" to 2.0f, "gravity" to 0.1f)
-            val layoutFlow = runFRLayout(_graphNodes.value, _graphEdges.value, params)
+            // Merge defaults if not present
+            val defaultParams = mapOf("iterations" to 1000, "area" to 2.0f, "gravity" to 0.1f)
+            val finalParams = defaultParams + params
+
+            val layoutFlow = runFRLayout(_graphNodes.value, _graphEdges.value, finalParams)
             layoutFlow.collect { tickedNodes ->
                 _graphNodes.value = tickedNodes
             }
@@ -492,80 +536,6 @@ class GraphViewmodel(
         _snapEnabled.value = enabled
     }
 
-    /**
-     * Phase 2 Trigger: Called by UI when a node measures itself.
-     */
-    fun onNodeSizeChanged(nodeId: Long, size: IntSize) {
-        val width = size.width.toFloat()
-        val height = size.height.toFloat()
-
-        // 1. Update the dimension in the backing store
-        _graphNodes.update { currentNodes ->
-            val node = currentNodes[nodeId] ?: return@update currentNodes
-            if (abs(node.width - width) < 1f && abs(node.height - height) < 1f) {
-                // Dimension unchanged, but we still mark as measured
-                markNodeAsMeasured(nodeId, currentNodes.size)
-                return@update currentNodes
-            }
-
-            val newNodes = currentNodes.toMutableMap()
-            val updatedNode = updateNodeDimensions(node, Size(width, height), node.isExpanded)
-            newNodes[nodeId] = updatedNode
-            newNodes
-        }
-
-        markNodeAsMeasured(nodeId, _graphNodes.value.size)
-    }
-
-    private fun markNodeAsMeasured(nodeId: Long, totalNodes: Int) {
-        // 2. Track measurements
-        val currentSet = _measuredNodeIds.value
-        if (!currentSet.contains(nodeId)) {
-            val newSet = currentSet + nodeId
-            _measuredNodeIds.value = newSet
-
-            // 3. Check for completion (Phase 2 Start)
-            if (totalNodes > 0 && newSet.size >= totalNodes && !_isGraphReady.value) {
-                runInitialStabilization()
-            }
-        }
-    }
-
-    /**
-     * Phase 2 Execution: Run Detangle/Stabilization logic now that we have sizes.
-     */
-    private fun runInitialStabilization() {
-        // Prevent double-firing
-        if (_loadingProgress.value == "Stabilizing...") return
-
-        viewModelScope.launch(Dispatchers.Default) {
-            _loadingProgress.value = "Stabilizing..."
-
-            // Only run physics warmup if we are in Continuous or Computed mode
-            if (_layoutMode.value != GraphLayoutMode.HIERARCHICAL) {
-                var tempNodes = _graphNodes.value
-                val edges = _graphEdges.value
-                val steps = 150
-                // Use a larger step for initial untangling
-                val dt = 0.032f
-
-                for (i in 0 until steps) {
-                    tempNodes = physicsEngine.update(tempNodes, edges, _physicsOptions.value, dt)
-                }
-                _graphNodes.value = tempNodes
-            }
-
-            // Phase 3: Reveal
-            _loadingProgress.value = null
-            _isGraphReady.value = true
-
-            // If Continuous, start the loop now
-            if (_layoutMode.value == GraphLayoutMode.CONTINUOUS) {
-                _simulationRunning.value = true
-            }
-        }
-    }
-
     private suspend fun recomputeGraphState(calculateNewPositions: Boolean, runStabilization: Boolean) {
         withContext(Dispatchers.Default) {
             val collapsedIds = _collapsedNodes.value
@@ -611,15 +581,12 @@ class GraphViewmodel(
             }
 
             val edges = visibleEdgesMap.values.toList()
-            val initialPositions = if (calculateNewPositions) {
-                // Use LayoutStrategy for initial seed to prevent total overlap
-                LayoutStrategy.calculateInitialPositions(lastNodeList, lastEdgeList)
-            } else {
-                emptyMap()
-            }
 
+            // Initialize Nodes
             val currentNodesSnapshot = _graphNodes.value
             val newNodeMap = mutableMapOf<Long, GraphNode>()
+
+            var spiralIndex = 0
 
             lastNodeList.forEach { node ->
                 val id = node.id
@@ -627,7 +594,15 @@ class GraphViewmodel(
 
                 val existingNode = currentNodesSnapshot[id]
                 val pos = if (calculateNewPositions) {
-                    initialPositions[id] ?: Offset(Random.nextFloat() * 100f, Random.nextFloat() * 100f)
+                    // Phyllotaxis Spiral
+                    val angle = spiralIndex * 0.5f
+                    val radius = 50f * sqrt(spiralIndex.toFloat())
+                    spiralIndex++
+
+                    Offset(
+                        radius * cos(angle),
+                        radius * sin(angle)
+                    )
                 } else {
                     existingNode?.pos ?: Offset.Zero
                 }
@@ -635,7 +610,6 @@ class GraphViewmodel(
                 val locked = existingNode?.isLocked ?: false
                 val isExpanded = expandedIds.contains(id)
 
-                // Preserve existing velocity if just refreshing data
                 val nodeObj = createGraphNode(node, pos, id, collapsedIds.contains(id), locked, isExpanded)
 
                 if (!calculateNewPositions && existingNode != null) {
@@ -647,10 +621,20 @@ class GraphViewmodel(
             _graphNodes.value = newNodeMap
             _graphEdges.value = edges
 
-            // Only run immediate stabilization if explicitly requested (manual trigger)
-            // Otherwise, we wait for size reports (Two-Pass)
-            if (calculateNewPositions && runStabilization) {
-                runInitialStabilization()
+            // Immediate Stabilization (Optional)
+            if (calculateNewPositions || runStabilization) {
+                // Run 150 ticks of physics synchronously to untangle
+                val dt = 0.1f // High step for fast untangle
+                // Explicit Type Fix: Use Map interface
+                var tempNodes: Map<Long, GraphNode> = newNodeMap
+                repeat(150) {
+                    tempNodes = physicsEngine.update(tempNodes, edges, _physicsOptions.value, dt)
+                }
+                _graphNodes.value = tempNodes
+
+                if (_layoutMode.value == GraphLayoutMode.CONTINUOUS) {
+                    _simulationRunning.value = true
+                }
             }
         }
     }
@@ -662,11 +646,14 @@ class GraphViewmodel(
         val isExpanded = _expandedNodes.value.contains(nodeId)
 
         val node = _graphNodes.value[nodeId] ?: return
-        val newDims = calculateNodeDimensions(node, isExpanded)
+        val displayItem = lastNodeList.find { it.id == nodeId } ?: return
+
+        // Deterministic size calculation
+        val newSize = NodeSizeCalculator.calculate(displayItem, isExpanded, sizingContext)
 
         _graphNodes.update { nodes ->
             val mutable = nodes.toMutableMap()
-            mutable[nodeId] = updateNodeDimensions(node, newDims, isExpanded)
+            mutable[nodeId] = updateNodeDimensions(node, newSize, isExpanded)
             mutable
         }
 
@@ -675,7 +662,8 @@ class GraphViewmodel(
     }
 
     private fun updateNodeDimensions(node: GraphNode, size: Size, expanded: Boolean): GraphNode {
-        val r = (sqrt(size.width * size.height) / 2f) + 20f
+        // Calculate radius to encompass the rectangular content
+        val r = (sqrt(size.width * size.width + size.height * size.height) / 2f) + 20f
         val w = size.width
         val h = size.height
 
@@ -691,96 +679,11 @@ class GraphViewmodel(
             is OrderedListGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
             is TagGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
             is TableGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is ImageGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded) // Added
-            // Legacy fallbacks
+            is ImageGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
             is ListGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
         }
     }
 
-    private fun calculateNodeDimensions(node: GraphNode, isExpanded: Boolean): Size {
-        // Base sizes for collapsed states per type
-        if (!isExpanded) {
-            return when (node) {
-                is TitleGraphNode -> Size(250f, 80f)
-                is HeadingGraphNode -> Size(200f, 50f)
-                is ShortTextGraphNode -> Size(120f, 40f)
-                is LongTextGraphNode -> Size(250f, 80f)
-                is TagGraphNode -> Size(100f, 40f)
-                is ImageGraphNode -> Size(200f, 150f) // Larger base for image thumbnail
-                else -> Size(200f, 60f)
-            } * currentDensity
-        }
-
-        val measurer = textMeasurer ?: return Size(300f, 300f)
-        val padding = 32f * currentDensity
-        val style = TextStyle(fontSize = 14.sp)
-
-        // Simplified calculation or specific logic for new types
-        return when (node) {
-            is TitleGraphNode -> measureSquarifiedText(node.title, measurer, style.copy(fontSize = 24.sp), padding)
-            is HeadingGraphNode -> measureSquarifiedText(node.text, measurer, style.copy(fontSize = 20.sp), padding)
-            is ShortTextGraphNode -> measureSquarifiedText(node.text, measurer, style, padding)
-            is LongTextGraphNode -> measureSquarifiedText(node.content, measurer, style, padding)
-            is TagGraphNode -> measureSquarifiedText(node.name, measurer, style, padding)
-            is CodeBlockGraphNode -> measureSquarifiedText(node.code, measurer, style, padding)
-            is UnorderedListGraphNode -> measureSquarifiedList(node.items, measurer, style, padding)
-            is OrderedListGraphNode -> measureSquarifiedList(node.items, measurer, style, padding)
-            is SetGraphNode -> measureSquarifiedList(node.items, measurer, style, padding)
-            is ListGraphNode -> measureSquarifiedList(node.items, measurer, style, padding) // Legacy
-            is MapGraphNode -> {
-                val rows = node.data.size
-                Size(250f * currentDensity, (rows * 24f + 40f) * currentDensity)
-            }
-            is ImageGraphNode -> Size(400f * currentDensity, 300f * currentDensity) // Fixed expanded size for now
-            else -> Size(250f * currentDensity, 150f * currentDensity)
-        }
-    }
-
-    private fun measureSquarifiedText(text: String, measurer: TextMeasurer, style: TextStyle, padding: Float): Size {
-        val infiniteLayout = measurer.measure(text = text, style = style)
-        val totalArea = infiniteLayout.size.width * infiniteLayout.size.height
-        val targetDim = sqrt(totalArea.toDouble()).toFloat().coerceAtLeast(200f * currentDensity)
-
-        val squaredLayout = measurer.measure(
-            text = text,
-            style = style,
-            constraints = Constraints(maxWidth = targetDim.toInt())
-        )
-
-        return Size(squaredLayout.size.width + padding, squaredLayout.size.height + padding)
-    }
-
-    private fun measureSquarifiedList(items: List<String>, measurer: TextMeasurer, style: TextStyle, padding: Float): Size {
-        if (items.isEmpty()) return Size(200f, 60f)
-        val fullText = items.joinToString("\n") { "• $it" }
-        val infiniteLayout = measurer.measure(text = fullText, style = style)
-        val totalArea = infiniteLayout.size.width * infiniteLayout.size.height
-        val idealSide = sqrt(totalArea.toDouble()).toFloat().coerceAtLeast(250f * currentDensity)
-
-        var bestSize = Size(idealSide + padding, idealSide + padding)
-        var bestRatioDiff = Float.MAX_VALUE
-
-        val stepCount = 5
-        val minW = (idealSide * 0.75f).toInt()
-        val maxW = (idealSide * 1.5f).toInt()
-        val step = ((maxW - minW) / stepCount).coerceAtLeast(10)
-
-        for (w in minW..maxW step step) {
-            val layout = measurer.measure(text = fullText, style = style, constraints = Constraints(maxWidth = w))
-            val h = layout.size.height.toFloat()
-            val wFloat = layout.size.width.toFloat()
-            val ratio = if (h > 0) wFloat / h else 0f
-            val diff = abs(1f - ratio)
-
-            if (diff < bestRatioDiff) {
-                bestRatioDiff = diff
-                bestSize = Size(wFloat + padding, h + padding)
-            }
-        }
-        return bestSize
-    }
-
-    // --- FACTORY: Map Semantic Styles to Specific Node Classes ---
     private fun createGraphNode(
         node: NodeDisplayItem,
         pos: Offset,
@@ -789,11 +692,15 @@ class GraphViewmodel(
         isLocked: Boolean,
         isExpanded: Boolean
     ): GraphNode {
+        // 1. Deterministic Sizing (No UI measurement needed)
+        val size = NodeSizeCalculator.calculate(node, isExpanded, sizingContext)
+        val width = size.width
+        val height = size.height
+        val radius = (sqrt(width * width + height * height) / 2f) + 10f
+
         val topology = node.style.definition.topology
         val mass = when(topology) { NodeTopology.ROOT -> 60f; NodeTopology.BRANCH -> 30f; NodeTopology.LEAF -> 10f }
-        val baseRadius = when(topology) { NodeTopology.ROOT -> 60f; NodeTopology.BRANCH -> 40f; NodeTopology.LEAF -> 20f } * currentDensity
-        val radius = if(isExpanded) 150f * currentDensity else baseRadius
-        val width = 200f; val height = 100f // Defaults, updated by measure
+
         val colorInfo = labelToColor(node.label)
         val absBgPath = node.backgroundImagePath?.let { File(mediaPath, it).absolutePath }
         val props = node.properties
@@ -825,7 +732,6 @@ class GraphViewmodel(
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.ATTACHMENT -> {
-                // Determine if it is an Image or just a generic file
                 val mimeType = props[StandardSchemas.PROP_MIME_TYPE] ?: "application/octet-stream"
                 if (mimeType.startsWith("image")) {
                     val relativePath = props[StandardSchemas.PROP_URI]
@@ -860,39 +766,53 @@ class GraphViewmodel(
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.MAP -> MapGraphNode(
-                data = PropertySerialization.deserializeMap(props[StandardSchemas.PROP_MAP_DATA] ?: "{}"),
+                data = com.tau.nexus_note.utils.PropertySerialization.deserializeMap(props[StandardSchemas.PROP_MAP_DATA] ?: "{}"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.SET -> SetGraphNode(
-                items = PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]").distinct(),
+                items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]").distinct(),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.UNORDERED_LIST, NodeStyle.LIST -> UnorderedListGraphNode(
-                items = PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
+                items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.ORDERED_LIST -> OrderedListGraphNode(
-                items = PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
+                items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
             NodeStyle.TABLE -> TableGraphNode(
-                headers = PropertySerialization.deserializeList(props[StandardSchemas.PROP_HEADERS] ?: "[]"),
-                rows = PropertySerialization.deserializeListOfMaps(props[StandardSchemas.PROP_DATA] ?: "[]"),
+                headers = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_HEADERS] ?: "[]"),
+                rows = com.tau.nexus_note.utils.PropertySerialization.deserializeListOfMaps(props[StandardSchemas.PROP_DATA] ?: "[]"),
                 caption = props[StandardSchemas.PROP_CAPTION],
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
                 colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
             )
+            NodeStyle.IMAGE -> {
+                val relativePath = props[StandardSchemas.PROP_URI]
+                val fullPath = if (relativePath != null) File(mediaPath, relativePath).absolutePath else ""
+
+                ImageGraphNode(
+                    uri = fullPath,
+                    altText = props[StandardSchemas.PROP_ALT_TEXT] ?: node.displayProperty,
+                    id = id, label = node.label, pos = pos, vel = Offset.Zero,
+                    mass = mass, radius = radius, width = width, height = height,
+                    colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                )
+            }
         }
     }
+
+    // --- Drag Logic ---
 
     fun onDragStart(nodeId: Long) {
         _draggedNodeId.value = nodeId
@@ -992,10 +912,6 @@ class GraphViewmodel(
 
     fun onResize(newSize: IntSize) {
         size = Size(newSize.width.toFloat(), newSize.height.toFloat())
-    }
-
-    fun updateDensity(density: Float) {
-        currentDensity = density
     }
 
     fun onFabClick() {

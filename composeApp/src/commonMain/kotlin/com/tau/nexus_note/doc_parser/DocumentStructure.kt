@@ -2,7 +2,6 @@ package com.tau.nexus_note.doc_parser
 
 /**
  * Base interface for all nodes in the Document Graph.
- * Changed from sealed interface to open interface to allow dynamic implementations.
  */
 interface DocumentNode {
     val schemaName: String
@@ -10,7 +9,6 @@ interface DocumentNode {
 }
 
 // --- New: Dynamic Document Node ---
-// Used when schema or properties need to be determined at runtime (e.g. specialized lists)
 data class DynamicDocumentNode(
     override val schemaName: String,
     val properties: Map<String, String>
@@ -32,7 +30,7 @@ data class DocRootNode(
         StandardSchemas.PROP_NAME to name,
         StandardSchemas.PROP_CREATED_AT to createdAt.toString(),
         StandardSchemas.PROP_FRONTMATTER to frontmatterJson,
-        StandardSchemas.PROP_TITLE to name // Fallback
+        StandardSchemas.PROP_TITLE to name
     )
 }
 
@@ -74,13 +72,10 @@ data class CodeBlockNode(
     )
 }
 
-// New: Consolidated List Node
 data class ListNode(
     val itemsJson: String,
-    val listType: String // "ordered", "unordered"
+    val listType: String
 ) : DocumentNode {
-    // schemaName is determined dynamically in Parser for specific Zig type,
-    // but here we default to generic.
     override val schemaName = StandardSchemas.DOC_NODE_UNORDERED_LIST
     override fun toPropertiesMap() = mapOf(
         StandardSchemas.PROP_LIST_ITEMS to itemsJson,
@@ -125,6 +120,27 @@ data class TagNode(
     )
 }
 
+// NEW: Dedicated Image Node (Visual)
+data class ImageNode(
+    val filename: String,
+    val mimeType: String,
+    val path: String,
+    val altText: String = "",
+    val width: Int = 0,
+    val height: Int = 0
+) : DocumentNode {
+    override val schemaName = StandardSchemas.DOC_NODE_IMAGE
+    override fun toPropertiesMap() = mapOf(
+        StandardSchemas.PROP_NAME to filename,
+        StandardSchemas.PROP_MIME_TYPE to mimeType,
+        StandardSchemas.PROP_URI to path,
+        StandardSchemas.PROP_ALT_TEXT to altText,
+        StandardSchemas.PROP_IMG_WIDTH to width.toString(),
+        StandardSchemas.PROP_IMG_HEIGHT to height.toString()
+    )
+}
+
+// Generic Attachment Node (Non-Visual)
 data class AttachmentNode(
     val filename: String,
     val mimeType: String = "",

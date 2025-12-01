@@ -81,7 +81,11 @@ enum class NodeStyle(val displayName: String, val definition: NodeDefinition) {
     SECTION("Section (Legacy)", NodeDefinition(NodeTopology.BRANCH, "Legacy")),
     BLOCK("Block (Legacy)", NodeDefinition(NodeTopology.LEAF, "Legacy")),
     LIST("List (Legacy)", NodeDefinition(NodeTopology.BRANCH, "Legacy")),
-    ATTACHMENT("Attachment", NodeDefinition(NodeTopology.LEAF, "File Attachment"))
+    ATTACHMENT("Attachment", NodeDefinition(NodeTopology.LEAF, "File Attachment")),
+    IMAGE(
+        "Image",
+        NodeDefinition(NodeTopology.LEAF, "Visual image content")
+    ),
 }
 
 /**
