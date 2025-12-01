@@ -2,14 +2,13 @@ package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.codex.graph.GraphNode
-import com.tau.nexus_note.codex.graph.HeadingGraphNode
 import com.tau.nexus_note.datamodels.GraphEdge
 import kotlin.math.abs
 
 /**
  * A specialized solver that enforces a strict "Swimlane" tree structure.
- * - Y-Axis: Fixed (or constrained) based on node Hierarchy/Level.
- * - X-Axis: Simulated using Repulsion and Springs to space out siblings.
+ * - Y-Axis: Heavily constrained to maintain rank.
+ * - X-Axis: Simulated using Repulsion (Rectangular Aware) and Springs.
  */
 class HierarchicalRepulsionSolver : ForceSolver {
 
@@ -24,7 +23,6 @@ class HierarchicalRepulsionSolver : ForceSolver {
         newNodes.keys.forEach { forcesX[it] = 0f }
 
         // 1. Calculate Forces (Horizontal Only)
-        // Repulsion: Only push away neighbors on the same level (or close Y)
         val nodeList = newNodes.values.toList()
         for (i in nodeList.indices) {
             val nodeA = nodeList[i]
@@ -34,19 +32,37 @@ class HierarchicalRepulsionSolver : ForceSolver {
                 // Only interact if they are vertically close (same level band)
                 if (abs(nodeA.pos.y - nodeB.pos.y) < 200f) {
                     val dx = nodeA.pos.x - nodeB.pos.x
-                    // Avoid division by zero
-                    val dist = if (abs(dx) < 1f) 1f else abs(dx)
+                    val absDx = abs(dx)
 
-                    val force = (options.repulsion * 50f) / dist // Simplified 1D repulsion
-                    val sign = if (dx > 0) 1f else -1f
+                    // --- Dimension Aware Repulsion ---
+                    val halfWA = nodeA.width / 2f
+                    val halfWB = nodeB.width / 2f
+                    // Minimum distance required between centers to NOT overlap
+                    val minSep = halfWA + halfWB + (options.minDistance * 2)
 
-                    if (!nodeA.isFixed && !nodeA.isLocked) forcesX[nodeA.id] = forcesX[nodeA.id]!! + (force * sign)
-                    if (!nodeB.isFixed && !nodeB.isLocked) forcesX[nodeB.id] = forcesX[nodeB.id]!! - (force * sign)
+                    if (absDx < minSep) {
+                        // Hard overlap or very close
+                        val overlap = minSep - absDx
+                        val sign = if (dx > 0) 1f else -1f
+                        // Strong force to separate
+                        val force = options.repulsion * 5f * overlap * sign
+
+                        if (!nodeA.isFixed && !nodeA.isLocked) forcesX[nodeA.id] = forcesX[nodeA.id]!! + force
+                        if (!nodeB.isFixed && !nodeB.isLocked) forcesX[nodeB.id] = forcesX[nodeB.id]!! - force
+                    } else {
+                        // Standard Repulsion (decaying)
+                        val dist = absDx
+                        val forceVal = (options.repulsion * 10f) / dist
+                        val sign = if (dx > 0) 1f else -1f
+
+                        if (!nodeA.isFixed && !nodeA.isLocked) forcesX[nodeA.id] = forcesX[nodeA.id]!! + (forceVal * sign)
+                        if (!nodeB.isFixed && !nodeB.isLocked) forcesX[nodeB.id] = forcesX[nodeB.id]!! - (forceVal * sign)
+                    }
                 }
             }
         }
 
-        // Springs: Pull connected nodes horizontally towards each other
+        // Springs: Pull connected nodes horizontally towards each other (Alignment)
         for (edge in edges) {
             val nodeA = newNodes[edge.sourceId]
             val nodeB = newNodes[edge.targetId]
@@ -57,13 +73,6 @@ class HierarchicalRepulsionSolver : ForceSolver {
 
                 if (!nodeA.isFixed && !nodeA.isLocked) forcesX[nodeA.id] = forcesX[nodeA.id]!! + springForce
                 if (!nodeB.isFixed && !nodeB.isLocked) forcesX[nodeB.id] = forcesX[nodeB.id]!! - springForce
-            }
-        }
-
-        // Center Gravity (Horizontal only)
-        for (node in newNodes.values) {
-            if (!node.isFixed && !node.isLocked) {
-                forcesX[node.id] = forcesX[node.id]!! - (node.pos.x * options.gravity * 0.5f)
             }
         }
 
@@ -80,17 +89,9 @@ class HierarchicalRepulsionSolver : ForceSolver {
             val newPosX = node.pos.x + newVelX * dt
 
             // Y-Axis: Strict Constraint
-            // If the node has a defined level (HeadingGraphNode), snap to it.
-            // Otherwise, maintain current Y (assume initial layout placed it correctly).
-            var targetY = node.pos.y
-            if (node is HeadingGraphNode) {
-                // Example: Level 1 at -300, Level 2 at 0, etc.
-                // Or just trust the initial Y
-            }
-
-            // Dampen Y velocity aggressively (force alignment)
-            val newVelY = node.vel.y * 0.1f
-            val newPosY = targetY + newVelY * dt
+            // Dampen Y velocity aggressively to prevent drifting out of rank
+            val newVelY = node.vel.y * 0.05f
+            val newPosY = node.pos.y + newVelY * dt
 
             node.vel = Offset(newVelX, newVelY)
             node.pos = Offset(newPosX, newPosY)

@@ -7,6 +7,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import com.tau.nexus_note.codex.graph.physics.HierarchicalLayoutEngine
 import com.tau.nexus_note.codex.graph.physics.PhysicsEngine
 import com.tau.nexus_note.codex.graph.physics.PhysicsOptions
 import com.tau.nexus_note.codex.graph.physics.runFRLayout
@@ -91,9 +92,6 @@ class GraphViewmodel(
 
     private val _isProcessingLayout = MutableStateFlow(false)
     val isProcessingLayout = _isProcessingLayout.asStateFlow()
-
-    private val _collapsedNodes = MutableStateFlow<Set<Long>>(emptySet())
-    private val _expandedNodes = MutableStateFlow<Set<Long>>(emptySet())
 
     // Selection & Navigation State
     private val _selectionRect = MutableStateFlow<Rect?>(null)
@@ -256,8 +254,8 @@ class GraphViewmodel(
             val displayItem = lastNodeList.find { it.id == id }
             if (displayItem != null) {
                 // Recalculate dimensions deterministically
-                val newSize = NodeSizeCalculator.calculate(displayItem, node.isExpanded, sizingContext)
-                updateNodeDimensions(node, newSize, node.isExpanded)
+                val newSize = NodeSizeCalculator.calculate(displayItem, sizingContext)
+                updateNodeDimensions(node, newSize)
             } else {
                 node
             }
@@ -411,9 +409,6 @@ class GraphViewmodel(
                 }
                 _pendingEdgeSourceId.value = null
             }
-        } else {
-            // Expansion Logic
-            toggleNodeExpansion(nodeId)
         }
     }
 
@@ -504,7 +499,7 @@ class GraphViewmodel(
             val currentEdges = _graphEdges.value
             val direction = _layoutDirection.value
 
-            val newPositions = HierarchicalLayout.arrange(currentNodes, currentEdges, direction)
+            val newPositions = HierarchicalLayoutEngine.arrange(currentNodes, currentEdges, direction)
 
             val updatedNodes = currentNodes.mapValues { (id, node) ->
                 val pos = newPositions[id] ?: node.pos
@@ -538,31 +533,15 @@ class GraphViewmodel(
 
     private suspend fun recomputeGraphState(calculateNewPositions: Boolean, runStabilization: Boolean) {
         withContext(Dispatchers.Default) {
-            val collapsedIds = _collapsedNodes.value
-            val expandedIds = _expandedNodes.value
-            val parentMap = mutableMapOf<Long, Long>()
 
-            lastEdgeList.filter { it.label == StandardSchemas.EDGE_CONTAINS }.forEach { edge ->
-                parentMap[edge.dst.id] = edge.src.id
-            }
-
-            val hiddenNodeIds = mutableSetOf<Long>()
-            fun isHidden(nodeId: Long): Boolean {
-                val parentId = parentMap[nodeId] ?: return false
-                if (collapsedIds.contains(parentId)) return true
-                return isHidden(parentId)
-            }
-            lastNodeList.forEach { node ->
-                if (isHidden(node.id)) hiddenNodeIds.add(node.id)
-            }
+            // All nodes are visible since collapsing logic is removed.
+            // We still respect visibility filtering from parent if passed in (nodeList is already filtered by CodexViewModel)
 
             val visibleEdgesMap = mutableMapOf<Pair<Long, Long>, GraphEdge>()
 
             lastEdgeList.forEach { edge ->
                 val visualSrc = edge.src.id
                 val visualDst = edge.dst.id
-
-                if (hiddenNodeIds.contains(visualSrc) || hiddenNodeIds.contains(visualDst)) return@forEach
 
                 val pair = Pair(visualSrc, visualDst)
                 val strength = if (edge.label == StandardSchemas.EDGE_CONTAINS) 0.5f else 0.05f
@@ -590,7 +569,6 @@ class GraphViewmodel(
 
             lastNodeList.forEach { node ->
                 val id = node.id
-                if (hiddenNodeIds.contains(id)) return@forEach
 
                 val existingNode = currentNodesSnapshot[id]
                 val pos = if (calculateNewPositions) {
@@ -608,9 +586,8 @@ class GraphViewmodel(
                 }
 
                 val locked = existingNode?.isLocked ?: false
-                val isExpanded = expandedIds.contains(id)
 
-                val nodeObj = createGraphNode(node, pos, id, collapsedIds.contains(id), locked, isExpanded)
+                val nodeObj = createGraphNode(node, pos, id, locked)
 
                 if (!calculateNewPositions && existingNode != null) {
                     nodeObj.vel = existingNode.vel
@@ -639,48 +616,26 @@ class GraphViewmodel(
         }
     }
 
-    fun toggleNodeExpansion(nodeId: Long) {
-        _expandedNodes.update { current ->
-            if (current.contains(nodeId)) current - nodeId else current + nodeId
-        }
-        val isExpanded = _expandedNodes.value.contains(nodeId)
-
-        val node = _graphNodes.value[nodeId] ?: return
-        val displayItem = lastNodeList.find { it.id == nodeId } ?: return
-
-        // Deterministic size calculation
-        val newSize = NodeSizeCalculator.calculate(displayItem, isExpanded, sizingContext)
-
-        _graphNodes.update { nodes ->
-            val mutable = nodes.toMutableMap()
-            mutable[nodeId] = updateNodeDimensions(node, newSize, isExpanded)
-            mutable
-        }
-
-        _simulationRunning.value = true
-        settleFramesRemaining = 60
-    }
-
-    private fun updateNodeDimensions(node: GraphNode, size: Size, expanded: Boolean): GraphNode {
+    private fun updateNodeDimensions(node: GraphNode, size: Size): GraphNode {
         // Calculate radius to encompass the rectangular content
         val r = (sqrt(size.width * size.width + size.height * size.height) / 2f) + 20f
         val w = size.width
         val h = size.height
 
         return when (node) {
-            is TitleGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is HeadingGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is ShortTextGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is LongTextGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is CodeBlockGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is MapGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is SetGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is UnorderedListGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is OrderedListGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is TagGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is TableGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is ImageGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
-            is ListGraphNode -> node.copy(radius = r, width = w, height = h, isExpanded = expanded)
+            is TitleGraphNode -> node.copy(radius = r, width = w, height = h)
+            is HeadingGraphNode -> node.copy(radius = r, width = w, height = h)
+            is ShortTextGraphNode -> node.copy(radius = r, width = w, height = h)
+            is LongTextGraphNode -> node.copy(radius = r, width = w, height = h)
+            is CodeBlockGraphNode -> node.copy(radius = r, width = w, height = h)
+            is MapGraphNode -> node.copy(radius = r, width = w, height = h)
+            is SetGraphNode -> node.copy(radius = r, width = w, height = h)
+            is UnorderedListGraphNode -> node.copy(radius = r, width = w, height = h)
+            is OrderedListGraphNode -> node.copy(radius = r, width = w, height = h)
+            is TagGraphNode -> node.copy(radius = r, width = w, height = h)
+            is TableGraphNode -> node.copy(radius = r, width = w, height = h)
+            is ImageGraphNode -> node.copy(radius = r, width = w, height = h)
+            is ListGraphNode -> node.copy(radius = r, width = w, height = h)
         }
     }
 
@@ -688,12 +643,11 @@ class GraphViewmodel(
         node: NodeDisplayItem,
         pos: Offset,
         id: Long,
-        isCollapsed: Boolean,
-        isLocked: Boolean,
-        isExpanded: Boolean
+        isLocked: Boolean
     ): GraphNode {
         // 1. Deterministic Sizing (No UI measurement needed)
-        val size = NodeSizeCalculator.calculate(node, isExpanded, sizingContext)
+        // Always Expanded
+        val size = NodeSizeCalculator.calculate(node, sizingContext)
         val width = size.width
         val height = size.height
         val radius = (sqrt(width * width + height * height) / 2f) + 10f
@@ -710,26 +664,26 @@ class GraphViewmodel(
                 title = node.displayProperty,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.HEADING, NodeStyle.SECTION -> HeadingGraphNode(
                 text = node.displayProperty,
                 level = props[StandardSchemas.PROP_LEVEL]?.toIntOrNull() ?: 1,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.SHORT_TEXT, NodeStyle.GENERIC -> ShortTextGraphNode(
                 text = node.displayProperty,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.TAG -> TagGraphNode(
                 name = node.displayProperty,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.ATTACHMENT -> {
                 val mimeType = props[StandardSchemas.PROP_MIME_TYPE] ?: "application/octet-stream"
@@ -741,14 +695,14 @@ class GraphViewmodel(
                         altText = node.displayProperty,
                         id = id, label = node.label, pos = pos, vel = Offset.Zero,
                         mass = mass, radius = radius, width = width, height = height,
-                        colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                        colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
                     )
                 } else {
                     ShortTextGraphNode(
                         text = "${node.displayProperty} ($mimeType)",
                         id = id, label = node.label, pos = pos, vel = Offset.Zero,
                         mass = mass, radius = radius, width = width, height = height,
-                        colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                        colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
                     )
                 }
             }
@@ -756,38 +710,38 @@ class GraphViewmodel(
                 content = props[StandardSchemas.PROP_CONTENT] ?: node.displayProperty,
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.CODE_BLOCK -> CodeBlockGraphNode(
                 code = props[StandardSchemas.PROP_CONTENT] ?: "",
                 language = props[StandardSchemas.PROP_LANGUAGE] ?: "text",
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.MAP -> MapGraphNode(
                 data = com.tau.nexus_note.utils.PropertySerialization.deserializeMap(props[StandardSchemas.PROP_MAP_DATA] ?: "{}"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.SET -> SetGraphNode(
                 items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]").distinct(),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.UNORDERED_LIST, NodeStyle.LIST -> UnorderedListGraphNode(
                 items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.ORDERED_LIST -> OrderedListGraphNode(
                 items = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_LIST_ITEMS] ?: "[]"),
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.TABLE -> TableGraphNode(
                 headers = com.tau.nexus_note.utils.PropertySerialization.deserializeList(props[StandardSchemas.PROP_HEADERS] ?: "[]"),
@@ -795,7 +749,7 @@ class GraphViewmodel(
                 caption = props[StandardSchemas.PROP_CAPTION],
                 id = id, label = node.label, pos = pos, vel = Offset.Zero,
                 mass = mass, radius = radius, width = width, height = height,
-                colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
             )
             NodeStyle.IMAGE -> {
                 val relativePath = props[StandardSchemas.PROP_URI]
@@ -806,7 +760,7 @@ class GraphViewmodel(
                     altText = props[StandardSchemas.PROP_ALT_TEXT] ?: node.displayProperty,
                     id = id, label = node.label, pos = pos, vel = Offset.Zero,
                     mass = mass, radius = radius, width = width, height = height,
-                    colorInfo = colorInfo, isLocked = isLocked, isExpanded = isExpanded, backgroundImagePath = absBgPath
+                    colorInfo = colorInfo, isLocked = isLocked, backgroundImagePath = absBgPath
                 )
             }
         }

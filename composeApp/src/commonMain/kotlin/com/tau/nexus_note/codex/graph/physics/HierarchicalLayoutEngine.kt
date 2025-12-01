@@ -1,17 +1,19 @@
-package com.tau.nexus_note.codex.graph
+package com.tau.nexus_note.codex.graph.physics
 
 import androidx.compose.ui.geometry.Offset
+import com.tau.nexus_note.codex.graph.GraphNode
 import com.tau.nexus_note.datamodels.GraphEdge
 import com.tau.nexus_note.settings.LayoutDirection
 import kotlin.math.max
 
-object HierarchicalLayout {
+object HierarchicalLayoutEngine {
 
-    private const val LAYER_SEPARATION = 300f
-    private const val NODE_SEPARATION = 250f
+    private const val MIN_NODE_SEPARATION = 50f  // Gap between nodes horizontally
+    private const val MIN_LAYER_SEPARATION = 100f // Gap between layers vertically
 
     /**
      * Calculates positions for a Generic Hierarchical Layout (Sugiyama Framework).
+     * Now Dimension-Aware: Respects node width and height.
      */
     fun arrange(
         nodes: Map<Long, GraphNode>,
@@ -38,16 +40,19 @@ object HierarchicalLayout {
         // Sort nodes within each layer to minimize edge crossings
         minimizeCrossings(layers, forwardEdges)
 
-        // 4. Coordinate Assignment
-        // Assign X coordinates based on order + "Block Shifting" heuristic
-        val positions = assignCoordinates(layers, forwardEdges)
+        // 4. Coordinate Assignment (X-Axis)
+        // Assign X coordinates based on width + "Block Shifting" heuristic
+        val xPositions = assignXCoordinates(layers, forwardEdges, nodes)
 
-        // 5. Transform based on Direction
+        // 5. Layer Height Assignment (Y-Axis)
+        // Calculate Y positions based on the tallest node in each layer
+        val positions = assignYCoordinates(layers, xPositions, nodes)
+
+        // 6. Transform based on Direction
         return applyDirectionTransform(positions, direction)
     }
 
     // --- Step 1: Cycle Removal (DFS) ---
-    // Returns an adjacency map representing the DAG
     private fun removeCycles(nodes: List<Long>, edges: List<GraphEdge>): Map<Long, List<Long>> {
         val adj = edges.groupBy { it.sourceId }
             .mapValues { (_, v) -> v.map { it.targetId } }
@@ -121,13 +126,11 @@ object HierarchicalLayout {
 
     // --- Step 3: Crossing Minimization (Barycenter Method) ---
     private fun minimizeCrossings(layers: List<MutableList<Long>>, adj: Map<Long, List<Long>>) {
-        // Build reverse adj for parent lookups
         val reverseAdj = mutableMapOf<Long, MutableList<Long>>()
         adj.forEach { (u, neighbors) ->
             neighbors.forEach { v -> reverseAdj.getOrPut(v) { mutableListOf() }.add(u) }
         }
 
-        // Iterative Sweeps (Down-Up-Down)
         val iterations = 4
         for (iter in 0 until iterations) {
             // Down sweep (Rank 1 -> Max)
@@ -135,24 +138,25 @@ object HierarchicalLayout {
                 val layer = layers[i]
                 val prevLayer = layers[i - 1]
 
-                // Sort by average position of parents
                 layer.sortBy { node ->
                     val parents = reverseAdj[node] ?: emptyList()
                     if (parents.isEmpty()) {
-                        // Keep relative order or use current index
                         layer.indexOf(node).toFloat()
                     } else {
                         parents.map { prevLayer.indexOf(it) }.average().toFloat()
                     }
                 }
             }
-            // (Optional) Up sweep could be added here for better quality
         }
     }
 
-    // --- Step 4: Coordinate Assignment (Block Shifting Simplified) ---
-    private fun assignCoordinates(layers: List<List<Long>>, adj: Map<Long, List<Long>>): Map<Long, Offset> {
-        val positions = mutableMapOf<Long, Offset>()
+    // --- Step 4: Coordinate Assignment (Block Shifting with Dimensions) ---
+    private fun assignXCoordinates(
+        layers: List<List<Long>>,
+        adj: Map<Long, List<Long>>,
+        nodeData: Map<Long, GraphNode>
+    ): MutableMap<Long, Float> {
+        val xPositions = mutableMapOf<Long, Float>()
 
         // Build reverse adj for parent lookups
         val reverseAdj = mutableMapOf<Long, MutableList<Long>>()
@@ -160,81 +164,113 @@ object HierarchicalLayout {
             neighbors.forEach { v -> reverseAdj.getOrPut(v) { mutableListOf() }.add(u) }
         }
 
-        // 1. Initial Packing: Center the layers
-        layers.forEachIndexed { rank, nodes ->
+        // 1. Initial Packing: Center nodes based on Widths
+        layers.forEach { nodes ->
             var currentWidth = 0f
-            nodes.forEach { _ -> currentWidth += NODE_SEPARATION }
+            // Calculate total width of the layer
+            nodes.forEach { id ->
+                val w = nodeData[id]?.width ?: 200f
+                currentWidth += w + MIN_NODE_SEPARATION
+            }
+            if (nodes.isNotEmpty()) currentWidth -= MIN_NODE_SEPARATION
 
-            var startX = -(currentWidth / 2f) + (NODE_SEPARATION / 2f)
+            var currentX = -(currentWidth / 2f)
 
             nodes.forEach { nodeId ->
-                positions[nodeId] = Offset(startX, rank * LAYER_SEPARATION)
-                startX += NODE_SEPARATION
+                val w = nodeData[nodeId]?.width ?: 200f
+                xPositions[nodeId] = currentX + (w / 2f) // Store Center X
+                currentX += w + MIN_NODE_SEPARATION
             }
         }
 
         // 2. Block Shifting Heuristic
-        // Shift nodes towards average parent X, but respect neighbor boundaries
+        // Shift nodes towards average parent X, but respect neighbor boundaries (Width Aware)
         for (i in 1 until layers.size) {
             val layer = layers[i]
 
-            // Try to move each node to its barycenter
+            // A. Try to move each node to its barycenter
             layer.forEach { node ->
                 val parents = reverseAdj[node]
                 if (!parents.isNullOrEmpty()) {
-                    val avgParentX = parents.mapNotNull { positions[it]?.x }.average().toFloat()
-                    val currentPos = positions[node]!!
+                    val avgParentX = parents.mapNotNull { xPositions[it] }.average().toFloat()
+                    val currentX = xPositions[node]!!
 
                     // Simple easing towards parent center
-                    val newX = (currentPos.x + avgParentX) / 2f
-                    positions[node] = currentPos.copy(x = newX)
+                    val newX = (currentX + avgParentX) / 2f
+                    xPositions[node] = newX
                 }
             }
 
-            // 3. Resolve Overlaps (Compact)
-            // After shifting, ensure nodes satisfy minimum separation
-            layer.sortedBy { positions[it]?.x }.forEachIndexed { idx, node ->
-                if (idx > 0) {
-                    val prevNode = layer[idx-1] // Actually need to access sorted list by index logic
-                    // Since we are iterating the *sorted* list, let's just grab the previous item in this iteration
-                    // Wait, we need the ID of the previous item in the *sorted* order.
-                    // Let's rely on the fact that sort order doesn't flip drastically with slight nudges.
+            // B. Resolve Overlaps (Left-to-Right Sweep)
+            // Re-sort layer based on new conceptual X to identify order
+            val sortedLayer = layer.sortedBy { xPositions[it] }
 
-                    // Correct approach: Re-sort based on new X, then enforce spacing
-                }
-            }
-
-            // Re-sort layer by new X to enforce spacing left-to-right
-            val sortedLayer = layer.sortedBy { positions[it]?.x }
-
-            // Left-to-right pass
             for (j in 1 until sortedLayer.size) {
-                val leftNode = sortedLayer[j-1]
-                val rightNode = sortedLayer[j]
-                val leftX = positions[leftNode]!!.x
-                val rightX = positions[rightNode]!!.x
+                val leftNodeId = sortedLayer[j-1]
+                val rightNodeId = sortedLayer[j]
 
-                if (rightX < leftX + NODE_SEPARATION) {
-                    val newRightX = leftX + NODE_SEPARATION
-                    positions[rightNode] = positions[rightNode]!!.copy(x = newRightX)
+                val leftNode = nodeData[leftNodeId]
+                val rightNode = nodeData[rightNodeId]
+
+                val leftX = xPositions[leftNodeId]!!
+                val rightX = xPositions[rightNodeId]!!
+
+                val leftHalfW = (leftNode?.width ?: 200f) / 2f
+                val rightHalfW = (rightNode?.width ?: 200f) / 2f
+
+                // Minimum distance between centers to avoid overlap
+                val minSeparation = leftHalfW + rightHalfW + MIN_NODE_SEPARATION
+
+                if (rightX < leftX + minSeparation) {
+                    // Push right node
+                    val newRightX = leftX + minSeparation
+                    xPositions[rightNodeId] = newRightX
                 }
             }
+        }
+
+        return xPositions
+    }
+
+    // --- Step 5: Assign Y based on Max Height per Layer ---
+    private fun assignYCoordinates(
+        layers: List<List<Long>>,
+        xPositions: Map<Long, Float>,
+        nodeData: Map<Long, GraphNode>
+    ): Map<Long, Offset> {
+        val positions = mutableMapOf<Long, Offset>()
+        var currentY = 0f
+
+        layers.forEach { layerNodes ->
+            // Find max height in this rank to determine layer height
+            val maxH = layerNodes.maxOfOrNull { nodeData[it]?.height ?: 100f } ?: 100f
+
+            layerNodes.forEach { id ->
+                val x = xPositions[id] ?: 0f
+                // Center node vertically within the layer band?
+                // Or Top align? Let's use Center for graph aesthetics.
+                // Center of this layer band is currentY + maxH/2
+                positions[id] = Offset(x, currentY + (maxH / 2f))
+            }
+
+            // Move cursor for next layer
+            currentY += maxH + MIN_LAYER_SEPARATION
         }
 
         return positions
     }
 
-    // --- Step 5: Direction Transformation ---
+    // --- Step 6: Direction Transformation ---
     private fun applyDirectionTransform(
         original: Map<Long, Offset>,
         direction: LayoutDirection
     ): Map<Long, Offset> {
         return original.mapValues { (_, pos) ->
             when (direction) {
-                LayoutDirection.TOP_BOTTOM -> pos // Default (x, y)
-                LayoutDirection.BOTTOM_TOP -> Offset(pos.x, -pos.y) // Flip Y
-                LayoutDirection.LEFT_RIGHT -> Offset(pos.y, pos.x) // Swap X/Y
-                LayoutDirection.RIGHT_LEFT -> Offset(-pos.y, pos.x) // Swap X/Y and flip new X
+                LayoutDirection.TOP_BOTTOM -> pos
+                LayoutDirection.BOTTOM_TOP -> Offset(pos.x, -pos.y)
+                LayoutDirection.LEFT_RIGHT -> Offset(pos.y, pos.x)
+                LayoutDirection.RIGHT_LEFT -> Offset(-pos.y, pos.x)
             }
         }
     }

@@ -16,11 +16,9 @@ sealed interface GraphNode {
     val colorInfo: ColorInfo
     var isFixed: Boolean
     var isLocked: Boolean
-    var isExpanded: Boolean
     var oldForce: Offset
     var swinging: Float
     var traction: Float
-    val isCollapsed: Boolean
     val backgroundImagePath: String?
     fun copyNode(): GraphNode
 }
@@ -39,11 +37,9 @@ data class TitleGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -62,11 +58,9 @@ data class HeadingGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -84,11 +78,9 @@ data class ShortTextGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -106,11 +98,9 @@ data class LongTextGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -129,11 +119,9 @@ data class CodeBlockGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -151,11 +139,9 @@ data class MapGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -173,11 +159,9 @@ data class SetGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -195,11 +179,9 @@ data class UnorderedListGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -217,11 +199,9 @@ data class OrderedListGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -241,11 +221,9 @@ data class TableGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -264,11 +242,9 @@ data class ImageGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -287,11 +263,9 @@ data class ListGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }
 
@@ -309,10 +283,8 @@ data class TagGraphNode(
     override val colorInfo: ColorInfo,
     override var isFixed: Boolean = false,
     override var isLocked: Boolean = false,
-    override var isExpanded: Boolean = false,
     override var oldForce: Offset = Offset.Zero,
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
-    override val isCollapsed: Boolean = false,
     override val backgroundImagePath: String? = null
 ) : GraphNode { override fun copyNode() = this.copy() }

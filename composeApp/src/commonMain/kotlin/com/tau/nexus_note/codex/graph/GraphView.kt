@@ -18,8 +18,6 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.UnfoldLess
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.*
 import com.tau.nexus_note.ui.components.Icon
 import com.tau.nexus_note.ui.components.IconButton
@@ -224,8 +222,7 @@ fun GraphView(
                         onLongPress = { viewModel.onNodeLockToggle(node.id) },
                         onDragStart = { viewModel.onDragStart(node.id) },
                         onDrag = { delta -> viewModel.onDrag(delta) },
-                        onDragEnd = { viewModel.onDragEnd() },
-                        onToggleExpand = { viewModel.toggleNodeExpansion(node.id) }
+                        onDragEnd = { viewModel.onDragEnd() }
                     )
                 }
             }
@@ -314,8 +311,7 @@ fun GraphView(
 fun NodeWrapper(
     node: GraphNode, zoom: Float, screenOffset: Offset, isSelected: Boolean, isPendingSource: Boolean, isDimmed: Boolean,
     modifier: Modifier = Modifier,
-    onTap: () -> Unit, onLongPress: () -> Unit, onDragStart: () -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit,
-    onToggleExpand: () -> Unit
+    onTap: () -> Unit, onLongPress: () -> Unit, onDragStart: () -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit
 ) {
     Box(
         modifier = modifier
@@ -351,8 +347,6 @@ fun NodeWrapper(
         }
 
         if (node.isLocked) Icon(Icons.Default.Lock, "Locked", modifier = Modifier.align(Alignment.TopStart).size(16.dp).offset(x = 4.dp, y = (-4).dp), tint = MaterialTheme.colorScheme.error)
-        val icon = if (node.isExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore
-        IconButton(onClick = onToggleExpand, modifier = Modifier.align(Alignment.BottomEnd).offset(x = 8.dp, y = 8.dp).size(24.dp).background(MaterialTheme.colorScheme.surface, androidx.compose.foundation.shape.CircleShape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, androidx.compose.foundation.shape.CircleShape)) { Icon(icon, if(node.isExpanded) "Collapse" else "Expand", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface) }
     }
 }
 

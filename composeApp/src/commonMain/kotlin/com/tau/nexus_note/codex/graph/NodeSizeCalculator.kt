@@ -22,19 +22,8 @@ data class SizingContext(
 
 object NodeSizeCalculator {
 
-    fun calculate(node: NodeDisplayItem, isExpanded: Boolean, ctx: SizingContext): Size {
-        // Collapsed State (Pills)
-        if (!isExpanded) {
-            return when (node.style) {
-                NodeStyle.TITLE -> Size(250f * ctx.titleScale, 80f) // Heuristic width
-                NodeStyle.HEADING -> Size(200f * ctx.headingScale, 50f)
-                NodeStyle.TAG -> Size(100f, 40f)
-                NodeStyle.IMAGE -> Size(200f, 150f)
-                else -> Size(200f, 60f)
-            }
-        }
-
-        // Expanded State
+    fun calculate(node: NodeDisplayItem, ctx: SizingContext): Size {
+        // Always Expanded State
         return when (node.style) {
             NodeStyle.TITLE -> calculateSquarifiedText(node.displayProperty, ctx.titleScale, ctx)
             NodeStyle.HEADING -> calculateSquarifiedText(node.displayProperty, ctx.headingScale, ctx)
