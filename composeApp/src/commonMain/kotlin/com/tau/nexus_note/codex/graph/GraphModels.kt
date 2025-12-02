@@ -2,6 +2,7 @@ package com.tau.nexus_note.codex.graph
 
 import androidx.compose.ui.geometry.Offset
 import com.tau.nexus_note.datamodels.ColorInfo
+import com.tau.nexus_note.datamodels.NodeStyle
 
 // --- Sealed Base for all visual Graph Nodes ---
 sealed interface GraphNode {
@@ -20,6 +21,7 @@ sealed interface GraphNode {
     var swinging: Float
     var traction: Float
     val backgroundImagePath: String?
+    val style: NodeStyle // Added for Stable Props
     fun copyNode(): GraphNode
 }
 
@@ -41,7 +43,10 @@ data class TitleGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.TITLE
+    override fun copyNode() = this.copy()
+}
 
 // 2. Heading (Branch)
 data class HeadingGraphNode(
@@ -62,7 +67,10 @@ data class HeadingGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.HEADING
+    override fun copyNode() = this.copy()
+}
 
 // 3. Short Text
 data class ShortTextGraphNode(
@@ -82,7 +90,10 @@ data class ShortTextGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.SHORT_TEXT
+    override fun copyNode() = this.copy()
+}
 
 // 4. Long Text
 data class LongTextGraphNode(
@@ -102,7 +113,10 @@ data class LongTextGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.LONG_TEXT
+    override fun copyNode() = this.copy()
+}
 
 // 5. Code Block
 data class CodeBlockGraphNode(
@@ -123,7 +137,10 @@ data class CodeBlockGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.CODE_BLOCK
+    override fun copyNode() = this.copy()
+}
 
 // 6. Map
 data class MapGraphNode(
@@ -143,7 +160,10 @@ data class MapGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.MAP
+    override fun copyNode() = this.copy()
+}
 
 // 7. Set (Unique Values)
 data class SetGraphNode(
@@ -163,7 +183,10 @@ data class SetGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.SET
+    override fun copyNode() = this.copy()
+}
 
 // 8. Unordered List
 data class UnorderedListGraphNode(
@@ -183,7 +206,10 @@ data class UnorderedListGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.UNORDERED_LIST
+    override fun copyNode() = this.copy()
+}
 
 // 9. Ordered List
 data class OrderedListGraphNode(
@@ -203,7 +229,10 @@ data class OrderedListGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.ORDERED_LIST
+    override fun copyNode() = this.copy()
+}
 
 // 10. Table Graph Node
 data class TableGraphNode(
@@ -225,7 +254,10 @@ data class TableGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.TABLE
+    override fun copyNode() = this.copy()
+}
 
 // 11. Image Graph Node (New)
 data class ImageGraphNode(
@@ -246,7 +278,10 @@ data class ImageGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.IMAGE
+    override fun copyNode() = this.copy()
+}
 
 // 12. Legacy List Graph Node (For robustness if referenced)
 data class ListGraphNode(
@@ -267,7 +302,10 @@ data class ListGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.LIST
+    override fun copyNode() = this.copy()
+}
 
 // 13. Tag (Leaf)
 data class TagGraphNode(
@@ -287,4 +325,7 @@ data class TagGraphNode(
     override var swinging: Float = 0f,
     override var traction: Float = 0f,
     override val backgroundImagePath: String? = null
-) : GraphNode { override fun copyNode() = this.copy() }
+) : GraphNode {
+    override val style = NodeStyle.TAG
+    override fun copyNode() = this.copy()
+}

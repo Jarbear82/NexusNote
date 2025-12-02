@@ -28,7 +28,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -45,15 +44,15 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.tau.nexus_note.datamodels.GraphEdge
+import com.tau.nexus_note.doc_parser.StandardSchemas
 import com.tau.nexus_note.settings.GraphLayoutMode
 import kotlinx.coroutines.launch
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -106,6 +105,7 @@ fun GraphView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color(0xFFE0E0E0))
             .pointerInput(isSelectionMode) {
                 detectDragGestures(
                     onDragStart = { offset ->
@@ -120,7 +120,10 @@ fun GraphView(
                             val velocityOffset = Offset(velocity.x, velocity.y)
                             coroutineScope.launch {
                                 var prevValue = Offset.Zero
-                                Animatable(Offset.Zero, Offset.VectorConverter).animateDecay(initialVelocity = velocityOffset, animationSpec = exponentialDecay(frictionMultiplier = 2.0f)) {
+                                Animatable(Offset.Zero, Offset.VectorConverter).animateDecay(
+                                    initialVelocity = velocityOffset,
+                                    animationSpec = exponentialDecay(frictionMultiplier = 2.0f)
+                                ) {
                                     val delta = value - prevValue
                                     viewModel.onPan(delta)
                                     prevValue = value
@@ -146,37 +149,58 @@ fun GraphView(
                 }
             }
             .onSizeChanged { viewModel.onResize(it) }
-            .background(Color(0xFFE0E0E0))
     ) {
         val centerX = constraints.maxWidth / 2f
         val centerY = constraints.maxHeight / 2f
-        val buffer = 500f
-        val visibleMinX = ((0f - centerX) / transform.zoom) - transform.pan.x - buffer
-        val visibleMinY = ((0f - centerY) / transform.zoom) - transform.pan.y - buffer
-        val visibleMaxX = ((constraints.maxWidth.toFloat() - centerX) / transform.zoom) - transform.pan.x + buffer
-        val visibleMaxY = ((constraints.maxHeight.toFloat() - centerY) / transform.zoom) - transform.pan.y + buffer
-        val visibleBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
 
-        val visibleNodes = remember(nodes, visibleBounds) {
-            nodes.values.filter { visibleBounds.contains(it.pos) }
+        // --- Throttled Visibility Calculation (Phase 4) ---
+        // Instead of calculating visibleNodes every frame, we pad the viewport significantly
+        // and only recalculate when the camera moves across coarse chunk boundaries.
+
+        val chunkX = (transform.pan.x / 2000f).roundToInt()
+        val chunkY = (transform.pan.y / 2000f).roundToInt()
+        val currentZoomKey = (transform.zoom * 10).roundToInt() // Re-cull on significant zoom change
+
+        val visibleNodes by remember(nodes, chunkX, chunkY, currentZoomKey) {
+            derivedStateOf {
+                val buffer = 2000f // Large buffer
+                val visibleMinX = ((0f - centerX) / transform.zoom) - transform.pan.x - buffer
+                val visibleMinY = ((0f - centerY) / transform.zoom) - transform.pan.y - buffer
+                val visibleMaxX = ((constraints.maxWidth.toFloat() - centerX) / transform.zoom) - transform.pan.x + buffer
+                val visibleMaxY = ((constraints.maxHeight.toFloat() - centerY) / transform.zoom) - transform.pan.y + buffer
+                val expandedBounds = Rect(visibleMinX, visibleMinY, visibleMaxX, visibleMaxY)
+
+                nodes.values.filter { expandedBounds.contains(it.pos) }
+            }
         }
 
         val isLowDetail = transform.zoom < renderingSettings.lodThreshold
 
-        Box(Modifier.fillMaxSize()) {
-            // 1. Edges
+        // --- Global Transformation Container (Phase 3) ---
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // Apply Pan and Zoom on the GPU to the entire container
+                    scaleX = transform.zoom
+                    scaleY = transform.zoom
+                    translationX = transform.pan.x * transform.zoom + centerX
+                    translationY = transform.pan.y * transform.zoom + centerY
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
+        ) {
+            // 1. Edges (Canvas)
+            // Canvas inside a graphicsLayer inherits the transform!
+            // So we just draw edges in World Coordinates (node.pos).
             Canvas(modifier = Modifier.fillMaxSize()) {
-                withTransform({
-                    translate(left = centerX, top = centerY)
-                    scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
-                    translate(left = transform.pan.x, top = transform.pan.y)
-                }) {
-                    edges.forEach { edge ->
-                        val nodeA = nodes[edge.sourceId]
-                        val nodeB = nodes[edge.targetId]
-                        if (nodeA != null && nodeB != null && (visibleBounds.contains(nodeA.pos) || visibleBounds.contains(nodeB.pos))) {
-                            drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
-                        }
+                edges.forEach { edge ->
+                    val nodeA = nodes[edge.sourceId]
+                    val nodeB = nodes[edge.targetId]
+                    // Basic culling for edges
+                    // Note: Since we are in the transformed container, we just check if nodes exist
+                    if (nodeA != null && nodeB != null) {
+                        // Draw line from A to B (World Coords)
+                        drawRichEdge(nodeA, nodeB, edge, isLowDetail, layoutMode)
                     }
                 }
             }
@@ -184,51 +208,40 @@ fun GraphView(
             // 2. Nodes (Low Detail Mode)
             if (isLowDetail) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    withTransform({
-                        translate(left = centerX, top = centerY)
-                        scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
-                        translate(left = transform.pan.x, top = transform.pan.y)
-                    }) {
-                        visibleNodes.forEach { node ->
-                            val isDimmed = dimmedNodeIds.contains(node.id)
-                            val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
-                            drawCircle(color = color, radius = node.radius, center = node.pos)
-                        }
+                    visibleNodes.forEach { node ->
+                        val isDimmed = dimmedNodeIds.contains(node.id)
+                        val color = node.colorInfo.composeColor.copy(alpha = if (isDimmed) 0.2f else 1.0f)
+                        drawCircle(color = color, radius = node.radius, center = node.pos)
+                    }
+                }
+            }
+
+            // 3. Nodes (Interactive Mode) - Phase 2 Optimization
+            if (!isLowDetail) {
+                visibleNodes.forEach { node ->
+                    val isSelected = node.id == primarySelectedId
+                    val isPendingSource = node.id == pendingEdgeSourceId
+                    val isDimmed = dimmedNodeIds.contains(node.id)
+
+                    key(node.id) {
+                        NodeWrapper(
+                            node = node,
+                            zoom = transform.zoom, // Passed for gesture scaling
+                            isSelected = isSelected,
+                            isPendingSource = isPendingSource,
+                            isDimmed = isDimmed,
+                            onTap = { if (isEditMode) viewModel.onNodeTap(node.id) else onNodeTap(node.id) },
+                            onLongPress = { viewModel.onNodeLockToggle(node.id) },
+                            onDragStart = { viewModel.onDragStart(node.id) },
+                            onDrag = { delta -> viewModel.onDrag(delta) },
+                            onDragEnd = { viewModel.onDragEnd() }
+                        )
                     }
                 }
             }
         }
 
-        // 3. Nodes (Interactive Mode)
-        // Render deterministically sized nodes immediately
-        if (!isLowDetail) {
-            visibleNodes.forEach { node ->
-                val worldX = node.pos.x + transform.pan.x
-                val worldY = node.pos.y + transform.pan.y
-                val screenX = centerX + (worldX * transform.zoom)
-                val screenY = centerY + (worldY * transform.zoom)
-                val isSelected = node.id == primarySelectedId
-                val isPendingSource = node.id == pendingEdgeSourceId
-                val isDimmed = dimmedNodeIds.contains(node.id)
-
-                key(node.id) {
-                    val nodeAlpha = if (isDimmed) 0.2f else 1.0f
-
-                    NodeWrapper(
-                        node = node, zoom = transform.zoom, screenOffset = Offset(screenX, screenY),
-                        isSelected = isSelected, isPendingSource = isPendingSource, isDimmed = isDimmed,
-                        modifier = Modifier.alpha(nodeAlpha),
-                        onTap = { if (isEditMode) viewModel.onNodeTap(node.id) else onNodeTap(node.id) },
-                        onLongPress = { viewModel.onNodeLockToggle(node.id) },
-                        onDragStart = { viewModel.onDragStart(node.id) },
-                        onDrag = { delta -> viewModel.onDrag(delta) },
-                        onDragEnd = { viewModel.onDragEnd() }
-                    )
-                }
-            }
-        }
-
-        // 4. Selection Box
+        // 4. Selection Box (Overlay - Untransformed space)
         if (selectionRect != null) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRect(color = Color.Blue.copy(alpha = 0.2f), topLeft = selectionRect!!.topLeft, size = selectionRect!!.size)
@@ -237,7 +250,6 @@ fun GraphView(
         }
 
         // 5. UI Controls & Overlay
-
         // Standard Controls
         SmallFloatingActionButton(onClick = { viewModel.toggleSettings() }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Settings, "Graph Settings") }
 
@@ -302,49 +314,100 @@ fun GraphView(
             Icon(Icons.Default.CenterFocusStrong, "Fit to Screen")
         }
 
-        // Processing Overlay (For manual layout triggers)
+        // Processing Overlay
         if(isProcessing) Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
     }
 }
 
+// --- Phase 2: Optimizing NodeWrapper ---
 @Composable
 fun NodeWrapper(
-    node: GraphNode, zoom: Float, screenOffset: Offset, isSelected: Boolean, isPendingSource: Boolean, isDimmed: Boolean,
+    node: GraphNode,
+    zoom: Float,
+    isSelected: Boolean,
+    isPendingSource: Boolean,
+    isDimmed: Boolean,
     modifier: Modifier = Modifier,
     onTap: () -> Unit, onLongPress: () -> Unit, onDragStart: () -> Unit, onDrag: (Offset) -> Unit, onDragEnd: () -> Unit
 ) {
+    // 1. Isolate Stable Properties
+    // This allows the inner content to skip recomposition when 'pos' changes.
+    val stableProps = remember(node.id, node.label, node.style, node.width, node.height, node.colorInfo, node.backgroundImagePath) {
+        val propsMap = when(node) {
+            is LongTextGraphNode -> mapOf("content" to node.content)
+            is CodeBlockGraphNode -> mapOf("content" to node.code, "language" to node.language)
+            is MapGraphNode -> mapOf("data" to com.tau.nexus_note.utils.PropertySerialization.serializeMap(node.data))
+            is SetGraphNode -> mapOf("items" to com.tau.nexus_note.utils.PropertySerialization.serializeList(node.items))
+            is UnorderedListGraphNode -> mapOf("items" to com.tau.nexus_note.utils.PropertySerialization.serializeList(node.items))
+            is OrderedListGraphNode -> mapOf("items" to com.tau.nexus_note.utils.PropertySerialization.serializeList(node.items))
+            is TableGraphNode -> mapOf("headers" to com.tau.nexus_note.utils.PropertySerialization.serializeList(node.headers), "data" to com.tau.nexus_note.utils.PropertySerialization.serializeListOfMaps(node.rows), "caption" to (node.caption ?: ""))
+            is ImageGraphNode -> mapOf("uri" to node.uri, "altText" to node.altText)
+            is HeadingGraphNode -> mapOf("level" to node.level.toString())
+            else -> emptyMap()
+        }
+
+        StableNodeProps(
+            id = node.id,
+            label = node.label,
+            displayProperty = when(node) {
+                is TitleGraphNode -> node.title
+                is HeadingGraphNode -> node.text
+                is ShortTextGraphNode -> node.text
+                is TagGraphNode -> node.name
+                else -> node.label
+            },
+            style = node.style,
+            colorInfo = node.colorInfo,
+            width = node.width,
+            height = node.height,
+            properties = propsMap,
+            backgroundImagePath = node.backgroundImagePath
+        )
+    }
+
+    // FIX: Explicitly track the *latest* zoom and callback in a State holder.
+    // The pointerInput block is suspended and does NOT restart when 'zoom' changes.
+    // By using rememberUpdatedState, the lambda inside detectDragGestures always
+    // sees the current value of zoom, ensuring drag physics match visual scale.
+    val currentZoom by rememberUpdatedState(zoom)
+    val currentOnDrag by rememberUpdatedState(onDrag)
+
     Box(
         modifier = modifier
-            .offset { IntOffset(screenOffset.x.roundToInt(), screenOffset.y.roundToInt()) }
-            .graphicsLayer { scaleX = zoom; scaleY = zoom; transformOrigin = TransformOrigin(0f, 0f) }
+            // 2. Use GraphicsLayer for GPU positioning (Relative to World Container)
+            // Since the parent box is already transformed by pan/zoom, we just place the node at its world (x,y)
+            .graphicsLayer {
+                translationX = node.pos.x - (node.width / 2f)
+                translationY = node.pos.y - (node.height / 2f)
+            }
+            // Layout size explicitly to avoid measuring
             .layout { measurable, constraints ->
-                // Force layout to match the pre-computed node dimensions
                 val placeable = measurable.measure(
                     androidx.compose.ui.unit.Constraints.fixed(node.width.roundToInt(), node.height.roundToInt())
                 )
-                layout(placeable.width, placeable.height) { placeable.placeRelative(-placeable.width / 2, -placeable.height / 2) }
+                layout(placeable.width, placeable.height) {
+                    placeable.place(0, 0)
+                }
             }
             .pointerInput(Unit) { detectTapGestures(onTap = { onTap() }, onLongPress = { onLongPress() }) }
-            .pointerInput(zoom) { detectDragGestures(onDragStart = { onDragStart() }, onDrag = { change, dragAmount -> change.consume(); onDrag(dragAmount * zoom) }, onDragEnd = { onDragEnd() }) }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { onDragStart() },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        // FIX: Multiply by currentZoom (updated state) to convert local scaled delta back to screen pixels.
+                        currentOnDrag(dragAmount * currentZoom)
+                    },
+                    onDragEnd = { onDragEnd() }
+                )
+            }
+            .alpha(if (isDimmed) 0.2f else 1.0f)
     ) {
         if (isSelected) Box(Modifier.matchParentSize().background(Color.Yellow.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape))
         if (isPendingSource) Box(Modifier.matchParentSize().background(Color.Green.copy(alpha = 0.3f), androidx.compose.foundation.shape.CircleShape).border(2.dp, Color.Green, androidx.compose.foundation.shape.CircleShape))
 
-        when(node) {
-            is TitleGraphNode -> TitleRenderer(node)
-            is HeadingGraphNode -> HeadingRenderer(node)
-            is ShortTextGraphNode -> ShortTextRenderer(node)
-            is LongTextGraphNode -> LongTextRenderer(node)
-            is ListGraphNode -> ListRenderer(node)
-            is MapGraphNode -> MapRenderer(node)
-            is CodeBlockGraphNode -> CodeBlockRenderer(node)
-            is TableGraphNode -> TableRenderer(node)
-            is ImageGraphNode -> ImageRenderer(node)
-            is SetGraphNode -> SetRenderer(node)
-            is UnorderedListGraphNode -> UnorderedListRenderer(node)
-            is OrderedListGraphNode -> OrderedListRenderer(node)
-            is TagGraphNode -> TagRenderer(node)
-        }
+        // 3. Delegate to Stable Content
+        StableNodeContent(props = stableProps)
 
         if (node.isLocked) Icon(Icons.Default.Lock, "Locked", modifier = Modifier.align(Alignment.TopStart).size(16.dp).offset(x = 4.dp, y = (-4).dp), tint = MaterialTheme.colorScheme.error)
     }
@@ -354,7 +417,7 @@ private fun DrawScope.drawRichEdge(
     nodeA: GraphNode, nodeB: GraphNode, edge: GraphEdge, isLowDetail: Boolean, layoutMode: GraphLayoutMode
 ) {
     val color = edge.colorInfo.composeColor.copy(alpha = if (isLowDetail) 0.4f else 0.6f)
-    val strokeWidth = if (edge.label == "CONTAINS") 4f else 2f
+    val strokeWidth = if (edge.label == StandardSchemas.EDGE_CONTAINS) 4f else 2f
     val start = nodeA.pos
     val end = nodeB.pos
 
@@ -389,6 +452,7 @@ private fun DrawScope.drawArrow(color: Color, start: Offset, end: Offset) {
     val angle = atan2(end.y - start.y, end.x - start.x)
     val arrowLength = 20f
     val arrowAngle = Math.toRadians(25.0)
+    // Back off slightly from the center node position so the arrow isn't buried
     val stopX = end.x - 30f * cos(angle)
     val stopY = end.y - 30f * sin(angle)
     val tip = Offset(stopX.toFloat(), stopY.toFloat())
