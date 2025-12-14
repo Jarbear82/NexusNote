@@ -1,0 +1,145 @@
+-- AppDatabase.sq
+import com.tau.nexusnote.datamodels.SchemaProperty;
+import com.tau.nexusnote.datamodels.ConnectionPair;
+import kotlin.collections.List;
+import kotlin.Boolean;
+
+CREATE TABLE SchemaDefinition (
+id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
+name TEXT NOT NULL UNIQUE,
+properties_json TEXT AS List<SchemaProperty> NOT NULL,
+connections_json TEXT AS List<ConnectionPair> NOT NULL
+);
+
+CREATE TABLE Node (
+id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+schema_id INTEGER NOT NULL,
+display_label TEXT NOT NULL,
+properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
+parent_id INTEGER DEFAULT NULL,
+is_collapsed INTEGER AS Boolean NOT NULL DEFAULT 0,
+FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
+FOREIGN KEY(parent_id) REFERENCES Node(id) ON DELETE SET NULL
+);
+
+CREATE TABLE Edge (
+id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+schema_id INTEGER NOT NULL,
+from_node_id INTEGER NOT NULL,
+to_node_id INTEGER NOT NULL,
+properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
+FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
+FOREIGN KEY(from_node_id) REFERENCES Node(id) ON DELETE CASCADE,
+FOREIGN KEY(to_node_id) REFERENCES Node(id) ON DELETE CASCADE
+);
+
+CREATE TABLE LayoutConstraint (
+id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+type TEXT NOT NULL,
+node_ids_json TEXT AS List<kotlin.Long> NOT NULL,
+params_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL
+);
+
+--- SchemaDefinition Queries ---
+
+selectAllSchemas:
+SELECT * FROM SchemaDefinition;
+
+selectSchemaById:
+SELECT * FROM SchemaDefinition WHERE id = ?;
+
+insertSchema:
+INSERT INTO SchemaDefinition(type, name, properties_json, connections_json)
+VALUES (?, ?, ?, ?);
+
+updateSchema:
+UPDATE SchemaDefinition
+SET name = ?, properties_json = ?, connections_json = ?
+WHERE id = ?;
+
+deleteSchemaById:
+DELETE FROM SchemaDefinition WHERE id = ?;
+
+--- Node Queries ---
+
+selectAllNodes:
+SELECT * FROM Node;
+
+selectNodeById:
+SELECT * FROM Node WHERE id = ?;
+
+countNodesForSchema:
+SELECT COUNT(*) FROM Node WHERE schema_id = ?;
+
+insertNode:
+INSERT INTO Node(schema_id, display_label, properties_json, parent_id, is_collapsed)
+VALUES (?, ?, ?, ?, ?);
+
+updateNodeProperties:
+UPDATE Node
+SET display_label = ?, properties_json = ?
+WHERE id = ?;
+
+updateNodeParent:
+UPDATE Node
+SET parent_id = ?
+WHERE id = ?;
+
+updateNodeCollapsed:
+UPDATE Node
+SET is_collapsed = ?
+WHERE id = ?;
+
+deleteNodeById:
+DELETE FROM Node WHERE id = ?;
+
+getNodesPaginated:
+SELECT * FROM Node LIMIT ? OFFSET ?;
+
+countAllNodes:
+SELECT COUNT(*) FROM Node;
+
+getLastInsertId:
+SELECT last_insert_rowid();
+
+--- Edge Queries ---
+
+selectAllEdges:
+SELECT * FROM Edge;
+
+selectEdgeById:
+SELECT * FROM Edge WHERE id = ?;
+
+countEdgesForSchema:
+SELECT COUNT(*) FROM Edge WHERE schema_id = ?;
+
+insertEdge:
+INSERT INTO Edge(schema_id, from_node_id, to_node_id, properties_json)
+VALUES (?, ?, ?, ?);
+
+updateEdgeProperties:
+UPDATE Edge
+SET properties_json = ?
+WHERE id = ?;
+
+deleteEdgeById:
+DELETE FROM Edge WHERE id = ?;
+
+getEdgesPaginated:
+SELECT * FROM Edge LIMIT ? OFFSET ?;
+
+countAllEdges:
+SELECT COUNT(*) FROM Edge;
+
+--- LayoutConstraint Queries ---
+
+selectAllConstraints:
+SELECT * FROM LayoutConstraint;
+
+insertConstraint:
+INSERT INTO LayoutConstraint(type, node_ids_json, params_json)
+VALUES (?, ?, ?);
+
+deleteConstraintById:
+DELETE FROM LayoutConstraint WHERE id = ?;

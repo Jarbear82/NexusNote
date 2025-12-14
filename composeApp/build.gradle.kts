@@ -27,6 +27,8 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.sqldelight.runtime)
             implementation(libs.androidx.datastore.preferences)
+            implementation(libs.multik.core)
+            implementation(libs.multik.default)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -42,12 +44,12 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "com.tau.nexus_note.MainKt"
+        mainClass = "com.tau.nexusnote.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.AppImage)
 
-            packageName = "com.tau.nexus_note"
+            packageName = "com.tau.nexusnote"
             packageVersion = "1.0.0"
 
         }
@@ -65,7 +67,7 @@ configurations.all {
 sqldelight {
     databases {
         create("AppDatabase") {
-            packageName.set("com.tau.nexus_note.db")
+            packageName.set("com.tau.nexusnote.db")
         }
     }
 }

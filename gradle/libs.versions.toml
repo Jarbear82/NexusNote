@@ -8,6 +8,7 @@ kotlin = "2.2.20"
 kotlinx-coroutines = "1.10.2"
 sqldelight = "2.1.0"
 kotlinx-serialization = "1.6.3"
+multik = "0.2.3"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -24,6 +25,9 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 sqldelight-sqlite-driver = { module = "app.cash.sqldelight:sqlite-driver", version.ref = "sqldelight" }
 sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sqldelight" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore-preferences" }
+multik-core = { module = "org.jetbrains.kotlinx:multik-core", version.ref = "multik"}
+multik-default = {module = "org.jetbrains.kotlinx:multik-default", version.ref = "multik"}
+
 
 [plugins]
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
