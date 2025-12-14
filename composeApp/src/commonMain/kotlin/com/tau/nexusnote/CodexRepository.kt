@@ -26,21 +26,21 @@ import kotlinx.coroutines.withContext
  * This class owns the database connection and the primary data flows.
  */
 class CodexRepository(
-    private val dbService: com.tau.nexusnote.SqliteDbService,
+    private val dbService: SqliteDbService,
     private val repositoryScope: CoroutineScope
 ) {
 
     // --- Central State Flows ---
-    private val _schema = MutableStateFlow<com.tau.nexusnote.codex.schema.SchemaData?>(null)
+    private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
 
-    private val _nodeList = MutableStateFlow<List<com.tau.nexusnote.datamodels.NodeDisplayItem>>(emptyList())
+    private val _nodeList = MutableStateFlow<List<NodeDisplayItem>>(emptyList())
     val nodeList = _nodeList.asStateFlow()
 
-    private val _edgeList = MutableStateFlow<List<com.tau.nexusnote.datamodels.EdgeDisplayItem>>(emptyList())
+    private val _edgeList = MutableStateFlow<List<EdgeDisplayItem>>(emptyList())
     val edgeList = _edgeList.asStateFlow()
 
-    private val _constraints = MutableStateFlow<List<com.tau.nexusnote.datamodels.LayoutConstraintItem>>(emptyList())
+    private val _constraints = MutableStateFlow<List<LayoutConstraintItem>>(emptyList())
     val constraints = _constraints.asStateFlow()
 
     // --- Error State Flow ---
@@ -110,7 +110,7 @@ class CodexRepository(
                         displayProperty = dbNode.display_label,
                         schemaId = nodeSchema.id,
                         parentId = dbNode.parent_id,
-                        isCollapsed = dbNode.is_collapsed ?: false
+                        isCollapsed = dbNode.is_collapsed
                     )
                 }
             }
@@ -265,7 +265,7 @@ class CodexRepository(
                         displayProperty = dbNode.display_label,
                         schemaId = nodeSchema.id,
                         parentId = dbNode.parent_id,
-                        isCollapsed = dbNode.is_collapsed ?: false
+                        isCollapsed = dbNode.is_collapsed
                     )
                 }
             }
