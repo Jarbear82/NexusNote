@@ -35,15 +35,28 @@ sealed class RoleCardinality {
 }
 
 /**
+ * Defines the direction of the edge relative to the node filling this role.
+ * Used for visual graph rendering.
+ */
+@Serializable
+enum class RoleDirection {
+    @SerialName("Source") Source, // Arrow points FROM Node TO Hypernode
+    @SerialName("Target") Target  // Arrow points FROM Hypernode TO Node
+}
+
+/**
  * Represents a Role within an Edge Schema.
  * E.g., for a "Directed Edge", roles might be "Source" (One) and "Target" (One).
  * For a "Meeting", roles might be "Organizer" (One), "Attendees" (Many), "Room" (One).
+ *
+ * @param direction Determines the visual arrow direction in the graph. Defaults to Target.
  */
 @Serializable
 data class RoleDefinition(
     val name: String,
     val allowedNodeSchemas: List<String>, // List of Schema Names (Strings)
-    val cardinality: RoleCardinality = RoleCardinality.One
+    val cardinality: RoleCardinality = RoleCardinality.One,
+    val direction: RoleDirection = RoleDirection.Target
 )
 
 /**

@@ -166,17 +166,26 @@ class GraphViewmodel(
         val uiEdges = mutableListOf<GraphEdge>()
         var edgeIdCounter = -100000L // Arbitrary start for purely visual edge IDs
 
+        // Cache Schema Map for efficient lookup inside the loop
+        val currentSchemaData = repository.schema.value
+        val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
+
         edgeList.forEach { edge ->
             val hyperNodeUiId = -1 * edge.id // Negative ID represents a hypernode
+            val schema = edgeSchemaMap[edge.schemaId]
 
             edge.participatingNodes.forEach { participant ->
                 val nodeUiId = participant.node.id
-                val role = participant.role ?: ""
+                val roleName = participant.role ?: ""
 
-                // LOGIC CHANGE:
-                // If role is "source", arrow points TO the Hypernode (Node -> Hypernode).
-                // If role is "target" (or anything else), arrow points AWAY (Hypernode -> Node).
-                val isSource = role.equals("source", ignoreCase = true)
+                // Lookup Role Definition to determine direction
+                // Default to TARGET (Hypernode -> Node) if not found or unspecified
+                val roleDef = schema?.roleDefinitions?.find { it.name == roleName }
+                val direction = roleDef?.direction ?: RoleDirection.Target
+
+                // SOURCE: Arrow points FROM Node TO Hypernode
+                // TARGET: Arrow points FROM Hypernode TO Node
+                val isSource = direction == RoleDirection.Source
 
                 val sId = if (isSource) nodeUiId else hyperNodeUiId
                 val tId = if (isSource) hyperNodeUiId else nodeUiId

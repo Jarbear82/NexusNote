@@ -17,6 +17,7 @@ import com.tau.nexusnote.datamodels.CodexPropertyDataTypes
 import com.tau.nexusnote.datamodels.EdgeSchemaCreationState
 import com.tau.nexusnote.datamodels.RoleCardinality
 import com.tau.nexusnote.datamodels.RoleDefinition
+import com.tau.nexusnote.datamodels.RoleDirection
 import com.tau.nexusnote.datamodels.SchemaProperty
 import com.tau.nexusnote.ui.components.CodexDropdown
 import com.tau.nexusnote.ui.components.CodexSectionHeader
@@ -90,7 +91,7 @@ fun CreateEdgeSchemaView(
 
             Button(
                 onClick = {
-                    onAddRole(RoleDefinition("New Role", emptyList(), RoleCardinality.One))
+                    onAddRole(RoleDefinition("New Role", emptyList(), RoleCardinality.One, RoleDirection.Target))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -207,6 +208,7 @@ fun RoleEditorItem(
     error: String?
 ) {
     val cardinalityOptions = listOf(RoleCardinality.One, RoleCardinality.Many)
+    val directionOptions = RoleDirection.entries
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
@@ -226,8 +228,21 @@ fun RoleEditorItem(
 
                 Spacer(Modifier.width(8.dp))
 
+                // Direction
+                Box(modifier = Modifier.width(110.dp)) {
+                    CodexDropdown(
+                        label = "Dir",
+                        options = directionOptions,
+                        selectedOption = role.direction,
+                        onOptionSelected = { onUpdate(role.copy(direction = it)) },
+                        displayTransform = { it.name }
+                    )
+                }
+
+                Spacer(Modifier.width(8.dp))
+
                 // Cardinality
-                Box(modifier = Modifier.width(120.dp)) {
+                Box(modifier = Modifier.width(100.dp)) {
                     CodexDropdown(
                         label = "Count",
                         options = cardinalityOptions,
