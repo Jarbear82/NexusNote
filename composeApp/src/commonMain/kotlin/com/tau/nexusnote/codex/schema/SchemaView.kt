@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.ui.components.SearchableListHeader
-import com.tau.nexusnote.datamodels.ConnectionPair
 import com.tau.nexusnote.datamodels.SchemaDefinitionItem
 import com.tau.nexusnote.utils.labelToColor
 
@@ -49,7 +48,7 @@ fun SchemaView(
     onAddNodeSchemaClick: () -> Unit,
     onAddEdgeSchemaClick: () -> Unit,
     onAddNodeClick: (SchemaDefinitionItem) -> Unit,
-    onAddEdgeClick: (SchemaDefinitionItem, ConnectionPair) -> Unit,
+    onAddEdgeClick: (SchemaDefinitionItem) -> Unit,
     nodeSchemaSearchText: String,
     onNodeSchemaSearchChange: (String) -> Unit,
     edgeSchemaSearchText: String,
@@ -89,7 +88,6 @@ fun SchemaView(
                 items(filteredNodeSchemas, key = { it.id }) { table ->
                     val isSelected = primarySelectedItem == table
 
-                    // Using CodexListItem but customized to display property list in supporting text
                     val propertiesText = table.properties.joinToString(separator = "\n") { prop ->
                         val suffix = if (prop.isDisplayProperty) ": (Display)" else ""
                         "  - ${prop.name}: ${prop.type}$suffix"
@@ -144,14 +142,14 @@ fun SchemaView(
                 items(filteredEdgeSchemas, key = { it.id }) { table ->
                     val isSelected = primarySelectedItem == table
 
-                    // Constructing connections text
-                    val connectionText = (table.connections ?: emptyList()).joinToString("\n") {
-                        "(${it.src}) -> (${it.dst})"
+                    // Constructing Roles text
+                    val rolesText = (table.roleDefinitions ?: emptyList()).joinToString("\n") { role ->
+                        "  - ${role.name} (${role.cardinality}): ${role.allowedNodeSchemas.joinToString(", ").ifEmpty { "Any" }}"
                     }
 
                     CodexListItem(
                         headline = table.name,
-                        supportingText = connectionText.ifBlank { "No connections" },
+                        supportingText = rolesText.ifBlank { "No roles defined" },
                         colorSeed = table.name,
                         isSelected = isSelected,
                         onClick = { onEdgeClick(table) },
@@ -164,7 +162,7 @@ fun SchemaView(
                                 onToggleSchemaVisibility = onToggleSchemaVisibility,
                                 onEditEdgeClick = onEditEdgeClick,
                                 onDeleteEdgeClick = onDeleteEdgeClick,
-                                onAddEdgeClick = onAddEdgeClick // Passed to use in actions row if needed, or custom logic
+                                onAddEdgeClick = onAddEdgeClick
                             )
                         }
                     )
@@ -174,7 +172,6 @@ fun SchemaView(
     }
 }
 
-// Extended CodexListItem to support bottom actions row (custom expansion of the component for SchemaView)
 @Composable
 private fun CodexListItem(
     headline: String,
@@ -185,10 +182,6 @@ private fun CodexListItem(
     onClick: () -> Unit,
     actions: @Composable (fontColor: Color) -> Unit
 ) {
-    // Reuse the base component but wrap it or re-implement slightly to allow bottom actions row
-    // Since CodexListItem is a wrapper around ListItem, we can't easily inject a bottom row *inside* ListItem.
-    // So we create a composite here similar to the original SchemaListItem but using our style utils.
-
     val colorInfo = labelToColor(colorSeed)
 
     Column(
@@ -201,7 +194,6 @@ private fun CodexListItem(
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             )
     ) {
-        // Title
         androidx.compose.foundation.layout.Box(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             contentAlignment = Alignment.Center
@@ -225,7 +217,6 @@ private fun CodexListItem(
 
         HorizontalDivider(color = colorInfo.composeFontColor)
 
-        // Actions
         actions(colorInfo.composeFontColor)
     }
 }
@@ -284,46 +275,42 @@ private fun EdgeSchemaActions(
     onToggleSchemaVisibility: (Long) -> Unit,
     onEditEdgeClick: (SchemaDefinitionItem) -> Unit,
     onDeleteEdgeClick: (SchemaDefinitionItem) -> Unit,
-    onAddEdgeClick: (SchemaDefinitionItem, ConnectionPair) -> Unit
+    onAddEdgeClick: (SchemaDefinitionItem) -> Unit
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        // Quick add buttons for connections
-        (table.connections ?: emptyList()).forEach { conn ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Add ${conn.src}->${conn.dst}", style=MaterialTheme.typography.bodySmall, color=fontColor)
-                IconButton(onClick = { onAddEdgeClick(table, conn) }) {
-                    Icon(Icons.Default.Add, "Add Edge", tint = fontColor)
-                }
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        itemVerticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        // Quick add button
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Create Edge", style=MaterialTheme.typography.bodySmall, color=fontColor)
+            IconButton(onClick = { onAddEdgeClick(table) }) {
+                Icon(Icons.Default.Add, "Add Edge", tint = fontColor)
             }
         }
 
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            itemVerticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            IconButton(onClick = { onToggleSchemaVisibility(table.id) }) {
-                val isVisible = schemaVisibility[table.id] ?: true
-                Icon(
-                    imageVector = if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                    contentDescription = if (isVisible) "Hide Schema" else "Show Schema",
-                    tint = fontColor
-                )
-            }
-            IconButton(onClick = { onEditEdgeClick(table) }) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = "Edit Edge Schema",
-                    tint = fontColor
-                )
-            }
-            IconButton(onClick = { onDeleteEdgeClick(table) }) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete Edge Schema",
-                    tint = fontColor
-                )
-            }
+        IconButton(onClick = { onToggleSchemaVisibility(table.id) }) {
+            val isVisible = schemaVisibility[table.id] ?: true
+            Icon(
+                imageVector = if (isVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                contentDescription = if (isVisible) "Hide Schema" else "Show Schema",
+                tint = fontColor
+            )
+        }
+        IconButton(onClick = { onEditEdgeClick(table) }) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "Edit Edge Schema",
+                tint = fontColor
+            )
+        }
+        IconButton(onClick = { onDeleteEdgeClick(table) }) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "Delete Edge Schema",
+                tint = fontColor
+            )
         }
     }
 }

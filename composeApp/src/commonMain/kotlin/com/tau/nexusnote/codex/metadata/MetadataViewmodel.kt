@@ -172,8 +172,10 @@ class MetadataViewModel(
                 }
             }
             is EdgeDisplayItem -> {
-                _primarySelectedItem.value = item.src
-                _secondarySelectedItem.value = item.dst
+                // Phase 3 N-nary Update: Edges are now distinct items, so we select the edge itself
+                // rather than trying to select its "source" and "target".
+                _primarySelectedItem.value = item
+                _secondarySelectedItem.value = null
             }
             else -> { // Includes SchemaDefinitionItem
                 _primarySelectedItem.value = item

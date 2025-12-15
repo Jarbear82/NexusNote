@@ -29,17 +29,27 @@ fun EditEdgeView(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Using onSurfaceVariant for secondary, "muted" text
-            Text(
-                "From: ${state.src.label} (${state.src.displayProperty})",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                "To: ${state.dst.label} (${state.dst.displayProperty})",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Participants", style = MaterialTheme.typography.titleMedium)
+
+            if (state.participants.isEmpty()) {
+                Text(
+                    "No participants.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                state.participants.forEach { p ->
+                    val role = p.role
+                    val nodeName = p.node?.displayProperty ?: "Unknown"
+                    val nodeLabel = p.node?.label ?: "?"
+                    Text(
+                        "$role: $nodeLabel ($nodeName)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

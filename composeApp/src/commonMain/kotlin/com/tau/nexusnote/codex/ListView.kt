@@ -168,18 +168,29 @@ fun ListView(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             LazyColumn(state = edgeLazyListState) {
-                val filteredEdges = paginatedEdges.filter {
-                    it.label.contains(edgeSearchText, ignoreCase = true) ||
-                            it.src.displayProperty.contains(edgeSearchText, ignoreCase = true) ||
-                            it.dst.displayProperty.contains(edgeSearchText, ignoreCase = true)
+                val filteredEdges = paginatedEdges.filter { edge ->
+                    edge.label.contains(edgeSearchText, ignoreCase = true) ||
+                            edge.participatingNodes.any {
+                                it.node.displayProperty.contains(edgeSearchText, ignoreCase = true)
+                            }
                 }
                 items(filteredEdges, key = { it.id }) { edge ->
-                    val isSelected = primarySelectedItem == edge.src && secondarySelectedItem == edge.dst
+                    val isSelected = (primarySelectedItem as? EdgeDisplayItem)?.id == edge.id
                     val colorInfo = labelToColor(edge.label)
+
+                    // Phase 3: Construct participant string for N-nary edges
+                    val participantsText = if (edge.participatingNodes.isEmpty()) {
+                        "No participants"
+                    } else {
+                        edge.participatingNodes.joinToString("\n") { part ->
+                            val rolePrefix = if (!part.role.isNullOrBlank()) "[${part.role}] " else ""
+                            "$rolePrefix${part.node.label}:${part.node.displayProperty}"
+                        }
+                    }
 
                     CodexListItem(
                         headline = "[${edge.label}]",
-                        supportingText = "Src: ${edge.src.label}:${edge.src.displayProperty} -> Dst: ${edge.dst.label}:${edge.dst.displayProperty}",
+                        supportingText = participantsText,
                         colorSeed = edge.label,
                         isSelected = isSelected,
                         onClick = { onEdgeClick(edge) },

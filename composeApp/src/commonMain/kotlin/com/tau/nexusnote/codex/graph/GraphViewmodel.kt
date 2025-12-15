@@ -80,10 +80,9 @@ class GraphViewmodel(
 
     fun updateGraphData(nodeList: List<NodeDisplayItem>, edgeList: List<EdgeDisplayItem>) {
         val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
-
-        // 1. Sync Nodes
         val activeIds = mutableSetOf<String>()
 
+        // 1. Add Standard Nodes
         nodeList.forEach { item ->
             val idStr = item.id.toString()
             activeIds.add(idStr)
@@ -105,16 +104,43 @@ class GraphViewmodel(
             }
         }
 
-        // 2. Remove Stale Nodes
+        // 2. Process N-nary Edges -> Convert to Hypernodes + Binary Edges
+        edgeList.forEach { naryEdge ->
+            val hyperNodeId = "edge_${naryEdge.id}"
+            activeIds.add(hyperNodeId)
+
+            // A. Create the "Hypernode" (The visual representation of the Edge)
+            val existing = currentFcNodes[hyperNodeId]
+            // Hypernodes are slightly smaller than regular nodes
+            val hyperNodeSize = _physicsOptions.value.nodeBaseRadius * 1.2
+
+            if (existing != null) {
+                existing.data = naryEdge
+                existing.width = hyperNodeSize
+                existing.height = hyperNodeSize
+            } else {
+                val hyperNode = _fcGraph.addNode(id = hyperNodeId, isDummy = false)
+                hyperNode.data = naryEdge
+                hyperNode.width = hyperNodeSize
+                hyperNode.height = hyperNodeSize
+                // Randomize position initially
+                hyperNode.x = (Math.random() - 0.5) * 100.0
+                hyperNode.y = (Math.random() - 0.5) * 100.0
+            }
+
+            // B. Create Binary Edges (Hypernode <-> ParticipantNode) for Layout Engine
+            // Note: We clear old edges first in step 4 below to ensure cleanliness
+        }
+
+        // 3. Remove Stale Nodes
         val nodesToRemove = _fcGraph.nodes.filter { it.id !in activeIds }
         nodesToRemove.forEach { _fcGraph.removeNode(it) }
 
-        // 3. Rebuild Hierarchy (Parent/Child)
+        // 4. Rebuild Hierarchy (Nodes only)
         _fcGraph.nodes.forEach {
             it.parent = null
             it.children.clear()
         }
-
         nodeList.forEach { item ->
             if (item.parentId != null) {
                 val child = _fcGraph.getNode(item.id.toString())
@@ -126,22 +152,48 @@ class GraphViewmodel(
             }
         }
 
-        // 4. Sync Edges
+        // 5. Sync Edges (Rebuild connectivity for Layout Engine)
         _fcGraph.edges.clear()
         edgeList.forEach { edge ->
-            _fcGraph.addEdge(edge.src.id.toString(), edge.dst.id.toString())
+            val hyperNodeId = "edge_${edge.id}"
+            edge.participatingNodes.forEach { participant ->
+                val participantId = participant.node.id.toString()
+                _fcGraph.addEdge(sourceId = hyperNodeId, targetId = participantId)
+            }
         }
 
-        _graphEdges.value = edgeList.map { edge ->
-            GraphEdge(
-                id = edge.id,
-                sourceId = edge.src.id,
-                targetId = edge.dst.id,
-                label = edge.label,
-                strength = 1.0f,
-                colorInfo = labelToColor(edge.label)
-            )
+        // 6. Generate UI Edges (Visual Lines)
+        val uiEdges = mutableListOf<GraphEdge>()
+        var edgeIdCounter = -100000L // Arbitrary start for purely visual edge IDs
+
+        edgeList.forEach { edge ->
+            val hyperNodeUiId = -1 * edge.id // Negative ID represents a hypernode
+
+            edge.participatingNodes.forEach { participant ->
+                val nodeUiId = participant.node.id
+                val role = participant.role ?: ""
+
+                // LOGIC CHANGE:
+                // If role is "source", arrow points TO the Hypernode (Node -> Hypernode).
+                // If role is "target" (or anything else), arrow points AWAY (Hypernode -> Node).
+                val isSource = role.equals("source", ignoreCase = true)
+
+                val sId = if (isSource) nodeUiId else hyperNodeUiId
+                val tId = if (isSource) hyperNodeUiId else nodeUiId
+
+                uiEdges.add(
+                    GraphEdge(
+                        id = edgeIdCounter--,
+                        sourceId = sId,
+                        targetId = tId,
+                        label = "", // Spoke edges usually don't need labels
+                        strength = 1.0f,
+                        colorInfo = labelToColor(edge.label)
+                    )
+                )
+            }
         }
+        _graphEdges.value = uiEdges
 
         _fcGraph.nodes.filter { it.isCompound() }.forEach { it.updateBoundsFromChildren() }
         pushUiUpdate()
@@ -181,9 +233,6 @@ class GraphViewmodel(
                         )
                     }
                 }
-                "FIXED" -> {
-                    // Fixed constraints typically store x,y in params, logic omitted for brevity
-                }
             }
         }
         // Force an update to the constraint processor if it exists
@@ -195,14 +244,41 @@ class GraphViewmodel(
 
     private fun pushUiUpdate() {
         val newMap = _fcGraph.nodes.associate { fcNode ->
-            val item = fcNode.data as? NodeDisplayItem
-            val id = fcNode.id.toLongOrNull() ?: 0L
+            val id: Long
+            val label: String
+            val property: String
+            val isHyper: Boolean
+            val colorInfo: ColorInfo
+
+            val data = fcNode.data
+            if (data is NodeDisplayItem) {
+                id = data.id
+                label = data.label
+                property = data.displayProperty
+                isHyper = false
+                colorInfo = labelToColor(label)
+            } else if (data is EdgeDisplayItem) {
+                // Map Edge ID to a negative Long to distinguish from Node IDs
+                id = -1 * data.id
+                label = data.label
+                property = data.label // Display the edge label on the hypernode
+                isHyper = true
+                colorInfo = labelToColor(label)
+            } else {
+                // Fallback for nodes without data (shouldn't happen often)
+                id = fcNode.id.toLongOrNull() ?: fcNode.id.hashCode().toLong()
+                label = "Unknown"
+                property = "Unknown"
+                isHyper = false
+                colorInfo = labelToColor("Unknown")
+            }
+
             val radius = (fcNode.width / 2.0).toFloat()
 
             val uiNode = GraphNode(
                 id = id,
-                label = item?.label ?: "Unknown",
-                displayProperty = item?.displayProperty ?: "Node",
+                label = label,
+                displayProperty = property,
                 pos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
                 vel = Offset(0f, 0f),
                 mass = 1.0f,
@@ -210,7 +286,8 @@ class GraphViewmodel(
                 width = fcNode.width.toFloat(),
                 height = fcNode.height.toFloat(),
                 isCompound = fcNode.isCompound(),
-                colorInfo = labelToColor(item?.label ?: "Unknown"),
+                isHyperNode = isHyper,
+                colorInfo = colorInfo,
                 isFixed = fcNode.isFixed
             )
             id to uiNode
@@ -295,10 +372,8 @@ class GraphViewmodel(
     // --- Constraint Management ---
 
     fun addConstraint(type: ConstraintUiType, nodeIds: List<Long>) {
-        // Validate input
         if (nodeIds.isEmpty()) return
 
-        // Map UI Enum to DB String
         val dbType = when(type) {
             ConstraintUiType.ALIGN_VERTICAL -> "ALIGN_VERTICAL"
             ConstraintUiType.ALIGN_HORIZONTAL -> "ALIGN_HORIZONTAL"
@@ -306,10 +381,7 @@ class GraphViewmodel(
             ConstraintUiType.RELATIVE_TB -> "RELATIVE_TB"
         }
 
-        // Params are empty for now, could store offsets later
         val params = emptyMap<String, Any>()
-
-        // Persist to Repository (Source of Truth)
         repository.addConstraint(dbType, nodeIds, params)
     }
 
@@ -420,8 +492,17 @@ class GraphViewmodel(
             }
         }
         val tappedNode = candidates.minByOrNull { it.width * it.height }
+
         if (tappedNode != null) {
-            tappedNode.id.toLongOrNull()?.let { onNodeTapped(it) }
+            // Resolve the visual ID (Long) from the internal Node (String ID/Data)
+            val id = when (val data = tappedNode.data) {
+                is NodeDisplayItem -> data.id
+                is EdgeDisplayItem -> -1 * data.id // Ensure we pass the negative ID for hypernodes
+                else -> tappedNode.id.toLongOrNull()
+            }
+            if (id != null) {
+                onNodeTapped(id)
+            }
         }
     }
 

@@ -1,21 +1,9 @@
 package com.tau.nexusnote.codex.crud
 
-import com.tau.nexusnote.datamodels.ConnectionPair
-import com.tau.nexusnote.datamodels.EditScreenState
-import com.tau.nexusnote.datamodels.NodeCreationState
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
-import com.tau.nexusnote.datamodels.EdgeCreationState
-import com.tau.nexusnote.datamodels.EdgeSchemaCreationState
-import com.tau.nexusnote.datamodels.EdgeSchemaEditState
-import com.tau.nexusnote.datamodels.NodeSchemaCreationState
-import com.tau.nexusnote.datamodels.NodeSchemaEditState
-import com.tau.nexusnote.datamodels.SchemaProperty
+import com.tau.nexusnote.CodexRepository
 import com.tau.nexusnote.codex.metadata.MetadataViewModel
 import com.tau.nexusnote.codex.schema.SchemaViewModel
-import com.tau.nexusnote.CodexRepository
-import com.tau.nexusnote.datamodels.CodexPropertyDataTypes
-import com.tau.nexusnote.datamodels.EdgeDisplayItem
-import com.tau.nexusnote.datamodels.NodeDisplayItem
+import com.tau.nexusnote.datamodels.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,8 +11,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.collections.emptyList
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class)
 class EditCreateViewModel(
     private val repository: CodexRepository,
     private val viewModelScope: CoroutineScope,
@@ -68,6 +58,18 @@ class EditCreateViewModel(
         return if (conflict != null) "Name is already used in this schema." else null
     }
 
+    private fun validateRole(
+        index: Int,
+        role: RoleDefinition,
+        allRoles: List<RoleDefinition>
+    ): String? {
+        if (role.name.isBlank()) return "Role name cannot be blank."
+        val conflict = allRoles.withIndex().find { (i, r) ->
+            i != index && r.name.equals(role.name, ignoreCase = true)
+        }
+        return if (conflict != null) "Role name must be unique." else null
+    }
+
 
     fun saveCurrentState() {
         val stateToSave = _editScreenState.value
@@ -76,8 +78,8 @@ class EditCreateViewModel(
         val hasError = when (stateToSave) {
             is EditScreenState.CreateNodeSchema -> stateToSave.state.tableNameError != null || stateToSave.state.propertyErrors.any { it.value != null }
             is EditScreenState.EditNodeSchema -> stateToSave.state.currentNameError != null || stateToSave.state.propertyErrors.any { it.value != null }
-            is EditScreenState.CreateEdgeSchema -> stateToSave.state.tableNameError != null || stateToSave.state.propertyErrors.any { it.value != null }
-            is EditScreenState.EditEdgeSchema -> stateToSave.state.currentNameError != null || stateToSave.state.propertyErrors.any { it.value != null }
+            is EditScreenState.CreateEdgeSchema -> stateToSave.state.tableNameError != null || stateToSave.state.propertyErrors.any { it.value != null } || stateToSave.state.roleErrors.any { it.value != null }
+            is EditScreenState.EditEdgeSchema -> stateToSave.state.currentNameError != null || stateToSave.state.propertyErrors.any { it.value != null } || stateToSave.state.roleErrors.any { it.value != null }
             else -> false
         }
 
@@ -104,30 +106,12 @@ class EditCreateViewModel(
         }
     }
 
-    fun getCurrentEditState(): Any? {
-        return when (val s = _editScreenState.value) {
-            is EditScreenState.EditNode -> s.state
-            is EditScreenState.EditEdge -> s.state
-            is EditScreenState.EditNodeSchema -> s.state
-            is EditScreenState.EditEdgeSchema -> s.state
-            else -> null
-        }
-    }
-
     fun cancelAllEditing() {
         _editScreenState.value = EditScreenState.None
     }
 
     // --- Node Creation ---
-    fun initiateNodeCreation() {
-        val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
-        metadataViewModel.clearSelectedItem()
-        _editScreenState.value = EditScreenState.CreateNode(
-            NodeCreationState(schemas = nodeSchemas)
-        )
-    }
-
-    fun initiateNodeCreation(schema: SchemaDefinitionItem) {
+    fun initiateNodeCreation(schema: SchemaDefinitionItem? = null) {
         val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
         metadataViewModel.clearSelectedItem()
         _editScreenState.value = EditScreenState.CreateNode(
@@ -169,64 +153,71 @@ class EditCreateViewModel(
         )
     }
 
-    fun initiateEdgeCreation(schema: SchemaDefinitionItem, connection: ConnectionPair) {
-        val edgeSchemas = schemaViewModel.schema.value?.edgeSchemas ?: emptyList()
-        if (metadataViewModel.nodeList.value.isEmpty()) {
-            metadataViewModel.listNodes()
-        }
-        metadataViewModel.clearSelectedItem()
-        _editScreenState.value = EditScreenState.CreateEdge(
-            EdgeCreationState(
-                schemas = edgeSchemas,
-                availableNodes = metadataViewModel.nodeList.value,
-                selectedSchema = schema,
-                selectedConnection = connection,
-                src = null,
-                dst = null,
-                properties = emptyMap()
-            )
-        )
+    fun initiateEdgeCreation(schema: SchemaDefinitionItem) {
+        initiateEdgeCreation()
+        updateEdgeCreationSchema(schema)
     }
 
     fun updateEdgeCreationSchema(schemaEdge: SchemaDefinitionItem) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdge) return@update current
+
+            // Initializing participants based on Roles
+            val initialParticipants = mutableListOf<ParticipantSelection>()
+
+            schemaEdge.roleDefinitions?.forEach { role ->
+                // Automatically add one empty slot for "One" or "Exact" roles
+                if (role.cardinality is RoleCardinality.One) {
+                    initialParticipants.add(ParticipantSelection(
+                        id = Uuid.random().toString(),
+                        role = role.name,
+                        node = null
+                    ))
+                }
+                // For "Many", we start with 0, user adds them manually.
+                // Alternatively, could start with 1 empty one.
+            }
+
             current.copy(
                 state = current.state.copy(
                     selectedSchema = schemaEdge,
-                    selectedConnection = null,
-                    src = null,
-                    dst = null,
+                    participants = initialParticipants,
                     properties = emptyMap()
                 )
             )
         }
     }
 
-    fun updateEdgeCreationConnection(connection: ConnectionPair) {
+    fun addEdgeCreationParticipant(roleName: String) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdge) return@update current
-            current.copy(
-                state = current.state.copy(
-                    selectedConnection = connection,
-                    src = null,
-                    dst = null
-                )
+            val newSelection = ParticipantSelection(
+                id = Uuid.random().toString(),
+                role = roleName,
+                node = null
             )
+            current.copy(state = current.state.copy(participants = current.state.participants + newSelection))
         }
     }
 
-    fun updateEdgeCreationSrc(node: NodeDisplayItem) {
+    fun removeEdgeCreationParticipant(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdge) return@update current
-            current.copy(state = current.state.copy(src = node))
+            val newList = current.state.participants.toMutableList().apply {
+                removeAt(index)
+            }
+            current.copy(state = current.state.copy(participants = newList))
         }
     }
 
-    fun updateEdgeCreationDst(node: NodeDisplayItem) {
+    fun updateEdgeCreationParticipantNode(index: Int, node: NodeDisplayItem) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdge) return@update current
-            current.copy(state = current.state.copy(dst = node))
+            val newList = current.state.participants.toMutableList()
+            if (index in newList.indices) {
+                newList[index] = newList[index].copy(node = node)
+            }
+            current.copy(state = current.state.copy(participants = newList))
         }
     }
 
@@ -242,9 +233,6 @@ class EditCreateViewModel(
 
     // --- Node Schema Creation ---
     fun initiateNodeSchemaCreation() {
-        viewModelScope.launch {
-            metadataViewModel.setItemToEdit("CreateNodeSchema")
-        }
         _editScreenState.value = EditScreenState.CreateNodeSchema(
             NodeSchemaCreationState(
                 properties = listOf(SchemaProperty("name", CodexPropertyDataTypes.TEXT, isDisplayProperty = true))
@@ -266,14 +254,9 @@ class EditCreateViewModel(
             val newProperties = current.state.properties.toMutableList().apply {
                 this[index] = property
             }
-
             val finalProperties = if (property.isDisplayProperty) {
-                newProperties.mapIndexed { i, p ->
-                    if (i == index) p else p.copy(isDisplayProperty = false)
-                }.toList()
-            } else {
-                newProperties
-            }
+                newProperties.mapIndexed { i, p -> if (i == index) p else p.copy(isDisplayProperty = false) }
+            } else newProperties
 
             val error = validateProperty(index, property, newProperties)
             val newErrors = current.state.propertyErrors.toMutableMap()
@@ -286,12 +269,9 @@ class EditCreateViewModel(
     fun onAddNodeSchemaProperty(property: SchemaProperty) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNodeSchema) return@update current
-            // Reset display property of others if new one is display
             val currentProps = if (property.isDisplayProperty) {
                 current.state.properties.map { it.copy(isDisplayProperty = false) }
-            } else {
-                current.state.properties
-            }
+            } else current.state.properties
             current.copy(state = current.state.copy(properties = currentProps + property))
         }
     }
@@ -299,9 +279,7 @@ class EditCreateViewModel(
     fun onRemoveNodeSchemaProperty(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNodeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                removeAt(index)
-            }
+            val newProperties = current.state.properties.toMutableList().apply { removeAt(index) }
             current.copy(state = current.state.copy(properties = newProperties))
         }
     }
@@ -309,11 +287,13 @@ class EditCreateViewModel(
     // --- Edge Schema Creation ---
     fun initiateEdgeSchemaCreation() {
         val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
-        viewModelScope.launch {
-            metadataViewModel.setItemToEdit("CreateEdgeSchema")
-        }
+        // Start with basic source/target roles as defaults
+        val defaultRoles = listOf(
+            RoleDefinition("Source", emptyList(), RoleCardinality.One),
+            RoleDefinition("Target", emptyList(), RoleCardinality.One)
+        )
         _editScreenState.value = EditScreenState.CreateEdgeSchema(
-            EdgeSchemaCreationState(allNodeSchemas = nodeSchemas)
+            EdgeSchemaCreationState(allNodeSchemas = nodeSchemas, roles = defaultRoles)
         )
     }
 
@@ -325,38 +305,40 @@ class EditCreateViewModel(
         }
     }
 
-    fun onAddEdgeSchemaConnection(src: String, dst: String) {
+    fun onAddEdgeSchemaRole(role: RoleDefinition) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdgeSchema) return@update current
-            val newConnection = ConnectionPair(src, dst)
-            if (!current.state.connections.contains(newConnection)) {
-                current.copy(state = current.state.copy(connections = current.state.connections + newConnection))
-            } else {
-                current
-            }
+            current.copy(state = current.state.copy(roles = current.state.roles + role))
         }
     }
 
-    fun onRemoveEdgeSchemaConnection(index: Int) {
+    fun onRemoveEdgeSchemaRole(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdgeSchema) return@update current
-            val newConnections = current.state.connections.toMutableList().apply {
-                removeAt(index)
-            }
-            current.copy(state = current.state.copy(connections = newConnections))
+            val newRoles = current.state.roles.toMutableList().apply { removeAt(index) }
+            current.copy(state = current.state.copy(roles = newRoles))
+        }
+    }
+
+    fun onEdgeSchemaRoleChange(index: Int, role: RoleDefinition) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateEdgeSchema) return@update current
+            val newRoles = current.state.roles.toMutableList().apply { this[index] = role }
+            val error = validateRole(index, role, newRoles)
+            val newErrors = current.state.roleErrors.toMutableMap()
+            if (error != null) newErrors[index] = error else newErrors.remove(index)
+
+            current.copy(state = current.state.copy(roles = newRoles, roleErrors = newErrors))
         }
     }
 
     fun onEdgeSchemaPropertyChange(index: Int, property: SchemaProperty) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdgeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                this[index] = property
-            }
+            val newProperties = current.state.properties.toMutableList().apply { this[index] = property }
             val error = validateProperty(index, property, newProperties)
             val newErrors = current.state.propertyErrors.toMutableMap()
             if (error != null) newErrors[index] = error else newErrors.remove(index)
-
             current.copy(state = current.state.copy(properties = newProperties, propertyErrors = newErrors))
         }
     }
@@ -371,9 +353,7 @@ class EditCreateViewModel(
     fun onRemoveEdgeSchemaProperty(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateEdgeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                removeAt(index)
-            }
+            val newProperties = current.state.properties.toMutableList().apply { removeAt(index) }
             current.copy(state = current.state.copy(properties = newProperties))
         }
     }
@@ -384,7 +364,6 @@ class EditCreateViewModel(
             val editState = repository.getNodeEditState(item.id)
             if (editState != null) {
                 _editScreenState.value = EditScreenState.EditNode(editState)
-                metadataViewModel.setItemToEdit(item)
             }
         }
     }
@@ -392,9 +371,7 @@ class EditCreateViewModel(
     fun updateNodeEditProperty(key: String, value: String) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditNode) return@update current
-            val newProperties = current.state.properties.toMutableMap().apply {
-                this[key] = value
-            }
+            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
             current.copy(state = current.state.copy(properties = newProperties))
         }
     }
@@ -405,7 +382,8 @@ class EditCreateViewModel(
             val editState = repository.getEdgeEditState(item)
             if (editState != null) {
                 _editScreenState.value = EditScreenState.EditEdge(editState)
-                metadataViewModel.setItemToEdit(item)
+            } else {
+                println("Could not initiate edit for edge ${item.id}.")
             }
         }
     }
@@ -413,9 +391,7 @@ class EditCreateViewModel(
     fun updateEdgeEditProperty(key: String, value: String) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditEdge) return@update current
-            val newProperties = current.state.properties.toMutableMap().apply {
-                this[key] = value
-            }
+            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
             current.copy(state = current.state.copy(properties = newProperties))
         }
     }
@@ -439,15 +415,26 @@ class EditCreateViewModel(
         }
     }
 
+    fun updateNodeSchemaEditProperty(index: Int, property: SchemaProperty) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNodeSchema) return@update current
+            val newProperties = current.state.properties.toMutableList().apply { this[index] = property }
+            val finalProperties = if (property.isDisplayProperty) {
+                newProperties.mapIndexed { i, p -> if (i == index) p else p.copy(isDisplayProperty = false) }
+            } else newProperties
+            val error = validateProperty(index, property, newProperties)
+            val newErrors = current.state.propertyErrors.toMutableMap()
+            if (error != null) newErrors[index] = error else newErrors.remove(index)
+            current.copy(state = current.state.copy(properties = finalProperties, propertyErrors = newErrors))
+        }
+    }
+
     fun updateNodeSchemaEditAddProperty(property: SchemaProperty) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditNodeSchema) return@update current
-            // Reset display property of others if new one is display
             val currentProps = if (property.isDisplayProperty) {
                 current.state.properties.map { it.copy(isDisplayProperty = false) }
-            } else {
-                current.state.properties
-            }
+            } else current.state.properties
             current.copy(state = current.state.copy(properties = currentProps + property))
         }
     }
@@ -455,33 +442,8 @@ class EditCreateViewModel(
     fun updateNodeSchemaEditRemoveProperty(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditNodeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                removeAt(index)
-            }
+            val newProperties = current.state.properties.toMutableList().apply { removeAt(index) }
             current.copy(state = current.state.copy(properties = newProperties))
-        }
-    }
-
-    fun updateNodeSchemaEditProperty(index: Int, property: SchemaProperty) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditNodeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                this[index] = property
-            }
-
-            val finalProperties = if (property.isDisplayProperty) {
-                newProperties.mapIndexed { i, p ->
-                    if (i == index) p else p.copy(isDisplayProperty = false)
-                }.toList()
-            } else {
-                newProperties
-            }
-
-            val error = validateProperty(index, property, finalProperties)
-            val newErrors = current.state.propertyErrors.toMutableMap()
-            if (error != null) newErrors[index] = error else newErrors.remove(index)
-
-            current.copy(state = current.state.copy(properties = finalProperties, propertyErrors = newErrors))
         }
     }
 
@@ -492,7 +454,7 @@ class EditCreateViewModel(
             EdgeSchemaEditState(
                 originalSchema = schema,
                 currentName = schema.name,
-                connections = schema.connections ?: emptyList(),
+                roles = schema.roleDefinitions ?: emptyList(),
                 properties = schema.properties,
                 allNodeSchemas = allNodeSchemas
             )
@@ -507,6 +469,43 @@ class EditCreateViewModel(
         }
     }
 
+    fun updateEdgeSchemaEditRole(index: Int, role: RoleDefinition) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditEdgeSchema) return@update current
+            val newRoles = current.state.roles.toMutableList().apply { this[index] = role }
+            val error = validateRole(index, role, newRoles)
+            val newErrors = current.state.roleErrors.toMutableMap()
+            if (error != null) newErrors[index] = error else newErrors.remove(index)
+            current.copy(state = current.state.copy(roles = newRoles, roleErrors = newErrors))
+        }
+    }
+
+    fun updateEdgeSchemaEditAddRole(role: RoleDefinition) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditEdgeSchema) return@update current
+            current.copy(state = current.state.copy(roles = current.state.roles + role))
+        }
+    }
+
+    fun updateEdgeSchemaEditRemoveRole(index: Int) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditEdgeSchema) return@update current
+            val newRoles = current.state.roles.toMutableList().apply { removeAt(index) }
+            current.copy(state = current.state.copy(roles = newRoles))
+        }
+    }
+
+    fun updateEdgeSchemaEditProperty(index: Int, property: SchemaProperty) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditEdgeSchema) return@update current
+            val newProperties = current.state.properties.toMutableList().apply { this[index] = property }
+            val error = validateProperty(index, property, newProperties)
+            val newErrors = current.state.propertyErrors.toMutableMap()
+            if (error != null) newErrors[index] = error else newErrors.remove(index)
+            current.copy(state = current.state.copy(properties = newProperties, propertyErrors = newErrors))
+        }
+    }
+
     fun updateEdgeSchemaEditAddProperty(property: SchemaProperty) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditEdgeSchema) return@update current
@@ -517,46 +516,8 @@ class EditCreateViewModel(
     fun updateEdgeSchemaEditRemoveProperty(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditEdgeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                removeAt(index)
-            }
+            val newProperties = current.state.properties.toMutableList().apply { removeAt(index) }
             current.copy(state = current.state.copy(properties = newProperties))
-        }
-    }
-
-    fun updateEdgeSchemaEditProperty(index: Int, property: SchemaProperty) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditEdgeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList().apply {
-                this[index] = property
-            }
-            val error = validateProperty(index, property, newProperties)
-            val newErrors = current.state.propertyErrors.toMutableMap()
-            if (error != null) newErrors[index] = error else newErrors.remove(index)
-
-            current.copy(state = current.state.copy(properties = newProperties, propertyErrors = newErrors))
-        }
-    }
-
-    fun updateEdgeSchemaEditAddConnection(src: String, dst: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditEdgeSchema) return@update current
-            val newConnection = ConnectionPair(src, dst)
-            if (!current.state.connections.contains(newConnection)) {
-                current.copy(state = current.state.copy(connections = current.state.connections + newConnection))
-            } else {
-                current
-            }
-        }
-    }
-
-    fun updateEdgeSchemaEditRemoveConnection(index: Int) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditEdgeSchema) return@update current
-            val newConnections = current.state.connections.toMutableList().apply {
-                removeAt(index)
-            }
-            current.copy(state = current.state.copy(connections = newConnections))
         }
     }
 }

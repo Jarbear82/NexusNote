@@ -1,6 +1,6 @@
 -- AppDatabase.sq
 import com.tau.nexusnote.datamodels.SchemaProperty;
-import com.tau.nexusnote.datamodels.ConnectionPair;
+import com.tau.nexusnote.datamodels.RoleDefinition;
 import kotlin.collections.List;
 import kotlin.Boolean;
 
@@ -9,7 +9,7 @@ id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
 name TEXT NOT NULL UNIQUE,
 properties_json TEXT AS List<SchemaProperty> NOT NULL,
-connections_json TEXT AS List<ConnectionPair> NOT NULL
+roles_json TEXT AS List<RoleDefinition> NOT NULL
 );
 
 CREATE TABLE Node (
@@ -23,15 +23,22 @@ FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
 FOREIGN KEY(parent_id) REFERENCES Node(id) ON DELETE SET NULL
 );
 
+-- 1. The Edge table now represents the "Hypernode" itself (Phase 1 Update)
 CREATE TABLE Edge (
 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 schema_id INTEGER NOT NULL,
-from_node_id INTEGER NOT NULL,
-to_node_id INTEGER NOT NULL,
 properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
-FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
-FOREIGN KEY(from_node_id) REFERENCES Node(id) ON DELETE CASCADE,
-FOREIGN KEY(to_node_id) REFERENCES Node(id) ON DELETE CASCADE
+FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE
+);
+
+-- 2. New Join Table: Links Nodes to Edges (Phase 1 Update)
+CREATE TABLE EdgeLink (
+edge_id INTEGER NOT NULL,
+node_id INTEGER NOT NULL,
+role TEXT, -- "source", "target", etc.
+PRIMARY KEY(edge_id, node_id, role), -- Updated PK to allow same node in different roles
+FOREIGN KEY(edge_id) REFERENCES Edge(id) ON DELETE CASCADE,
+FOREIGN KEY(node_id) REFERENCES Node(id) ON DELETE CASCADE
 );
 
 CREATE TABLE LayoutConstraint (
@@ -50,12 +57,12 @@ selectSchemaById:
 SELECT * FROM SchemaDefinition WHERE id = ?;
 
 insertSchema:
-INSERT INTO SchemaDefinition(type, name, properties_json, connections_json)
+INSERT INTO SchemaDefinition(type, name, properties_json, roles_json)
 VALUES (?, ?, ?, ?);
 
 updateSchema:
 UPDATE SchemaDefinition
-SET name = ?, properties_json = ?, connections_json = ?
+SET name = ?, properties_json = ?, roles_json = ?
 WHERE id = ?;
 
 deleteSchemaById:
@@ -114,9 +121,10 @@ SELECT * FROM Edge WHERE id = ?;
 countEdgesForSchema:
 SELECT COUNT(*) FROM Edge WHERE schema_id = ?;
 
+-- Updated Insert (No longer takes node IDs directly)
 insertEdge:
-INSERT INTO Edge(schema_id, from_node_id, to_node_id, properties_json)
-VALUES (?, ?, ?, ?);
+INSERT INTO Edge(schema_id, properties_json)
+VALUES (?, ?);
 
 updateEdgeProperties:
 UPDATE Edge
@@ -131,6 +139,20 @@ SELECT * FROM Edge LIMIT ? OFFSET ?;
 
 countAllEdges:
 SELECT COUNT(*) FROM Edge;
+
+--- EdgeLink Queries (New) ---
+
+insertEdgeLink:
+INSERT INTO EdgeLink(edge_id, node_id, role) VALUES (?, ?, ?);
+
+selectEdgeLinks:
+SELECT * FROM EdgeLink WHERE edge_id = ?;
+
+selectAllEdgeLinks:
+SELECT * FROM EdgeLink;
+
+selectLinksForEdgeIds:
+SELECT * FROM EdgeLink WHERE edge_id IN ?;
 
 --- LayoutConstraint Queries ---
 

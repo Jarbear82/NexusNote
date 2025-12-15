@@ -1,7 +1,7 @@
 package com.tau.nexusnote.db
 
 import app.cash.sqldelight.ColumnAdapter
-import com.tau.nexusnote.datamodels.ConnectionPair
+import com.tau.nexusnote.datamodels.RoleDefinition
 import com.tau.nexusnote.datamodels.SchemaProperty
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -16,6 +16,7 @@ private val dbJson = Json {
     isLenient = true
     coerceInputValues = true
     encodeDefaults = true
+    classDiscriminator = "type" // For sealed class polymorphism if needed, default is 'type'
 }
 
 /**
@@ -32,19 +33,16 @@ val schemaPropertyAdapter = object : ColumnAdapter<List<SchemaProperty>, String>
 }
 
 /**
- * Adapter for `SchemaDefinition.connections_json`
- * Converts List<ConnectionPair> to/from a NON-NULL JSON String.
+ * Adapter for `SchemaDefinition.roles_json`
+ * Converts List<RoleDefinition> to/from a NON-NULL JSON String.
  */
-val connectionPairAdapter = object : ColumnAdapter<List<ConnectionPair>, String> {
-    override fun decode(databaseValue: String): List<ConnectionPair> {
-        // databaseValue will be "[]" for nodes, not null
-        return dbJson.decodeFromString(ListSerializer(ConnectionPair.serializer()), databaseValue)
+val roleDefinitionListAdapter = object : ColumnAdapter<List<RoleDefinition>, String> {
+    override fun decode(databaseValue: String): List<RoleDefinition> {
+        return dbJson.decodeFromString(ListSerializer(RoleDefinition.serializer()), databaseValue)
     }
 
-    override fun encode(value: List<ConnectionPair>): String {
-        // Must return a non-null string, handle the empty case
-        // Encode empty list as "[]" string
-        return dbJson.encodeToString(ListSerializer(ConnectionPair.serializer()), value)
+    override fun encode(value: List<RoleDefinition>): String {
+        return dbJson.encodeToString(ListSerializer(RoleDefinition.serializer()), value)
     }
 }
 

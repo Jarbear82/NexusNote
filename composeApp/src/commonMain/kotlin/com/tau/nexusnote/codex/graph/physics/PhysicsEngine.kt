@@ -65,7 +65,10 @@ class PhysicsEngine() {
         // Build the QuadTree
         val quadTree = QuadTree(boundary)
         for (node in newNodes.values) {
-            quadTree.insert(node)
+            // Phase 5 Tuning: Lower repulsion mass of Hypernodes so they don't push 'real' nodes too aggressively
+            val massForRepulsion = if (node.isHyperNode) 0.1f else node.mass
+            // We create a temporary copy just for insertion to affect the tree calculation
+            quadTree.insert(node.copy(mass = massForRepulsion))
         }
 
         // Calculate repulsion force for each node
@@ -94,8 +97,15 @@ class PhysicsEngine() {
                 // The "ideal" length of the spring is the sum of radii + a buffer
                 val idealLength = nodeA.radius + nodeB.radius + (options.minDistance * 5)
 
+                // Phase 5 Tuning: Increase spring strength for edges connected to Hypernodes
+                // This keeps the n-nary cluster tight.
+                var strengthMultiplier = 1.0f
+                if (nodeA.isHyperNode || nodeB.isHyperNode) {
+                    strengthMultiplier = 3.0f
+                }
+
                 val displacement = dist - idealLength
-                val springForce = delta.normalized() * displacement * options.spring * edge.strength
+                val springForce = delta.normalized() * displacement * options.spring * edge.strength * strengthMultiplier
 
                 forces[nodeA.id] = forces[nodeA.id]!! + springForce
                 forces[nodeB.id] = forces[nodeB.id]!! - springForce
@@ -194,4 +204,3 @@ private fun Offset.normalized(): Offset {
     val mag = this.getDistance()
     return if (mag == 0f) Offset.Zero else this / mag
 }
-

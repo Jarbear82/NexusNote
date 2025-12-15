@@ -270,8 +270,8 @@ fun CodexView(viewModel: CodexViewModel) {
                                 viewModel.editCreateViewModel.initiateNodeCreation(item)
                                 viewModel.selectDataTab(DataViewTabs.EDIT)
                             },
-                            onAddEdgeClick = { schema, connection ->
-                                viewModel.editCreateViewModel.initiateEdgeCreation(schema, connection)
+                            onAddEdgeClick = { schema ->
+                                viewModel.editCreateViewModel.initiateEdgeCreation(schema)
                                 viewModel.selectDataTab(DataViewTabs.EDIT)
                             },
                             nodeSchemaSearchText = nodeSchemaSearchText,
@@ -285,35 +285,51 @@ fun CodexView(viewModel: CodexViewModel) {
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
                             onCancelClick = onCancel,
+
+                            // Node Creation
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
+
+                            // Edge Creation
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },
-                            onEdgeCreationConnectionSelected = { viewModel.editCreateViewModel.updateEdgeCreationConnection(it) },
-                            onEdgeCreationSrcSelected = { viewModel.editCreateViewModel.updateEdgeCreationSrc(it) },
-                            onEdgeCreationDstSelected = { viewModel.editCreateViewModel.updateEdgeCreationDst(it) },
+                            onEdgeCreationAddParticipant = { role -> viewModel.editCreateViewModel.addEdgeCreationParticipant(role) },
+                            onEdgeCreationRemoveParticipant = { index -> viewModel.editCreateViewModel.removeEdgeCreationParticipant(index) },
+                            onEdgeCreationParticipantSelected = { index, node -> viewModel.editCreateViewModel.updateEdgeCreationParticipantNode(index, node) },
                             onEdgeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateEdgeCreationProperty(k, v) },
+
+                            // Node Schema Creation
                             onNodeSchemaTableNameChange = { viewModel.editCreateViewModel.onNodeSchemaTableNameChange(it) },
                             onNodeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onNodeSchemaPropertyChange(i, p) },
                             onAddNodeSchemaProperty = { viewModel.editCreateViewModel.onAddNodeSchemaProperty(it) },
                             onRemoveNodeSchemaProperty = { viewModel.editCreateViewModel.onRemoveNodeSchemaProperty(it) },
+
+                            // Edge Schema Creation
                             onEdgeSchemaTableNameChange = { viewModel.editCreateViewModel.onEdgeSchemaTableNameChange(it) },
-                            onEdgeSchemaCreationAddConnection = { s, d -> viewModel.editCreateViewModel.onAddEdgeSchemaConnection(s, d) },
-                            onEdgeSchemaCreationRemoveConnection = { viewModel.editCreateViewModel.onRemoveEdgeSchemaConnection(it) },
+                            onEdgeSchemaAddRole = { viewModel.editCreateViewModel.onAddEdgeSchemaRole(it) },
+                            onEdgeSchemaRemoveRole = { viewModel.editCreateViewModel.onRemoveEdgeSchemaRole(it) },
+                            onEdgeSchemaRoleChange = { i, r -> viewModel.editCreateViewModel.onEdgeSchemaRoleChange(i, r) },
                             onEdgeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onEdgeSchemaPropertyChange(i, p) },
                             onAddEdgeSchemaProperty = { viewModel.editCreateViewModel.onAddEdgeSchemaProperty(it) },
                             onRemoveEdgeSchemaProperty = { viewModel.editCreateViewModel.onRemoveEdgeSchemaProperty(it) },
+
+                            // Edit Instance
                             onNodeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateNodeEditProperty(k, v) },
                             onEdgeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateEdgeEditProperty(k, v) },
+
+                            // Edit Node Schema
                             onNodeSchemaEditLabelChange = { viewModel.editCreateViewModel.updateNodeSchemaEditLabel(it) },
                             onNodeSchemaEditPropertyChange = { i, p -> viewModel.editCreateViewModel.updateNodeSchemaEditProperty(i, p) },
                             onNodeSchemaEditAddProperty = { viewModel.editCreateViewModel.updateNodeSchemaEditAddProperty(it) },
                             onNodeSchemaEditRemoveProperty = { viewModel.editCreateViewModel.updateNodeSchemaEditRemoveProperty(it) },
+
+                            // Edit Edge Schema
                             onEdgeSchemaEditLabelChange = { viewModel.editCreateViewModel.updateEdgeSchemaEditLabel(it) },
                             onEdgeSchemaEditPropertyChange = { i, p -> viewModel.editCreateViewModel.updateEdgeSchemaEditProperty(i, p) },
                             onEdgeSchemaEditAddProperty = { viewModel.editCreateViewModel.updateEdgeSchemaEditAddProperty(it) },
                             onEdgeSchemaEditRemoveProperty = { viewModel.editCreateViewModel.updateEdgeSchemaEditRemoveProperty(it) },
-                            onEdgeSchemaEditAddConnection = { s, d -> viewModel.editCreateViewModel.updateEdgeSchemaEditAddConnection(s, d) },
-                            onEdgeSchemaEditRemoveConnection = { viewModel.editCreateViewModel.updateEdgeSchemaEditRemoveConnection(it) }
+                            onEdgeSchemaEditAddRole = { viewModel.editCreateViewModel.updateEdgeSchemaEditAddRole(it) },
+                            onEdgeSchemaEditRemoveRole = { viewModel.editCreateViewModel.updateEdgeSchemaEditRemoveRole(it) },
+                            onEdgeSchemaEditRoleChange = { i, r -> viewModel.editCreateViewModel.updateEdgeSchemaEditRole(i, r) }
                         )
                     }
                 }

@@ -1,5 +1,6 @@
 package com.tau.nexusnote.datamodels
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -16,14 +17,33 @@ data class SchemaProperty(
 )
 
 /**
- * Represents a connection pair for an edge schema.
- * @param src The name of the source node schema (e.t., "Person").
- * @param dst The name of the destination node schema (e.g., "Location").
+ * Defines how many nodes can/must fill a specific role.
  */
-@Serializable // For storing in SchemaDefinition properties
-data class ConnectionPair(
-    val src: String,
-    val dst: String
+@Serializable
+sealed class RoleCardinality {
+    @Serializable @SerialName("One") object One : RoleCardinality()
+    @Serializable @SerialName("Many") object Many : RoleCardinality()
+    @Serializable @SerialName("Exact") data class Exact(val count: Int) : RoleCardinality()
+
+    override fun toString(): String {
+        return when(this) {
+            is One -> "One"
+            is Many -> "Many"
+            is Exact -> "Exact ($count)"
+        }
+    }
+}
+
+/**
+ * Represents a Role within an Edge Schema.
+ * E.g., for a "Directed Edge", roles might be "Source" (One) and "Target" (One).
+ * For a "Meeting", roles might be "Organizer" (One), "Attendees" (Many), "Room" (One).
+ */
+@Serializable
+data class RoleDefinition(
+    val name: String,
+    val allowedNodeSchemas: List<String>, // List of Schema Names (Strings)
+    val cardinality: RoleCardinality = RoleCardinality.One
 )
 
 /**
@@ -33,12 +53,12 @@ data class ConnectionPair(
  * @param type "NODE" or "EDGE".
  * @param name The name of the schema (e.g., "Person", "KNOWS").
  * @param properties The list of user-defined properties.
- * @param connections For EDGE schemas, the list of allowed connections.
+ * @param roleDefinitions For EDGE schemas, the list of defined roles.
  */
 data class SchemaDefinitionItem(
     val id: Long,
     val type: String,
     val name: String,
     val properties: List<SchemaProperty>,
-    val connections: List<ConnectionPair>? = null
+    val roleDefinitions: List<RoleDefinition>? = null
 )

@@ -3,7 +3,7 @@ package com.tau.nexusnote
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.tau.nexusnote.db.AppDatabase
-import com.tau.nexusnote.db.connectionPairAdapter
+import com.tau.nexusnote.db.roleDefinitionListAdapter
 import com.tau.nexusnote.db.schemaPropertyAdapter
 import com.tau.nexusnote.db.stringMapAdapter
 import com.tau.nexusnote.db.longListAdapter
@@ -49,7 +49,7 @@ actual class SqliteDbService actual constructor() {
             driver = driver!!,
             SchemaDefinitionAdapter = SchemaDefinition.Adapter(
                 properties_jsonAdapter = schemaPropertyAdapter,
-                connections_jsonAdapter = connectionPairAdapter
+                roles_jsonAdapter = roleDefinitionListAdapter
             ),
             NodeAdapter = Node.Adapter(
                 properties_jsonAdapter = stringMapAdapter

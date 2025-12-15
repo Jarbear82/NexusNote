@@ -4,7 +4,7 @@ import androidx.compose.ui.geometry.Offset
 
 /**
  * Represents the physical state of a node in the graph simulation.
- * @param id The unique ID from the database.
+ * @param id The unique ID from the database. For Hypernodes (Edges), this is usually negative.
  * @param label The schema name (e.g., "Person").
  * @param displayProperty The text to show (e.g., "John Doe").
  * @param pos The current x/y position in the simulation space (Center).
@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
  * @param width The width of the node (important for compound nodes).
  * @param height The height of the node (important for compound nodes).
  * @param isCompound True if this node contains other nodes.
+ * @param isHyperNode True if this node represents an Edge (N-nary relationship).
  * @param colorInfo The color for drawing.
  * @param isFixed True if the node is being dragged by the user.
  * @param oldForce The net force applied to this node in the *previous* frame.
@@ -28,9 +29,10 @@ data class GraphNode(
     var vel: Offset,
     val mass: Float,
     val radius: Float,
-    val width: Float,   // Added for Phase 5
-    val height: Float,  // Added for Phase 5
-    val isCompound: Boolean = false, // Added for Phase 5
+    val width: Float,
+    val height: Float,
+    val isCompound: Boolean = false,
+    val isHyperNode: Boolean = false, // Flag for Hypernodes (Phase 5)
     val colorInfo: ColorInfo,
     var isFixed: Boolean = false,
     // --- State for ForceAtlas2 Adaptive Speed ---

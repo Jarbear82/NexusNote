@@ -12,8 +12,8 @@ import com.tau.nexusnote.ui.components.CodexSectionHeader
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MetadataView(
-    nodes: List<NodeDisplayItem>, // This is now the paginated list
-    edges: List<EdgeDisplayItem>, // This is now the paginated list
+    nodes: List<NodeDisplayItem>,
+    edges: List<EdgeDisplayItem>,
     primarySelectedItem: Any?,
     secondarySelectedItem: Any?,
     onNodeClick: (NodeDisplayItem) -> Unit,
@@ -34,20 +34,30 @@ fun MetadataView(
         CodexSectionHeader("Selection Details")
 
         val primaryNode = primarySelectedItem as? NodeDisplayItem
-        val secondaryNode = secondarySelectedItem as? NodeDisplayItem
+        val selectedEdge = primarySelectedItem as? EdgeDisplayItem
 
-        if (primaryNode != null && secondaryNode != null) {
-            Text(
-                "Source: ${primaryNode.label} : ${primaryNode.displayProperty}\n" +
-                        "Destination: ${secondaryNode.label} : ${secondaryNode.displayProperty}",
-                style = MaterialTheme.typography.bodyMedium
-            )
-        } else if (primaryNode != null) {
+        if (primaryNode != null) {
             Text(
                 "Selected Node:\n" +
                         "${primaryNode.label} : ${primaryNode.displayProperty}",
                 style = MaterialTheme.typography.bodyMedium
             )
+        } else if (selectedEdge != null) {
+            Text("Selected Edge: ${selectedEdge.label}", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(4.dp))
+
+            if (selectedEdge.participatingNodes.isNotEmpty()) {
+                Text("Participants:", style = MaterialTheme.typography.bodySmall)
+                selectedEdge.participatingNodes.forEach { part ->
+                    Text(
+                        " - ${part.node.label}: ${part.node.displayProperty} (${part.role ?: "No Role"})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            } else {
+                Text("No participants linked.", style = MaterialTheme.typography.bodySmall)
+            }
         } else if (primarySelectedItem != null) {
             Text(
                 "Selected Item: $primarySelectedItem",

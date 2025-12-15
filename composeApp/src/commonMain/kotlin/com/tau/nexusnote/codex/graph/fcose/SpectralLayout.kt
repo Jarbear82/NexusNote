@@ -404,11 +404,14 @@ class SpectralLayout : LayoutPhase {
         nodes.forEachIndexed { index, node ->
             if (!node.isFixed) {
                 val (x, y) = coords[index]
-                node.setCenter(x * scale, y * scale)
+                // Add random noise
+                val jitterX = (Math.random() - 0.5) * 50.0
+                val jitterY = (Math.random() - 0.5) * 50.0
+
+                node.setCenter((x * scale) + jitterX, (y * scale) + jitterY)
             }
         }
     }
-
     private fun cleanup(graph: FcGraph) {
         dummyEdges.forEach { graph.removeEdge(it) }
         dummyEdges.clear()

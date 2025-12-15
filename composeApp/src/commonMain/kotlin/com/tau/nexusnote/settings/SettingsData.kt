@@ -59,13 +59,13 @@ This re-uses the PhysicsOptions data class.
 data class GraphPhysicsSettings(
     val options: PhysicsOptions = PhysicsOptions(
         gravity = 0.5f,
-        repulsion = 2000f,
-        spring = 0.1f,
-        damping = 0.9f,
+        repulsion = 600f,
+        spring = 0.5f,
+        damping = 0.8f,
         nodeBaseRadius = 15f,
-        nodeRadiusEdgeFactor = 2.0f,
-        minDistance = 2.0f,
-        barnesHutTheta = 1.2f,
+        nodeRadiusEdgeFactor = 1.0f,
+        minDistance = 10.0f,
+        barnesHutTheta = 0.8f,
         tolerance = 1.0f
     )
 ) {

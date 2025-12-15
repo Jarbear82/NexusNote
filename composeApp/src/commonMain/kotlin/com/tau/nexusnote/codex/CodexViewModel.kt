@@ -86,11 +86,17 @@ class CodexViewModel(
             ) { nodes, edges, nodeViz, edgeViz ->
                 val visibleNodes = nodes.filter { nodeViz[it.id] ?: true }
                 val visibleNodeIds = visibleNodes.map { it.id }.toSet()
-                val visibleEdges = edges.filter {
-                    (edgeViz[it.id] ?: true) &&
-                            (it.src.id in visibleNodeIds) &&
-                            (it.dst.id in visibleNodeIds)
+
+                val visibleEdges = edges.filter { edge ->
+                    val isExplicitlyVisible = edgeViz[edge.id] ?: true
+                    // For N-nary edges, the edge is visible if explicitly set AND
+                    // at least one participant is visible (to avoid floating orphan edges)
+                    // Updated to access the node inside the participant wrapper
+                    val hasVisibleParticipants = edge.participatingNodes.any { it.node.id in visibleNodeIds }
+
+                    isExplicitlyVisible && hasVisibleParticipants
                 }
+
                 visibleNodes to visibleEdges
             }.collectLatest { (visibleNodes, visibleEdges) ->
                 graphViewModel.updateGraphData(visibleNodes, visibleEdges)

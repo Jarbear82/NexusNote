@@ -267,6 +267,11 @@ fun GraphView(
                         val total = linkCounts[undirectedPair] ?: 1
                         val index = pairDrawIndex.getOrPut(pair) { 0 }
 
+                        // Note: For Hyperedges (Phase 5), arrow logic is standard:
+                        // ViewModel creates spokes as Hypernode -> Participant.
+                        // drawCurvedEdge puts arrow at 'to' (Participant).
+                        // This matches requirements for N-nary visual representation.
+
                         drawCurvedEdge(
                             from = nodeA,
                             to = nodeB,
@@ -282,7 +287,7 @@ fun GraphView(
                     }
                 }
 
-                // --- 3. Draw Simple Nodes (Foreground) ---
+                // --- 3. Draw Nodes (Foreground) ---
                 drawNodes(
                     nodes = nodes.filterValues { !it.isCompound }, // Only simple nodes
                     visibleWorldRect = visibleWorldRect,
@@ -432,7 +437,7 @@ private fun DrawScope.drawSelfLoop(
 ) {
     val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
     val strokeWidth = 2f
-    val arrowSize = 6f
+    val arrowSize = 12f
     val loopRadius = 25f + (index * 12f)
     val loopSeparation = node.radius + 5f
     val startAngle = (45f).degToRad()
@@ -479,7 +484,7 @@ private fun DrawScope.drawCurvedEdge(
 ) {
     val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
     val strokeWidth = 2f
-    val arrowSize = 6f
+    val arrowSize = 12f
 
     val start = from.pos
     val end = to.pos
@@ -487,6 +492,10 @@ private fun DrawScope.drawCurvedEdge(
     val midPoint = (start + end) / 2f
 
     val isStraight = (total == 1)
+
+    // For Hypernodes (Phase 5), we visually start/end at the radius boundary.
+    // However, since Hypernodes don't draw a circle, the radius acts as a text padding boundary.
+    // This logic remains consistent.
 
     if (isStraight) {
         val startWithRadius = from.pos + delta.normalized() * from.radius
@@ -540,8 +549,7 @@ private fun DrawScope.drawArrowhead(from: Offset, to: Offset, color: Color, size
     val delta = to - from
     if (delta == Offset.Zero) return
 
-    val angle = atan2(delta.y, delta.x)
-    val angleRad = angle.toFloat()
+    val angleRad = atan2(delta.y, delta.x)
 
     val p1 = to + Offset(cos(angleRad + 150f.degToRad()) * size, sin(angleRad + 150f.degToRad()) * size)
     val p2 = to + Offset(cos(angleRad - 150f.degToRad()) * size, sin(angleRad - 150f.degToRad()) * size)
@@ -585,7 +593,6 @@ private fun DrawScope.drawNodes(
 
     for (node in nodes.values) {
         // --- CULLING CHECK ---
-        // Create a bounding box for the node and check if it overlaps the visible rect
         val nodeRect = Rect(
             left = node.pos.x - node.radius,
             top = node.pos.y - node.radius,
@@ -593,40 +600,75 @@ private fun DrawScope.drawNodes(
             bottom = node.pos.y + node.radius
         )
         if (!visibleWorldRect.overlaps(nodeRect)) {
-            continue // Skip drawing this node
+            continue
         }
 
         val isSelected = node.id == primaryId || node.id == secondaryId
 
-        drawCircle(
-            color = node.colorInfo.composeColor,
-            radius = node.radius,
-            center = node.pos
-        )
-        drawCircle(
-            color = if (isSelected) selectionColor else node.colorInfo.composeFontColor,
-            radius = node.radius,
-            center = node.pos,
-            style = Stroke(width = if (isSelected) 3f else 1f)
-        )
-
-        if (showLabel && zoom > 0.5f) {
+        if (node.isHyperNode) {
+            // --- Phase 5: Hypernodes (Text Only) ---
+            // Draw just the display text centered at the node position.
+            // We use the edge label (displayProperty) for this.
             val textLayoutResult = textMeasurer.measure(
                 text = AnnotatedString(node.displayProperty),
-                style = style
+                style = style.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             )
-            val textPadding = 3f
+
+            // Center the text
+            val topLeft = Offset(
+                x = node.pos.x - (textLayoutResult.size.width / 2f),
+                y = node.pos.y - (textLayoutResult.size.height / 2f)
+            )
+
+            // Optional: Draw a subtle background for readability if selected
+            if (isSelected) {
+                drawRoundRect(
+                    color = selectionColor.copy(alpha = 0.2f),
+                    topLeft = topLeft - Offset(4f, 2f),
+                    size = Size(
+                        textLayoutResult.size.width + 8f,
+                        textLayoutResult.size.height + 4f
+                    ),
+                    cornerRadius = CornerRadius(4f, 4f)
+                )
+            }
+
             drawText(
                 textLayoutResult = textLayoutResult,
-                topLeft = Offset(
-                    x = node.pos.x - (textLayoutResult.size.width / 2f),
-                    y = node.pos.y + node.radius + textPadding
-                )
+                topLeft = topLeft,
+                // color = if (isSelected) selectionColor else node.colorInfo.composeFontColor
             )
+
+        } else {
+            // --- Standard Nodes (Circle + Label) ---
+            drawCircle(
+                color = node.colorInfo.composeColor,
+                radius = node.radius,
+                center = node.pos
+            )
+            drawCircle(
+                color = if (isSelected) selectionColor else node.colorInfo.composeFontColor,
+                radius = node.radius,
+                center = node.pos,
+                style = Stroke(width = if (isSelected) 3f else 1f)
+            )
+
+            if (showLabel && zoom > 0.5f) {
+                val textLayoutResult = textMeasurer.measure(
+                    text = AnnotatedString(node.displayProperty),
+                    style = style
+                )
+                val textPadding = 3f
+                drawText(
+                    textLayoutResult = textLayoutResult,
+                    topLeft = Offset(
+                        x = node.pos.x - (textLayoutResult.size.width / 2f),
+                        y = node.pos.y + node.radius + textPadding
+                    )
+                )
+            }
         }
     }
-
-
 }
 
 // --- Math Helpers ---

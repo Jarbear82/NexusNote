@@ -22,14 +22,24 @@ data class NodeCreationState(
     val properties: Map<String, String> = emptyMap() // UI state for text fields
 )
 
+// --- Helper for Dynamic Edge Participants ---
+data class ParticipantSelection(
+    val id: String, // Unique ID for UI keys (e.g. UUID or timestamp)
+    val role: String, // Matches RoleDefinition.name
+    val node: NodeDisplayItem? = null
+)
+
 // --- Data class for Edge Creation UI State ---
 data class EdgeCreationState(
     val schemas: List<SchemaDefinitionItem>, // All available EDGE schemas
     val availableNodes: List<NodeDisplayItem>,
     val selectedSchema: SchemaDefinitionItem? = null,
-    val selectedConnection: ConnectionPair? = null,
-    val src: NodeDisplayItem? = null,
-    val dst: NodeDisplayItem? = null,
+
+    // Tracks selections for each role.
+    // Logic:
+    // - For "One" cardinality roles: 1 ParticipantSelection in list (can be null node)
+    // - For "Many" cardinality roles: 0..N ParticipantSelection items in list
+    val participants: List<ParticipantSelection> = emptyList(),
     val properties: Map<String, String> = emptyMap()
 )
 
@@ -45,11 +55,12 @@ data class NodeSchemaCreationState(
 // --- Data class for Edge Schema Creation UI State ---
 data class EdgeSchemaCreationState(
     val tableName: String = "",
-    val connections: List<ConnectionPair> = emptyList(),
+    val roles: List<RoleDefinition> = emptyList(),
     val properties: List<SchemaProperty> = emptyList(),
     val allNodeSchemas: List<SchemaDefinitionItem> = emptyList(), // All NODE schemas
     val tableNameError: String? = null,
-    val propertyErrors: Map<Int, String?> = emptyMap()
+    val propertyErrors: Map<Int, String?> = emptyMap(),
+    val roleErrors: Map<Int, String?> = emptyMap()
 )
 
 // --- Data classes for Editing Instances ---
@@ -63,9 +74,8 @@ data class NodeEditState(
 data class EdgeEditState(
     val id: Long,
     val schema: SchemaDefinitionItem,
-    val src: NodeDisplayItem,
-    val dst: NodeDisplayItem,
-    val properties: Map<String, String> // Current values from DB, as strings for UI
+    val participants: List<ParticipantSelection>, // Read-only for now or editable if implemented
+    val properties: Map<String, String>
 )
 
 // --- Data classes for Editing Schemas ---
@@ -76,15 +86,15 @@ data class NodeSchemaEditState(
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap()
-    // Note: Diffing logic will be in the ViewModel, comparing this to originalSchema
 )
 
 data class EdgeSchemaEditState(
     val originalSchema: SchemaDefinitionItem,
     val currentName: String,
-    val connections: List<ConnectionPair>,
+    val roles: List<RoleDefinition>,
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap(),
+    val roleErrors: Map<Int, String?> = emptyMap(),
     val allNodeSchemas: List<SchemaDefinitionItem> = emptyList()
 )
