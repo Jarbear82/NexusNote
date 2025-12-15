@@ -113,8 +113,6 @@ class EditCreateViewModel(
 
     private fun saveNodeEdit(state: NodeEditState) {
         val config = state.schema?.config
-        // Re-use validation logic (mapping NodeEditState to NodeCreationState structure effectively)
-        // For simplicity, we implement a parallel validation helper for EditState
         val error = validateEditContent(state.nodeType, config, state)
 
         if (error != null) {
@@ -124,36 +122,23 @@ class EditCreateViewModel(
             return
         }
 
-        val content = buildEditNodeContent(state.nodeType, state)
-        val displayLabel = deriveDisplayLabel(state.nodeType, config, content, state.properties)
-
-        // Ideally we refactor Repository to accept content/labels directly in update
-        // but for now, we pass the state and assume Repository handles basic mapping.
-        // NOTE: For full complex content support, the Repository updateNode logic
-        // needs to be aligned with buildEditNodeContent.
         repository.updateNode(state)
         cancelAllEditing()
     }
 
     private fun validateContent(type: NodeType, config: SchemaConfig?, state: NodeCreationState): String? {
         return when (type) {
-            NodeType.SHORT_TEXT -> {
-                val limit = (config as? SchemaConfig.ShortTextConfig)?.charLimit ?: 140
-                if (state.textContent.length > limit) "Text exceeds limit of $limit characters."
-                else if (state.textContent.contains("\n")) "Short text cannot contain newlines."
-                else null
+            NodeType.TEXT -> {
+                if (config is SchemaConfig.TextConfig.PlainText) {
+                    val limit = config.charLimit
+                    if (limit != null && state.textContent.length > limit) "Text exceeds limit of $limit characters."
+                    else if (limit != null && state.textContent.contains("\n")) "Short text cannot contain newlines."
+                    else null
+                } else null
             }
             NodeType.TABLE -> {
                 val maxRows = (config as? SchemaConfig.TableConfig)?.maxRows
                 if (maxRows != null && state.tableRows.size > maxRows) "Table exceeds maximum of $maxRows rows."
-                else null
-            }
-            NodeType.SET -> {
-                if (state.listItems.size != state.listItems.distinct().size) "Set entries must be unique."
-                else null
-            }
-            NodeType.TAG -> {
-                if (state.tags.any { !it.matches(Regex("^[a-zA-Z0-9_]+$")) }) "Tags must be alphanumeric (no spaces/symbols)."
                 else null
             }
             else -> null
@@ -161,25 +146,18 @@ class EditCreateViewModel(
     }
 
     private fun validateEditContent(type: NodeType, config: SchemaConfig?, state: NodeEditState): String? {
-        // Parallel logic to above
         return when (type) {
-            NodeType.SHORT_TEXT -> {
-                val limit = (config as? SchemaConfig.ShortTextConfig)?.charLimit ?: 140
-                if (state.textContent.length > limit) "Text exceeds limit of $limit characters."
-                else if (state.textContent.contains("\n")) "Short text cannot contain newlines."
-                else null
+            NodeType.TEXT -> {
+                if (config is SchemaConfig.TextConfig.PlainText) {
+                    val limit = config.charLimit
+                    if (limit != null && state.textContent.length > limit) "Text exceeds limit of $limit characters."
+                    else if (limit != null && state.textContent.contains("\n")) "Short text cannot contain newlines."
+                    else null
+                } else null
             }
             NodeType.TABLE -> {
                 val maxRows = (config as? SchemaConfig.TableConfig)?.maxRows
                 if (maxRows != null && state.tableRows.size > maxRows) "Table exceeds maximum of $maxRows rows."
-                else null
-            }
-            NodeType.SET -> {
-                if (state.listItems.size != state.listItems.distinct().size) "Set entries must be unique."
-                else null
-            }
-            NodeType.TAG -> {
-                if (state.tags.any { !it.matches(Regex("^[a-zA-Z0-9_]+$")) }) "Tags must be alphanumeric (no spaces/symbols)."
                 else null
             }
             else -> null
@@ -190,44 +168,31 @@ class EditCreateViewModel(
         return when (type) {
             NodeType.MAP -> NodeContent.MapContent(state.properties)
             NodeType.TABLE -> NodeContent.TableContent(state.tableHeaders, state.tableRows)
-            NodeType.CODE_BLOCK -> NodeContent.CodeContent(state.codeContent, state.codeLanguage, state.codeFilename)
-            NodeType.TITLE, NodeType.HEADING -> {
+            NodeType.CODE -> NodeContent.CodeContent(state.codeContent, state.codeLanguage, state.codeFilename)
+            NodeType.TEXT -> {
                 // Apply Casing if config exists
-                val casing = (state.selectedSchema?.config as? SchemaConfig.HeadingConfig)?.casing
-                    ?: (state.selectedSchema?.config as? SchemaConfig.TitleConfig)?.casing
-                    ?: "None"
+                val config = state.selectedSchema?.config
+                val casing = when (config) {
+                    is SchemaConfig.TextConfig.Heading -> config.casing
+                    is SchemaConfig.TextConfig.Title -> config.casing
+                    else -> "None"
+                }
                 val text = applyCasing(state.textContent, casing)
                 NodeContent.TextContent(text)
             }
-            NodeType.SHORT_TEXT, NodeType.LONG_TEXT -> NodeContent.TextContent(state.textContent)
-            NodeType.ORDERED_LIST, NodeType.UNORDERED_LIST -> NodeContent.ListContent(state.listItems)
-            NodeType.TASK_LIST -> NodeContent.TaskListContent(state.taskListItems)
-            NodeType.SET -> NodeContent.SetContent(state.listItems.toSet())
-            NodeType.TAG -> NodeContent.TagContent(state.tags.firstOrNull() ?: "untagged") // Simplified: One tag per node usually, or list? Schema implies one content.
-            NodeType.IMAGE -> NodeContent.ImageContent(state.imagePath ?: "", state.imageCaption)
-            NodeType.DATE_TIMESTAMP -> NodeContent.DateTimestampContent(state.timestamp)
-        }
-    }
-
-    private fun buildEditNodeContent(type: NodeType, state: NodeEditState): NodeContent {
-        return when (type) {
-            NodeType.MAP -> NodeContent.MapContent(state.properties)
-            NodeType.TABLE -> NodeContent.TableContent(state.tableHeaders, state.tableRows)
-            NodeType.CODE_BLOCK -> NodeContent.CodeContent(state.codeContent, state.codeLanguage, state.codeFilename)
-            NodeType.TITLE, NodeType.HEADING -> {
-                val casing = (state.schema?.config as? SchemaConfig.HeadingConfig)?.casing
-                    ?: (state.schema?.config as? SchemaConfig.TitleConfig)?.casing
-                    ?: "None"
-                val text = applyCasing(state.textContent, casing)
-                NodeContent.TextContent(text)
+            NodeType.LIST -> {
+                val config = state.selectedSchema?.config
+                if (config is SchemaConfig.ListConfig.Task) {
+                    val items = state.taskListItems.map { ListItem(it.text, it.isCompleted) }
+                    NodeContent.ListContent(items)
+                } else {
+                    // Standard list (Ordered or Unordered)
+                    val items = state.listItems.map { ListItem(it, false) }
+                    NodeContent.ListContent(items)
+                }
             }
-            NodeType.SHORT_TEXT, NodeType.LONG_TEXT -> NodeContent.TextContent(state.textContent)
-            NodeType.ORDERED_LIST, NodeType.UNORDERED_LIST -> NodeContent.ListContent(state.listItems)
-            NodeType.TASK_LIST -> NodeContent.TaskListContent(state.taskListItems)
-            NodeType.SET -> NodeContent.SetContent(state.listItems.toSet())
-            NodeType.TAG -> NodeContent.TagContent(state.tags.firstOrNull() ?: "untagged")
-            NodeType.IMAGE -> NodeContent.ImageContent(state.imagePath ?: "", state.imageCaption)
-            NodeType.DATE_TIMESTAMP -> NodeContent.DateTimestampContent(state.timestamp)
+            NodeType.MEDIA -> NodeContent.MediaContent(state.imagePath ?: "", state.imageCaption)
+            NodeType.TIMESTAMP -> NodeContent.TimestampContent(state.timestamp)
         }
     }
 
@@ -237,13 +202,12 @@ class EditCreateViewModel(
                 val displayKey = (config as? SchemaConfig.MapConfig)?.properties?.firstOrNull { it.isDisplayProperty }?.name
                 properties[displayKey] ?: "Node"
             }
-            NodeType.TITLE, NodeType.HEADING, NodeType.SHORT_TEXT -> (content as? NodeContent.TextContent)?.text?.take(50) ?: "Text"
-            NodeType.LONG_TEXT -> (content as? NodeContent.TextContent)?.text?.take(30) + "..."
+            NodeType.TEXT -> (content as? NodeContent.TextContent)?.value?.take(50) ?: "Text"
             NodeType.TABLE -> "Table"
-            NodeType.CODE_BLOCK -> (content as? NodeContent.CodeContent)?.filename ?: "Code Snippet"
-            NodeType.IMAGE -> (content as? NodeContent.ImageContent)?.caption?.ifBlank { "Image" } ?: "Image"
-            NodeType.TAG -> (content as? NodeContent.TagContent)?.name ?: "Tag"
-            else -> type.name
+            NodeType.CODE -> (content as? NodeContent.CodeContent)?.filename ?: "Code Snippet"
+            NodeType.MEDIA -> (content as? NodeContent.MediaContent)?.caption?.ifBlank { "Media" } ?: "Media"
+            NodeType.LIST -> "List"
+            NodeType.TIMESTAMP -> "Timestamp"
         }
     }
 
@@ -264,28 +228,35 @@ class EditCreateViewModel(
                 showColumnHeaders = state.tableShowColumnHeaders,
                 maxRows = state.tableMaxRows.toIntOrNull()
             )
-            NodeType.CODE_BLOCK -> SchemaConfig.CodeBlockConfig(
+            NodeType.CODE -> SchemaConfig.CodeConfig(
                 defaultLanguage = state.codeDefaultLanguage,
                 showFilename = state.codeShowFilename
             )
-            NodeType.TITLE -> SchemaConfig.TitleConfig(casing = state.textCasing)
-            NodeType.HEADING -> SchemaConfig.HeadingConfig(
-                level = state.headingLevel.toInt(),
-                casing = state.textCasing
-            )
-            NodeType.SHORT_TEXT -> SchemaConfig.ShortTextConfig(
-                charLimit = state.shortTextCharLimit.toIntOrNull() ?: 140
-            )
-            NodeType.LONG_TEXT -> SchemaConfig.LongTextConfig
-            NodeType.ORDERED_LIST -> SchemaConfig.OrderedListConfig(
-                indicatorStyle = state.listIndicatorStyle
-            )
-            NodeType.UNORDERED_LIST -> SchemaConfig.UnorderedListConfig
-            NodeType.TASK_LIST -> SchemaConfig.TaskListConfig
-            NodeType.SET -> SchemaConfig.SetConfig
-            NodeType.TAG -> SchemaConfig.TagConfig
-            NodeType.IMAGE -> SchemaConfig.ImageConfig
-            NodeType.DATE_TIMESTAMP -> SchemaConfig.DateConfig()
+            NodeType.TEXT -> {
+                when (state.textSchemaType) {
+                    "Heading" -> SchemaConfig.TextConfig.Heading(
+                        level = state.headingLevel.toInt(),
+                        casing = state.textCasing
+                    )
+                    "Title" -> SchemaConfig.TextConfig.Title(
+                        casing = state.textCasing
+                    )
+                    else -> SchemaConfig.TextConfig.PlainText( // "Plain"
+                        charLimit = state.shortTextCharLimit.toIntOrNull()
+                    )
+                }
+            }
+            NodeType.LIST -> {
+                when (state.listSchemaType) {
+                    "Unordered" -> SchemaConfig.ListConfig.Unordered
+                    "Task" -> SchemaConfig.ListConfig.Task
+                    else -> SchemaConfig.ListConfig.Ordered( // "Ordered"
+                        indicatorStyle = state.listIndicatorStyle
+                    )
+                }
+            }
+            NodeType.MEDIA -> SchemaConfig.MediaConfig
+            NodeType.TIMESTAMP -> SchemaConfig.TimestampConfig()
         }
         repository.createNodeSchema(config, state.tableName)
     }
@@ -296,26 +267,19 @@ class EditCreateViewModel(
         val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
         metadataViewModel.clearSelectedItem()
 
-        // Determine Draft State Defaults
+        // Determine Draft State Defaults by mapping Schema Config -> Generic NodeType
+        // If schema is null, default to MAP but allow UI to change it
         val type = if (schema != null) {
-            // Map schema config type to NodeType
             when(schema.config) {
                 is SchemaConfig.MapConfig -> NodeType.MAP
                 is SchemaConfig.TableConfig -> NodeType.TABLE
-                is SchemaConfig.CodeBlockConfig -> NodeType.CODE_BLOCK
-                is SchemaConfig.HeadingConfig -> NodeType.HEADING
-                is SchemaConfig.TitleConfig -> NodeType.TITLE
-                is SchemaConfig.ShortTextConfig -> NodeType.SHORT_TEXT
-                is SchemaConfig.LongTextConfig -> NodeType.LONG_TEXT
-                is SchemaConfig.OrderedListConfig -> NodeType.ORDERED_LIST
-                is SchemaConfig.UnorderedListConfig -> NodeType.UNORDERED_LIST
-                is SchemaConfig.TaskListConfig -> NodeType.TASK_LIST
-                is SchemaConfig.SetConfig -> NodeType.SET
-                is SchemaConfig.TagConfig -> NodeType.TAG
-                is SchemaConfig.ImageConfig -> NodeType.IMAGE
-                is SchemaConfig.DateConfig -> NodeType.DATE_TIMESTAMP
+                is SchemaConfig.CodeConfig -> NodeType.CODE
+                is SchemaConfig.TextConfig -> NodeType.TEXT
+                is SchemaConfig.ListConfig -> NodeType.LIST
+                is SchemaConfig.MediaConfig -> NodeType.MEDIA
+                is SchemaConfig.TimestampConfig -> NodeType.TIMESTAMP
             }
-        } else NodeType.MAP // Default fallback
+        } else NodeType.MAP
 
         // Initialize table if needed
         val tableHeaders = if (schema?.config is SchemaConfig.TableConfig) {
@@ -330,7 +294,7 @@ class EditCreateViewModel(
                 selectedNodeType = type,
                 tableHeaders = tableHeaders,
                 tableRows = tableRows,
-                listItems = listOf("") // One empty item to start
+                listItems = listOf("")
             )
         )
     }
@@ -345,25 +309,11 @@ class EditCreateViewModel(
             val type = when(item.content) {
                 is NodeContent.MapContent -> NodeType.MAP
                 is NodeContent.TableContent -> NodeType.TABLE
-                is NodeContent.CodeContent -> NodeType.CODE_BLOCK
-                is NodeContent.TextContent -> {
-                    // Refine text type based on Schema or heuristics
-                    if (schema?.config is SchemaConfig.HeadingConfig) NodeType.HEADING
-                    else if (schema?.config is SchemaConfig.TitleConfig) NodeType.TITLE
-                    else if (schema?.config is SchemaConfig.ShortTextConfig) NodeType.SHORT_TEXT
-                    else if (schema?.config is SchemaConfig.LongTextConfig) NodeType.LONG_TEXT
-                    else NodeType.LONG_TEXT
-                }
-                is NodeContent.ListContent -> {
-                    if (schema?.config is SchemaConfig.OrderedListConfig) NodeType.ORDERED_LIST
-                    else if (schema?.config is SchemaConfig.SetConfig) NodeType.SET
-                    else NodeType.UNORDERED_LIST
-                }
-                is NodeContent.TaskListContent -> NodeType.TASK_LIST
-                is NodeContent.SetContent -> NodeType.SET
-                is NodeContent.TagContent -> NodeType.TAG
-                is NodeContent.ImageContent -> NodeType.IMAGE
-                is NodeContent.DateTimestampContent -> NodeType.DATE_TIMESTAMP
+                is NodeContent.CodeContent -> NodeType.CODE
+                is NodeContent.TextContent -> NodeType.TEXT
+                is NodeContent.ListContent -> NodeType.LIST
+                is NodeContent.MediaContent -> NodeType.MEDIA
+                is NodeContent.TimestampContent -> NodeType.TIMESTAMP
             }
 
             val editState = NodeEditState(
@@ -371,20 +321,21 @@ class EditCreateViewModel(
                 nodeType = type,
                 schema = schema,
                 properties = (item.content as? NodeContent.MapContent)?.values ?: emptyMap(),
-                textContent = (item.content as? NodeContent.TextContent)?.text ?: "",
-                imagePath = (item.content as? NodeContent.ImageContent)?.uri,
-                imageCaption = (item.content as? NodeContent.ImageContent)?.caption ?: "",
+                textContent = (item.content as? NodeContent.TextContent)?.value ?: "",
+                imagePath = (item.content as? NodeContent.MediaContent)?.uri,
+                imageCaption = (item.content as? NodeContent.MediaContent)?.caption ?: "",
 
-                // Load specific content into draft fields
                 tableHeaders = (item.content as? NodeContent.TableContent)?.headers ?: emptyList(),
                 tableRows = (item.content as? NodeContent.TableContent)?.rows ?: emptyList(),
                 codeContent = (item.content as? NodeContent.CodeContent)?.code ?: "",
                 codeLanguage = (item.content as? NodeContent.CodeContent)?.language ?: "kotlin",
                 codeFilename = (item.content as? NodeContent.CodeContent)?.filename ?: "",
-                listItems = (item.content as? NodeContent.ListContent)?.items ?: (item.content as? NodeContent.SetContent)?.items?.toList() ?: emptyList(),
-                taskListItems = (item.content as? NodeContent.TaskListContent)?.items ?: emptyList(),
-                tags = listOfNotNull((item.content as? NodeContent.TagContent)?.name),
-                timestamp = (item.content as? NodeContent.DateTimestampContent)?.timestamp ?: 0L
+
+                listItems = (item.content as? NodeContent.ListContent)?.items?.map { it.text } ?: emptyList(),
+                taskListItems = (item.content as? NodeContent.ListContent)?.items?.map { TaskItem(it.text, it.isCompleted) } ?: emptyList(),
+
+                tags = emptyList(),
+                timestamp = (item.content as? NodeContent.TimestampContent)?.timestamp ?: 0L
             )
             _editScreenState.value = EditScreenState.EditNode(editState)
         }
@@ -394,277 +345,6 @@ class EditCreateViewModel(
 
     fun cancelAllEditing() {
         _editScreenState.value = EditScreenState.None
-    }
-
-    // MAP
-    fun updateNodeCreationProperty(key: String, value: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNode) return@update current
-            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
-            current.copy(state = current.state.copy(properties = newProperties))
-        }
-    }
-    fun updateNodeEditProperty(key: String, value: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditNode) return@update current
-            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
-            current.copy(state = current.state.copy(properties = newProperties))
-        }
-    }
-
-    // TEXT
-    fun updateNodeCreationText(text: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNode) return@update current
-            current.copy(state = current.state.copy(textContent = text))
-        }
-    }
-    fun updateNodeEditText(text: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditNode) return@update current
-            current.copy(state = current.state.copy(textContent = text))
-        }
-    }
-
-    // IMAGE
-    fun updateNodeCreationImage(path: String?, caption: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNode) return@update current
-            current.copy(state = current.state.copy(imagePath = path, imageCaption = caption))
-        }
-    }
-    fun updateNodeEditImage(path: String?, caption: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.EditNode) return@update current
-            current.copy(state = current.state.copy(imagePath = path, imageCaption = caption))
-        }
-    }
-
-    // TABLE
-    fun updateTableData(rowIndex: Int, colIndex: Int, value: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newRows = current.state.tableRows.map { it.toMutableList() }.toMutableList()
-                if (rowIndex in newRows.indices && colIndex in newRows[rowIndex].indices) {
-                    newRows[rowIndex][colIndex] = value
-                }
-                current.copy(state = current.state.copy(tableRows = newRows))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newRows = current.state.tableRows.map { it.toMutableList() }.toMutableList()
-                if (rowIndex in newRows.indices && colIndex in newRows[rowIndex].indices) {
-                    newRows[rowIndex][colIndex] = value
-                }
-                current.copy(state = current.state.copy(tableRows = newRows))
-            } else current
-        }
-    }
-    fun updateTableHeader(colIndex: Int, value: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newHeaders = current.state.tableHeaders.toMutableList()
-                if (colIndex in newHeaders.indices) newHeaders[colIndex] = value
-                current.copy(state = current.state.copy(tableHeaders = newHeaders))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newHeaders = current.state.tableHeaders.toMutableList()
-                if (colIndex in newHeaders.indices) newHeaders[colIndex] = value
-                current.copy(state = current.state.copy(tableHeaders = newHeaders))
-            } else current
-        }
-    }
-    fun addTableRow(isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val cols = current.state.tableHeaders.size
-                val newRows = current.state.tableRows + listOf(List(cols) { "" })
-                current.copy(state = current.state.copy(tableRows = newRows))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val cols = current.state.tableHeaders.size
-                val newRows = current.state.tableRows + listOf(List(cols) { "" })
-                current.copy(state = current.state.copy(tableRows = newRows))
-            } else current
-        }
-    }
-    fun addTableColumn(isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newHeaders = current.state.tableHeaders + "Col ${current.state.tableHeaders.size + 1}"
-                val newRows = current.state.tableRows.map { it + "" }
-                current.copy(state = current.state.copy(tableHeaders = newHeaders, tableRows = newRows))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newHeaders = current.state.tableHeaders + "Col ${current.state.tableHeaders.size + 1}"
-                val newRows = current.state.tableRows.map { it + "" }
-                current.copy(state = current.state.copy(tableHeaders = newHeaders, tableRows = newRows))
-            } else current
-        }
-    }
-
-    // CODE
-    fun updateCodeData(code: String, lang: String, file: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                current.copy(state = current.state.copy(codeContent = code, codeLanguage = lang, codeFilename = file))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                current.copy(state = current.state.copy(codeContent = code, codeLanguage = lang, codeFilename = file))
-            } else current
-        }
-    }
-
-    // LIST
-    fun updateListItem(index: Int, value: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newList = current.state.listItems.toMutableList()
-                if (index in newList.indices) newList[index] = value
-                current.copy(state = current.state.copy(listItems = newList))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newList = current.state.listItems.toMutableList()
-                if (index in newList.indices) newList[index] = value
-                current.copy(state = current.state.copy(listItems = newList))
-            } else current
-        }
-    }
-    fun addListItem(isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                current.copy(state = current.state.copy(listItems = current.state.listItems + ""))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                current.copy(state = current.state.copy(listItems = current.state.listItems + ""))
-            } else current
-        }
-    }
-    fun removeListItem(index: Int, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newList = current.state.listItems.toMutableList().apply { removeAt(index) }
-                current.copy(state = current.state.copy(listItems = newList))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newList = current.state.listItems.toMutableList().apply { removeAt(index) }
-                current.copy(state = current.state.copy(listItems = newList))
-            } else current
-        }
-    }
-
-    // TASK LIST
-    fun updateTaskItem(index: Int, text: String, checked: Boolean, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newList = current.state.taskListItems.toMutableList()
-                if (index in newList.indices) newList[index] = TaskItem(text, checked)
-                current.copy(state = current.state.copy(taskListItems = newList))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newList = current.state.taskListItems.toMutableList()
-                if (index in newList.indices) newList[index] = TaskItem(text, checked)
-                current.copy(state = current.state.copy(taskListItems = newList))
-            } else current
-        }
-    }
-    fun addTaskItem(isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                current.copy(state = current.state.copy(taskListItems = current.state.taskListItems + TaskItem("", false)))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                current.copy(state = current.state.copy(taskListItems = current.state.taskListItems + TaskItem("", false)))
-            } else current
-        }
-    }
-    fun removeTaskItem(index: Int, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newList = current.state.taskListItems.toMutableList().apply { removeAt(index) }
-                current.copy(state = current.state.copy(taskListItems = newList))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newList = current.state.taskListItems.toMutableList().apply { removeAt(index) }
-                current.copy(state = current.state.copy(taskListItems = newList))
-            } else current
-        }
-    }
-
-    // TAGS
-    fun addTag(tag: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                current.copy(state = current.state.copy(tags = current.state.tags + tag))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                current.copy(state = current.state.copy(tags = current.state.tags + tag))
-            } else current
-        }
-    }
-    fun removeTag(tag: String, isCreation: Boolean) {
-        _editScreenState.update { current ->
-            if (isCreation && current is EditScreenState.CreateNode) {
-                val newTags = current.state.tags - tag
-                current.copy(state = current.state.copy(tags = newTags))
-            } else if (!isCreation && current is EditScreenState.EditNode) {
-                val newTags = current.state.tags - tag
-                current.copy(state = current.state.copy(tags = newTags))
-            } else current
-        }
-    }
-
-    // Node Schema Creation/Edit Logic
-    fun onNodeSchemaTableNameChange(name: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            val error = isSchemaNameUnique(name)
-            current.copy(state = current.state.copy(tableName = name, tableNameError = error))
-        }
-    }
-    fun onNodeSchemaTypeChange(type: NodeType) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(selectedNodeType = type))
-        }
-    }
-    // ... Config updates from previous file version ...
-    fun onNodeSchemaTableConfigChange(rowType: String, showColHeaders: Boolean, maxRows: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(tableRowHeaderType = rowType, tableShowColumnHeaders = showColHeaders, tableMaxRows = maxRows))
-        }
-    }
-    fun onNodeSchemaCodeConfigChange(lang: String, showFile: Boolean) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(codeDefaultLanguage = lang, codeShowFilename = showFile))
-        }
-    }
-    fun onNodeSchemaTextConfigChange(casing: String, headingLevel: Float, charLimit: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(textCasing = casing, headingLevel = headingLevel, shortTextCharLimit = charLimit))
-        }
-    }
-    fun onNodeSchemaListConfigChange(indicator: String) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(listIndicatorStyle = indicator))
-        }
-    }
-    fun onNodeSchemaPropertyChange(index: Int, property: SchemaProperty) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList()
-            newProperties[index] = property
-
-            val error = validateProperty(index, property, newProperties)
-            val newErrors = current.state.propertyErrors.toMutableMap()
-            if (error != null) newErrors[index] = error else newErrors.remove(index)
-            current.copy(state = current.state.copy(properties = newProperties, propertyErrors = newErrors))
-        }
-    }
-    fun onAddNodeSchemaProperty(property: SchemaProperty) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(properties = current.state.properties + property))
-        }
-    }
-    fun onRemoveNodeSchemaProperty(index: Int) {
-        _editScreenState.update { current ->
-            if (current !is EditScreenState.CreateNodeSchema) return@update current
-            val newProperties = current.state.properties.toMutableList()
-            newProperties.removeAt(index)
-            current.copy(state = current.state.copy(properties = newProperties))
-        }
     }
 
     // Edge Creation/Edit/Schema logic
@@ -677,7 +357,8 @@ class EditCreateViewModel(
     fun updateNodeCreationType(type: NodeType) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNode) return@update current
-            current.copy(state = current.state.copy(selectedNodeType = type))
+            // Reset schema when type changes to allow primitive creation
+            current.copy(state = current.state.copy(selectedNodeType = type, selectedSchema = null))
         }
     }
     fun initiateEdgeCreation() {
@@ -901,6 +582,291 @@ class EditCreateViewModel(
     fun updateEdgeSchemaEditRemoveProperty(index: Int) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.EditEdgeSchema) return@update current
+            val newProperties = current.state.properties.toMutableList()
+            newProperties.removeAt(index)
+            current.copy(state = current.state.copy(properties = newProperties))
+        }
+    }
+
+    // MAP
+    fun updateNodeCreationProperty(key: String, value: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNode) return@update current
+            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
+            current.copy(state = current.state.copy(properties = newProperties))
+        }
+    }
+    fun updateNodeEditProperty(key: String, value: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNode) return@update current
+            val newProperties = current.state.properties.toMutableMap().apply { this[key] = value }
+            current.copy(state = current.state.copy(properties = newProperties))
+        }
+    }
+
+    // TEXT
+    fun updateNodeCreationText(text: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNode) return@update current
+            current.copy(state = current.state.copy(textContent = text))
+        }
+    }
+    fun updateNodeEditText(text: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNode) return@update current
+            current.copy(state = current.state.copy(textContent = text))
+        }
+    }
+
+    // IMAGE
+    fun updateNodeCreationImage(path: String?, caption: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNode) return@update current
+            current.copy(state = current.state.copy(imagePath = path, imageCaption = caption))
+        }
+    }
+    fun updateNodeEditImage(path: String?, caption: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNode) return@update current
+            current.copy(state = current.state.copy(imagePath = path, imageCaption = caption))
+        }
+    }
+
+    // TABLE
+    fun updateTableData(rowIndex: Int, colIndex: Int, value: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newRows = current.state.tableRows.map { it.toMutableList() }.toMutableList()
+                if (rowIndex in newRows.indices && colIndex in newRows[rowIndex].indices) {
+                    newRows[rowIndex][colIndex] = value
+                }
+                current.copy(state = current.state.copy(tableRows = newRows))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newRows = current.state.tableRows.map { it.toMutableList() }.toMutableList()
+                if (rowIndex in newRows.indices && colIndex in newRows[rowIndex].indices) {
+                    newRows[rowIndex][colIndex] = value
+                }
+                current.copy(state = current.state.copy(tableRows = newRows))
+            } else current
+        }
+    }
+    fun updateTableHeader(colIndex: Int, value: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newHeaders = current.state.tableHeaders.toMutableList()
+                if (colIndex in newHeaders.indices) newHeaders[colIndex] = value
+                current.copy(state = current.state.copy(tableHeaders = newHeaders))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newHeaders = current.state.tableHeaders.toMutableList()
+                if (colIndex in newHeaders.indices) newHeaders[colIndex] = value
+                current.copy(state = current.state.copy(tableHeaders = newHeaders))
+            } else current
+        }
+    }
+    fun addTableRow(isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val cols = current.state.tableHeaders.size
+                val newRows = current.state.tableRows + listOf(List(cols) { "" })
+                current.copy(state = current.state.copy(tableRows = newRows))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val cols = current.state.tableHeaders.size
+                val newRows = current.state.tableRows + listOf(List(cols) { "" })
+                current.copy(state = current.state.copy(tableRows = newRows))
+            } else current
+        }
+    }
+    fun addTableColumn(isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newHeaders = current.state.tableHeaders + "Col ${current.state.tableHeaders.size + 1}"
+                val newRows = current.state.tableRows.map { it + "" }
+                current.copy(state = current.state.copy(tableHeaders = newHeaders, tableRows = newRows))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newHeaders = current.state.tableHeaders + "Col ${current.state.tableHeaders.size + 1}"
+                val newRows = current.state.tableRows.map { it + "" }
+                current.copy(state = current.state.copy(tableHeaders = newHeaders, tableRows = newRows))
+            } else current
+        }
+    }
+
+    // CODE
+    fun updateCodeData(code: String, lang: String, file: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                current.copy(state = current.state.copy(codeContent = code, codeLanguage = lang, codeFilename = file))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                current.copy(state = current.state.copy(codeContent = code, codeLanguage = lang, codeFilename = file))
+            } else current
+        }
+    }
+
+    // LIST
+    fun updateListItem(index: Int, value: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newList = current.state.listItems.toMutableList()
+                if (index in newList.indices) newList[index] = value
+                current.copy(state = current.state.copy(listItems = newList))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newList = current.state.listItems.toMutableList()
+                if (index in newList.indices) newList[index] = value
+                current.copy(state = current.state.copy(listItems = newList))
+            } else current
+        }
+    }
+    fun addListItem(isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                current.copy(state = current.state.copy(listItems = current.state.listItems + ""))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                current.copy(state = current.state.copy(listItems = current.state.listItems + ""))
+            } else current
+        }
+    }
+    fun removeListItem(index: Int, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newList = current.state.listItems.toMutableList().apply { removeAt(index) }
+                current.copy(state = current.state.copy(listItems = newList))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newList = current.state.listItems.toMutableList().apply { removeAt(index) }
+                current.copy(state = current.state.copy(listItems = newList))
+            } else current
+        }
+    }
+
+    // TASK LIST
+    fun updateTaskItem(index: Int, text: String, checked: Boolean, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newList = current.state.taskListItems.toMutableList()
+                if (index in newList.indices) newList[index] = TaskItem(text, checked)
+                current.copy(state = current.state.copy(taskListItems = newList))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newList = current.state.taskListItems.toMutableList()
+                if (index in newList.indices) newList[index] = TaskItem(text, checked)
+                current.copy(state = current.state.copy(taskListItems = newList))
+            } else current
+        }
+    }
+    fun addTaskItem(isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                current.copy(state = current.state.copy(taskListItems = current.state.taskListItems + TaskItem("", false)))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                current.copy(state = current.state.copy(taskListItems = current.state.taskListItems + TaskItem("", false)))
+            } else current
+        }
+    }
+    fun removeTaskItem(index: Int, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newList = current.state.taskListItems.toMutableList().apply { removeAt(index) }
+                current.copy(state = current.state.copy(taskListItems = newList))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newList = current.state.taskListItems.toMutableList().apply { removeAt(index) }
+                current.copy(state = current.state.copy(taskListItems = newList))
+            } else current
+        }
+    }
+
+    // TAGS
+    fun addTag(tag: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                current.copy(state = current.state.copy(tags = current.state.tags + tag))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                current.copy(state = current.state.copy(tags = current.state.tags + tag))
+            } else current
+        }
+    }
+    fun removeTag(tag: String, isCreation: Boolean) {
+        _editScreenState.update { current ->
+            if (isCreation && current is EditScreenState.CreateNode) {
+                val newTags = current.state.tags - tag
+                current.copy(state = current.state.copy(tags = newTags))
+            } else if (!isCreation && current is EditScreenState.EditNode) {
+                val newTags = current.state.tags - tag
+                current.copy(state = current.state.copy(tags = newTags))
+            } else current
+        }
+    }
+
+    // Node Schema Creation/Edit Logic
+    fun onNodeSchemaTableNameChange(name: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            val error = isSchemaNameUnique(name)
+            current.copy(state = current.state.copy(tableName = name, tableNameError = error))
+        }
+    }
+    fun onNodeSchemaTypeChange(type: NodeType) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(selectedNodeType = type))
+        }
+    }
+
+    // NEW: Handlers for Sub-Type selections
+    fun onNodeSchemaTextTypeChange(type: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(textSchemaType = type))
+        }
+    }
+    fun onNodeSchemaListTypeChange(type: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(listSchemaType = type))
+        }
+    }
+
+    fun onNodeSchemaTableConfigChange(rowType: String, showColHeaders: Boolean, maxRows: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(tableRowHeaderType = rowType, tableShowColumnHeaders = showColHeaders, tableMaxRows = maxRows))
+        }
+    }
+    fun onNodeSchemaCodeConfigChange(lang: String, showFile: Boolean) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(codeDefaultLanguage = lang, codeShowFilename = showFile))
+        }
+    }
+    fun onNodeSchemaTextConfigChange(casing: String, headingLevel: Float, charLimit: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(textCasing = casing, headingLevel = headingLevel, shortTextCharLimit = charLimit))
+        }
+    }
+    fun onNodeSchemaListConfigChange(indicator: String) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(listIndicatorStyle = indicator))
+        }
+    }
+    fun onNodeSchemaPropertyChange(index: Int, property: SchemaProperty) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            val newProperties = current.state.properties.toMutableList()
+            newProperties[index] = property
+
+            val error = validateProperty(index, property, newProperties)
+            val newErrors = current.state.propertyErrors.toMutableMap()
+            if (error != null) newErrors[index] = error else newErrors.remove(index)
+            current.copy(state = current.state.copy(properties = newProperties, propertyErrors = newErrors))
+        }
+    }
+    fun onAddNodeSchemaProperty(property: SchemaProperty) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
+            current.copy(state = current.state.copy(properties = current.state.properties + property))
+        }
+    }
+    fun onRemoveNodeSchemaProperty(index: Int) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.CreateNodeSchema) return@update current
             val newProperties = current.state.properties.toMutableList()
             newProperties.removeAt(index)
             current.copy(state = current.state.copy(properties = newProperties))

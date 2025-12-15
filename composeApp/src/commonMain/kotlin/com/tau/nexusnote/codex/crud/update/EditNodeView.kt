@@ -17,7 +17,6 @@ import com.tau.nexusnote.codex.crud.editors.CodeEditor
 import com.tau.nexusnote.codex.crud.editors.ListEditor
 import com.tau.nexusnote.codex.crud.editors.ShortTextEditor
 import com.tau.nexusnote.codex.crud.editors.TableEditor
-import com.tau.nexusnote.codex.crud.editors.TagEditor
 import com.tau.nexusnote.codex.crud.editors.TaskListEditor
 import com.tau.nexusnote.datamodels.NodeEditState
 import com.tau.nexusnote.datamodels.NodeType
@@ -54,7 +53,7 @@ fun EditNodeView(
 
     FilePicker(
         show = showFilePicker,
-        title = "Change Image",
+        title = "Change Media",
         fileExtensions = listOf("png", "jpg", "jpeg", "webp"),
         onResult = { path ->
             showFilePicker = false
@@ -65,12 +64,7 @@ fun EditNodeView(
     )
 
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-        val typeLabel = when(state.nodeType) {
-            NodeType.MAP -> state.schema?.name ?: "Node"
-            NodeType.HEADING -> "Note"
-            else -> state.nodeType.name.replace("_", " ")
-        }
-
+        val typeLabel = state.schema?.name ?: state.nodeType.name.replace("_", " ")
         CodexSectionHeader("Edit $typeLabel")
 
         // Scrollable Content
@@ -95,6 +89,68 @@ fun EditNodeView(
                         Text("Missing Schema definition.", color = MaterialTheme.colorScheme.error)
                     }
                 }
+
+                NodeType.TEXT -> {
+                    when (config) {
+                        is SchemaConfig.TextConfig.PlainText -> {
+                            val limit = config.charLimit
+                            if (limit != null) {
+                                ShortTextEditor(
+                                    text = state.textContent,
+                                    charLimit = limit,
+                                    onValueChange = onTextChanged
+                                )
+                            } else {
+                                OutlinedTextField(
+                                    value = state.textContent,
+                                    onValueChange = onTextChanged,
+                                    label = { Text("Content") },
+                                    modifier = Modifier.fillMaxWidth().height(300.dp)
+                                )
+                            }
+                        }
+                        is SchemaConfig.TextConfig.Heading, is SchemaConfig.TextConfig.Title -> {
+                            OutlinedTextField(
+                                value = state.textContent,
+                                onValueChange = onTextChanged,
+                                label = { Text("Heading/Title") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        }
+                        else -> {
+                            OutlinedTextField(
+                                value = state.textContent,
+                                onValueChange = onTextChanged,
+                                label = { Text("Content") },
+                                modifier = Modifier.fillMaxWidth().height(150.dp)
+                            )
+                        }
+                    }
+                }
+
+                NodeType.LIST -> {
+                    if (config is SchemaConfig.ListConfig.Task) {
+                        TaskListEditor(
+                            items = state.taskListItems,
+                            onItemTextChange = { i, v -> onTaskItemChange(i, v, state.taskListItems[i].isCompleted) },
+                            onItemCheckChange = { i, c -> onTaskItemChange(i, state.taskListItems[i].text, c) },
+                            onItemAdd = onAddTaskItem,
+                            onItemRemove = onRemoveTaskItem
+                        )
+                    } else {
+                        // Standard List
+                        val isOrdered = config is SchemaConfig.ListConfig.Ordered
+                        ListEditor(
+                            items = state.listItems,
+                            onItemChange = onListItemChange,
+                            onItemAdd = onAddListItem,
+                            onItemRemove = onRemoveListItem,
+                            ordered = isOrdered
+                        )
+                    }
+                }
+
                 NodeType.TABLE -> {
                     TableEditor(
                         headers = state.tableHeaders,
@@ -106,8 +162,9 @@ fun EditNodeView(
                         onAddColumn = onAddTableColumn
                     )
                 }
-                NodeType.CODE_BLOCK -> {
-                    val codeConfig = config as? SchemaConfig.CodeBlockConfig
+
+                NodeType.CODE -> {
+                    val codeConfig = config as? SchemaConfig.CodeConfig
                     CodeEditor(
                         code = state.codeContent,
                         language = state.codeLanguage,
@@ -118,55 +175,15 @@ fun EditNodeView(
                         onFilenameChange = { onCodeDataChange(state.codeContent, state.codeLanguage, it) }
                     )
                 }
-                NodeType.ORDERED_LIST, NodeType.UNORDERED_LIST, NodeType.SET -> {
-                    ListEditor(
-                        items = state.listItems,
-                        onItemChange = onListItemChange,
-                        onItemAdd = onAddListItem,
-                        onItemRemove = onRemoveListItem,
-                        ordered = state.nodeType == NodeType.ORDERED_LIST
-                    )
-                }
-                NodeType.TASK_LIST -> {
-                    TaskListEditor(
-                        items = state.taskListItems,
-                        onItemTextChange = { i, v -> onTaskItemChange(i, v, state.taskListItems[i].isCompleted) },
-                        onItemCheckChange = { i, c -> onTaskItemChange(i, state.taskListItems[i].text, c) },
-                        onItemAdd = onAddTaskItem,
-                        onItemRemove = onRemoveTaskItem
-                    )
-                }
-                NodeType.TAG -> {
-                    TagEditor(
-                        tags = state.tags,
-                        onTagAdd = onAddTag,
-                        onTagRemove = onRemoveTag
-                    )
-                }
-                NodeType.SHORT_TEXT -> {
-                    val limit = (config as? SchemaConfig.ShortTextConfig)?.charLimit ?: 140
-                    ShortTextEditor(
-                        text = state.textContent,
-                        charLimit = limit,
-                        onValueChange = onTextChanged
-                    )
-                }
-                NodeType.HEADING, NodeType.TITLE, NodeType.LONG_TEXT -> {
-                    OutlinedTextField(
-                        value = state.textContent,
-                        onValueChange = onTextChanged,
-                        label = { Text("Content") },
-                        modifier = Modifier.fillMaxWidth().height(300.dp)
-                    )
-                }
-                NodeType.IMAGE -> {
+
+                NodeType.MEDIA -> {
                     Button(
                         onClick = { showFilePicker = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Change Image File")
+                        Text("Change Media File")
                     }
                     if (state.imagePath != null) {
                         Text(
@@ -182,8 +199,9 @@ fun EditNodeView(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                else -> {
-                    Text("Editing not supported for this node type.")
+
+                NodeType.TIMESTAMP -> {
+                    Text("Timestamp cannot be edited manually yet.")
                 }
             }
         }

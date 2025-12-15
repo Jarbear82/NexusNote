@@ -7,13 +7,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.codex.crud.editors.CodeEditor
 import com.tau.nexusnote.codex.crud.editors.ListEditor
 import com.tau.nexusnote.codex.crud.editors.ShortTextEditor
 import com.tau.nexusnote.codex.crud.editors.TableEditor
-import com.tau.nexusnote.codex.crud.editors.TagEditor
 import com.tau.nexusnote.codex.crud.editors.TaskListEditor
 import com.tau.nexusnote.datamodels.NodeCreationState
 import com.tau.nexusnote.datamodels.NodeType
@@ -35,7 +35,7 @@ fun CreateNodeView(
     onImageSelected: (String?, String) -> Unit,
     onCreateClick: () -> Unit,
     onCancelClick: () -> Unit,
-    // New Callbacks for Specialized Editors
+    // Specialized Editor Callbacks
     onTableDataChange: (Int, Int, String) -> Unit = {_,_,_ ->},
     onTableHeaderChange: (Int, String) -> Unit = {_,_ ->},
     onAddTableRow: () -> Unit = {},
@@ -67,23 +67,71 @@ fun CreateNodeView(
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Node")
 
-        // Top-level schema selection if using Map type, or type display
+        // 1. Node Type Selector (Always Visible)
+        // This allows creating Primitive nodes (by selecting a type but ignoring schema)
+        CodexDropdown(
+            label = "Node Type",
+            options = NodeType.entries,
+            selectedOption = nodeCreationState.selectedNodeType,
+            onOptionSelected = onNodeTypeSelected,
+            displayTransform = { it.name.replace("_", " ") }
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 2. Schema Selector (Conditional)
+        // Filter schemas to only those matching the selected type
+        val compatibleSchemas = nodeCreationState.schemas.filter { schema ->
+            val schemaType = when(schema.config) {
+                is SchemaConfig.MapConfig -> NodeType.MAP
+                is SchemaConfig.TableConfig -> NodeType.TABLE
+                is SchemaConfig.CodeConfig -> NodeType.CODE
+                is SchemaConfig.TextConfig -> NodeType.TEXT
+                is SchemaConfig.ListConfig -> NodeType.LIST
+                is SchemaConfig.MediaConfig -> NodeType.MEDIA
+                is SchemaConfig.TimestampConfig -> NodeType.TIMESTAMP
+            }
+            schemaType == nodeCreationState.selectedNodeType
+        }
+
+        // Show Schema dropdown if there are compatible schemas OR if it's MAP (which requires one)
         if (nodeCreationState.selectedNodeType == NodeType.MAP) {
-            CodexDropdown(
-                label = "Select Schema",
-                options = nodeCreationState.schemas,
-                selectedOption = nodeCreationState.selectedSchema,
-                onOptionSelected = onSchemaSelected,
-                displayTransform = { it.name }
-            )
+            if (compatibleSchemas.isNotEmpty()) {
+                CodexDropdown(
+                    label = "Select Schema (Required)",
+                    options = compatibleSchemas,
+                    selectedOption = nodeCreationState.selectedSchema,
+                    onOptionSelected = onSchemaSelected,
+                    displayTransform = { it.name }
+                )
+            } else {
+                Text("No schemas defined for MAP type. Please create a Node Schema first.", color = MaterialTheme.colorScheme.error)
+            }
             Spacer(modifier = Modifier.height(16.dp))
-        } else {
-            Text(
-                "Type: ${nodeCreationState.selectedNodeType.name.replace("_", " ")}",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(16.dp))
+        } else if (compatibleSchemas.isNotEmpty()) {
+            // Optional Schema selection for primitives (e.g., "Note" schema for TEXT type)
+            // We need a way to select "None" to go back to primitive
+            Column {
+                Text("Schema (Optional):", style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        CodexDropdown(
+                            label = "Select Schema",
+                            options = compatibleSchemas,
+                            selectedOption = nodeCreationState.selectedSchema,
+                            onOptionSelected = onSchemaSelected,
+                            displayTransform = { it.name }
+                        )
+                    }
+                    if (nodeCreationState.selectedSchema != null) {
+                        TextButton(onClick = { /* Logic to clear schema is handled by selecting primitive type again, effectively */
+                            onNodeTypeSelected(nodeCreationState.selectedNodeType)
+                        }) {
+                            Text("Clear")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
         // Scrollable Content
@@ -106,6 +154,70 @@ fun CreateNodeView(
                         }
                     }
                 }
+
+                NodeType.TEXT -> {
+                    // Check Config: PlainText (short/long), Heading, Title
+                    when (config) {
+                        is SchemaConfig.TextConfig.PlainText -> {
+                            val limit = config.charLimit
+                            if (limit != null) {
+                                ShortTextEditor(
+                                    text = nodeCreationState.textContent,
+                                    charLimit = limit,
+                                    onValueChange = onTextChanged
+                                )
+                            } else {
+                                OutlinedTextField(
+                                    value = nodeCreationState.textContent,
+                                    onValueChange = onTextChanged,
+                                    label = { Text("Long Text Content") },
+                                    modifier = Modifier.fillMaxWidth().height(200.dp)
+                                )
+                            }
+                        }
+                        is SchemaConfig.TextConfig.Heading, is SchemaConfig.TextConfig.Title -> {
+                            OutlinedTextField(
+                                value = nodeCreationState.textContent,
+                                onValueChange = onTextChanged,
+                                label = { Text("Heading/Title Text") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                        }
+                        else -> {
+                            // Default Fallback (Primitive)
+                            OutlinedTextField(
+                                value = nodeCreationState.textContent,
+                                onValueChange = onTextChanged,
+                                label = { Text("Text Content") },
+                                modifier = Modifier.fillMaxWidth().height(150.dp)
+                            )
+                        }
+                    }
+                }
+
+                NodeType.LIST -> {
+                    if (config is SchemaConfig.ListConfig.Task) {
+                        TaskListEditor(
+                            items = nodeCreationState.taskListItems,
+                            onItemTextChange = { i, v -> onTaskItemChange(i, v, nodeCreationState.taskListItems[i].isCompleted) },
+                            onItemCheckChange = { i, c -> onTaskItemChange(i, nodeCreationState.taskListItems[i].text, c) },
+                            onItemAdd = onAddTaskItem,
+                            onItemRemove = onRemoveTaskItem
+                        )
+                    } else {
+                        // Standard List (Ordered or Unordered) - Primitive fallback is Unordered/Bullet
+                        val isOrdered = config is SchemaConfig.ListConfig.Ordered
+                        ListEditor(
+                            items = nodeCreationState.listItems,
+                            onItemChange = onListItemChange,
+                            onItemAdd = onAddListItem,
+                            onItemRemove = onRemoveListItem,
+                            ordered = isOrdered
+                        )
+                    }
+                }
+
                 NodeType.TABLE -> {
                     TableEditor(
                         headers = nodeCreationState.tableHeaders,
@@ -117,67 +229,28 @@ fun CreateNodeView(
                         onAddColumn = onAddTableColumn
                     )
                 }
-                NodeType.CODE_BLOCK -> {
-                    val codeConfig = config as? SchemaConfig.CodeBlockConfig
+
+                NodeType.CODE -> {
+                    val codeConfig = config as? SchemaConfig.CodeConfig
                     CodeEditor(
                         code = nodeCreationState.codeContent,
                         language = nodeCreationState.codeLanguage,
                         filename = nodeCreationState.codeFilename,
-                        showFilename = codeConfig?.showFilename ?: true,
+                        showFilename = codeConfig?.showFilename ?: true, // Default to true if primitive
                         onCodeChange = { onCodeDataChange(it, nodeCreationState.codeLanguage, nodeCreationState.codeFilename) },
                         onLanguageChange = { onCodeDataChange(nodeCreationState.codeContent, it, nodeCreationState.codeFilename) },
                         onFilenameChange = { onCodeDataChange(nodeCreationState.codeContent, nodeCreationState.codeLanguage, it) }
                     )
                 }
-                NodeType.ORDERED_LIST, NodeType.UNORDERED_LIST, NodeType.SET -> {
-                    ListEditor(
-                        items = nodeCreationState.listItems,
-                        onItemChange = onListItemChange,
-                        onItemAdd = onAddListItem,
-                        onItemRemove = onRemoveListItem,
-                        ordered = nodeCreationState.selectedNodeType == NodeType.ORDERED_LIST
-                    )
-                }
-                NodeType.TASK_LIST -> {
-                    TaskListEditor(
-                        items = nodeCreationState.taskListItems,
-                        onItemTextChange = { i, v -> onTaskItemChange(i, v, nodeCreationState.taskListItems[i].isCompleted) },
-                        onItemCheckChange = { i, c -> onTaskItemChange(i, nodeCreationState.taskListItems[i].text, c) },
-                        onItemAdd = onAddTaskItem,
-                        onItemRemove = onRemoveTaskItem
-                    )
-                }
-                NodeType.TAG -> {
-                    TagEditor(
-                        tags = nodeCreationState.tags,
-                        onTagAdd = onAddTag,
-                        onTagRemove = onRemoveTag
-                    )
-                }
-                NodeType.SHORT_TEXT -> {
-                    val limit = (config as? SchemaConfig.ShortTextConfig)?.charLimit ?: 140
-                    ShortTextEditor(
-                        text = nodeCreationState.textContent,
-                        charLimit = limit,
-                        onValueChange = onTextChanged
-                    )
-                }
-                NodeType.LONG_TEXT, NodeType.HEADING, NodeType.TITLE -> {
-                    OutlinedTextField(
-                        value = nodeCreationState.textContent,
-                        onValueChange = onTextChanged,
-                        label = { Text("Content") },
-                        modifier = Modifier.fillMaxWidth().height(200.dp)
-                    )
-                }
-                NodeType.IMAGE -> {
+
+                NodeType.MEDIA -> {
                     Button(
                         onClick = { showFilePicker = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Image, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text(if (nodeCreationState.imagePath == null) "Select Image File" else "Change Image")
+                        Text(if (nodeCreationState.imagePath == null) "Select Media File" else "Change File")
                     }
                     if (nodeCreationState.imagePath != null) {
                         Text("Selected: ${nodeCreationState.imagePath}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
@@ -190,8 +263,9 @@ fun CreateNodeView(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
-                else -> {
-                    Text("Editor not implemented for this type.")
+
+                NodeType.TIMESTAMP -> {
+                    Text("Timestamp will be set to current time on creation.")
                 }
             }
         }

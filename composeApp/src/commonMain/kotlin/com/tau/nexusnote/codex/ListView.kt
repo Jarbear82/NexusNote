@@ -113,7 +113,7 @@ fun ListView(
                     val colorInfo = labelToColor(node.label)
 
                     CodexListItem(
-                        // NEW: Use the Renderer for rich content
+                        // Use the Renderer for rich content, passing the Config
                         headlineContent = {
                             Column {
                                 // Small Label Badge
@@ -124,7 +124,10 @@ fun ListView(
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
                                 // Content Switch
-                                NodeContentRenderer(node.content)
+                                NodeContentRenderer(
+                                    content = node.content,
+                                    config = node.config // Pass schema config
+                                )
                             }
                         },
                         colorSeed = node.label,

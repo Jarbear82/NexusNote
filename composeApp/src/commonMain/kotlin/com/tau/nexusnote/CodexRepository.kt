@@ -7,6 +7,7 @@ import com.tau.nexusnote.datamodels.EdgeParticipant
 import com.tau.nexusnote.datamodels.EdgeSchemaCreationState
 import com.tau.nexusnote.datamodels.EdgeSchemaEditState
 import com.tau.nexusnote.datamodels.LayoutConstraintItem
+import com.tau.nexusnote.datamodels.ListItem
 import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.NodeCreationState
 import com.tau.nexusnote.datamodels.NodeDisplayItem
@@ -116,7 +117,7 @@ class CodexRepository(
                     val content = dbNode.content_json
                     // Derive dynamic display property based on Content Type
                     val displayProp = deriveDisplayProperty(content, nodeSchema, dbNode.display_label)
-                    val typeLabel = nodeSchema?.name ?: dbNode.node_type // e.g. "Person" or "HEADING"
+                    val typeLabel = nodeSchema?.name ?: dbNode.node_type // e.g. "Person" or "TEXT"
 
                     NodeDisplayItem(
                         id = dbNode.id,
@@ -124,6 +125,7 @@ class CodexRepository(
                         displayProperty = displayProp,
                         schemaId = schemaId ?: -1L,
                         content = content,
+                        config = nodeSchema?.config, // Pass the schema configuration
                         parentId = dbNode.parent_id,
                         isCollapsed = dbNode.is_collapsed
                     )
@@ -218,33 +220,39 @@ class CodexRepository(
                 }
             }
             is NodeContent.TextContent -> {
-                if (content.text.length > 50) content.text.take(50) + "..." else content.text
+                // Truncate long text
+                if (content.value.length > 50) content.value.take(50) + "..." else content.value
             }
-            is NodeContent.ImageContent -> {
-                content.caption?.takeIf { it.isNotBlank() } ?: "Image"
+            is NodeContent.ListContent -> {
+                // Check schema for specific list presentation
+                when (schema?.config) {
+                    is SchemaConfig.ListConfig.Ordered -> {
+                        // Prepend number if items exist
+                        if (content.items.isNotEmpty()) {
+                            "1. ${content.items.first().text.take(30)}..."
+                        } else {
+                            "Ordered List (Empty)"
+                        }
+                    }
+                    is SchemaConfig.ListConfig.Task -> {
+                        val completed = content.items.count { it.isCompleted }
+                        "$completed/${content.items.size} tasks"
+                    }
+                    else -> "${content.items.size} items"
+                }
+            }
+            is NodeContent.TableContent -> {
+                "Table (${content.rows.size} rows)"
             }
             is NodeContent.CodeContent -> {
                 val name = content.filename ?: "Snippet"
                 "$name (${content.language})"
             }
-            is NodeContent.ListContent -> {
-                "${content.items.size} items"
+            is NodeContent.MediaContent -> {
+                content.caption?.takeIf { it.isNotBlank() } ?: "Media"
             }
-            is NodeContent.TaskListContent -> {
-                val completed = content.items.count { it.isCompleted }
-                "$completed/${content.items.size} tasks"
-            }
-            is NodeContent.SetContent -> {
-                "${content.items.size} items"
-            }
-            is NodeContent.TableContent -> {
-                "Table (${content.rows.size} rows)"
-            }
-            is NodeContent.DateTimestampContent -> {
+            is NodeContent.TimestampContent -> {
                 "Date: ${content.timestamp}"
-            }
-            is NodeContent.TagContent -> {
-                content.name
             }
         }
     }
@@ -350,6 +358,7 @@ class CodexRepository(
                         displayProperty = displayProp,
                         schemaId = schemaId ?: -1L,
                         content = content,
+                        config = nodeSchema?.config, // Pass configuration
                         parentId = dbNode.parent_id,
                         isCollapsed = dbNode.is_collapsed
                     )
@@ -613,24 +622,29 @@ class CodexRepository(
     fun updateNode(state: NodeEditState) {
         repositoryScope.launch {
             try {
-                val displayLabel = if (state.nodeType == NodeType.MAP && state.schema != null) {
-                    val displayKey = (state.schema.config as? SchemaConfig.MapConfig)
-                        ?.properties?.firstOrNull { it.isDisplayProperty }?.name
-                    state.properties[displayKey] ?: "Node ${state.id}"
-                } else {
-                    when(state.nodeType) {
-                        NodeType.HEADING -> state.textContent.take(30)
-                        NodeType.IMAGE -> state.imageCaption.ifBlank { "Image" }
-                        else -> "Node ${state.id}"
-                    }
-                }
-
+                // Construct the appropriate NodeContent based on the generic NodeType
                 val content = when(state.nodeType) {
                     NodeType.MAP -> NodeContent.MapContent(state.properties)
-                    NodeType.HEADING -> NodeContent.TextContent(state.textContent)
-                    NodeType.IMAGE -> NodeContent.ImageContent(state.imagePath ?: "", state.imageCaption)
-                    else -> NodeContent.MapContent(emptyMap())
+                    NodeType.TEXT -> NodeContent.TextContent(state.textContent)
+                    NodeType.LIST -> {
+                        // Check if it's a TaskList based on Schema Config, or default to standard list items
+                        val isTask = state.schema?.config is SchemaConfig.ListConfig.Task
+                        if (isTask) {
+                            val items = state.taskListItems.map { ListItem(it.text, it.isCompleted) }
+                            NodeContent.ListContent(items)
+                        } else {
+                            val items = state.listItems.map { ListItem(it, false) }
+                            NodeContent.ListContent(items)
+                        }
+                    }
+                    NodeType.TABLE -> NodeContent.TableContent(state.tableHeaders, state.tableRows)
+                    NodeType.CODE -> NodeContent.CodeContent(state.codeContent, state.codeLanguage, state.codeFilename)
+                    NodeType.MEDIA -> NodeContent.MediaContent(state.imagePath ?: "", state.imageCaption)
+                    NodeType.TIMESTAMP -> NodeContent.TimestampContent(state.timestamp)
                 }
+
+                // Derive display label for the list view
+                val displayLabel = deriveDisplayProperty(content, state.schema, "Node ${state.id}")
 
                 dbService.database.appDatabaseQueries.updateNodeProperties(
                     display_label = displayLabel,

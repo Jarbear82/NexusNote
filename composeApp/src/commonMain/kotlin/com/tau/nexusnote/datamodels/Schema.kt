@@ -4,10 +4,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Represents a user-defined property within a schema.
- * This is serialized to/from JSON.
- * @param name The name of the property (e.g., "Description", "Due Date").
- * @param type The data type for the UI (e.g., "Text", "Image", "Date").
+ * Represents a user-defined property within a schema (used primarily by MapConfig).
  */
 @Serializable
 data class SchemaProperty(
@@ -18,105 +15,82 @@ data class SchemaProperty(
 
 /**
  * The configuration hierarchy for schemas.
- * Defines the strict structure and behavior of a node type.
+ * Structured hierarchically by the generic NodeType they enforce.
  */
 @Serializable
 sealed class SchemaConfig {
 
-    /**
-     * Legacy/Flexible configuration: A dynamic list of key-value properties.
-     * Used for generic objects, people, items, etc.
-     */
+    // --- 1. Text Configurations ---
+    @Serializable @SerialName("Text")
+    sealed class TextConfig : SchemaConfig() {
+        /** Config for semantic Headings */
+        @Serializable @SerialName("Heading")
+        data class Heading(
+            val level: Int = 1,
+            val casing: String = "TitleCase"
+        ) : TextConfig()
+
+        /** Config for semantic Titles */
+        @Serializable @SerialName("Title")
+        data class Title(
+            val casing: String = "TitleCase"
+        ) : TextConfig()
+
+        /** Config for generic text (Short, Long, Paragraphs) */
+        @Serializable @SerialName("Plain")
+        data class PlainText(
+            val charLimit: Int? = null // Null implies no limit (LongText)
+        ) : TextConfig()
+
+        /** Config for Tags/Chips */
+        @Serializable @SerialName("Tag")
+        data object Tag : TextConfig()
+    }
+
+    // --- 2. List Configurations ---
+    @Serializable @SerialName("List")
+    sealed class ListConfig : SchemaConfig() {
+        @Serializable @SerialName("Ordered")
+        data class Ordered(
+            val indicatorStyle: String = "1."
+        ) : ListConfig()
+
+        @Serializable @SerialName("Unordered")
+        data object Unordered : ListConfig()
+
+        @Serializable @SerialName("Task")
+        data object Task : ListConfig()
+    }
+
+    // --- 3. Map Configuration ---
     @Serializable @SerialName("Map")
     data class MapConfig(val properties: List<SchemaProperty>) : SchemaConfig()
 
-    /**
-     * Configuration for Tabular data.
-     */
+    // --- 4. Table Configuration ---
     @Serializable @SerialName("Table")
     data class TableConfig(
-        val rowHeaderType: String = "None", // None, Numeric, Alpha
+        val rowHeaderType: String = "None",
         val showColumnHeaders: Boolean = true,
         val predefinedColumnHeaders: List<String> = emptyList(),
         val predefinedRowHeaders: List<String> = emptyList(),
         val maxRows: Int? = null
     ) : SchemaConfig()
 
-    /**
-     * Configuration for Code Blocks.
-     */
-    @Serializable @SerialName("CodeBlock")
-    data class CodeBlockConfig(
+    // --- 5. Code Configuration ---
+    @Serializable @SerialName("Code")
+    data class CodeConfig(
         val defaultLanguage: String = "kotlin",
         val allowLanguageChange: Boolean = true,
         val showFilename: Boolean = false
     ) : SchemaConfig()
 
-    /**
-     * Configuration for Titles.
-     */
-    @Serializable @SerialName("Title")
-    data class TitleConfig(
-        val casing: String = "TitleCase" // TitleCase, UpperCase, etc.
-    ) : SchemaConfig()
+    // --- 6. Media Configuration ---
+    @Serializable @SerialName("Media")
+    data object MediaConfig : SchemaConfig()
 
-    /**
-     * Configuration for Headings (Levels 1-6).
-     */
-    @Serializable @SerialName("Heading")
-    data class HeadingConfig(
-        val level: Int = 1,
-        val casing: String = "TitleCase"
-    ) : SchemaConfig()
-
-    /**
-     * Configuration for Short Text (e.g., Tweets, Status).
-     */
-    @Serializable @SerialName("ShortText")
-    data class ShortTextConfig(
-        val charLimit: Int = 140
-    ) : SchemaConfig()
-
-    /**
-     * Configuration for Long Text (Documents, Articles).
-     */
-    @Serializable @SerialName("LongText")
-    object LongTextConfig : SchemaConfig()
-
-    /**
-     * Configuration for Ordered Lists.
-     */
-    @Serializable @SerialName("OrderedList")
-    data class OrderedListConfig(
-        val indicatorStyle: String = "1." // 1., A., i., etc.
-    ) : SchemaConfig()
-
-    /**
-     * Configuration for Unordered Lists (Simple bullets).
-     */
-    @Serializable @SerialName("UnorderedList")
-    object UnorderedListConfig : SchemaConfig()
-
-    /**
-     * Singleton Configurations for simple types.
-     */
-    @Serializable @SerialName("TaskList")
-    object TaskListConfig : SchemaConfig()
-
-    @Serializable @SerialName("Set")
-    object SetConfig : SchemaConfig()
-
-    @Serializable @SerialName("Tag")
-    object TagConfig : SchemaConfig()
-
-    @Serializable @SerialName("Image")
-    object ImageConfig : SchemaConfig()
-
-    /**
-     * Configuration for Dates.
-     */
-    @Serializable @SerialName("Date")
-    data class DateConfig(
+    // --- 7. Timestamp Configuration ---
+    @Serializable @SerialName("Timestamp")
+    data class TimestampConfig(
         val formatPattern: String = "yyyy-MM-dd"
     ) : SchemaConfig()
 }
@@ -141,12 +115,11 @@ sealed class RoleCardinality {
 
 /**
  * Defines the direction of the edge relative to the node filling this role.
- * Used for visual graph rendering.
  */
 @Serializable
 enum class RoleDirection {
-    @SerialName("Source") Source, // Arrow points FROM Node TO Hypernode
-    @SerialName("Target") Target  // Arrow points FROM Hypernode TO Node
+    @SerialName("Source") Source,
+    @SerialName("Target") Target
 }
 
 /**
@@ -155,19 +128,13 @@ enum class RoleDirection {
 @Serializable
 data class RoleDefinition(
     val name: String,
-    val allowedNodeSchemas: List<String>, // List of Schema Names (Strings)
+    val allowedNodeSchemas: List<String>,
     val cardinality: RoleCardinality = RoleCardinality.One,
     val direction: RoleDirection = RoleDirection.Target
 )
 
 /**
- * UI-facing model for a schema definition (either Node or Edge).
- * This is built from the 'SchemaDefinition' table.
- * @param id The unique ID from the 'SchemaDefinition' table.
- * @param type "NODE" or "EDGE".
- * @param name The name of the schema (e.g., "Person", "KNOWS").
- * @param config The strict configuration for this schema.
- * @param roleDefinitions For EDGE schemas, the list of defined roles.
+ * UI-facing model for a schema definition.
  */
 data class SchemaDefinitionItem(
     val id: Long,
@@ -176,8 +143,7 @@ data class SchemaDefinitionItem(
     val config: SchemaConfig,
     val roleDefinitions: List<RoleDefinition>? = null
 ) {
-    // Helper property to maintain compatibility with existing UI code that expects a property list.
-    // Returns properties only if this is a MapConfig.
+    // Helper to access properties if this is a Map schema
     val properties: List<SchemaProperty>
         get() = (config as? SchemaConfig.MapConfig)?.properties ?: emptyList()
 }

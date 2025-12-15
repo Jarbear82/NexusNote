@@ -4,7 +4,6 @@ import app.cash.sqldelight.ColumnAdapter
 import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.RoleDefinition
 import com.tau.nexusnote.datamodels.SchemaConfig
-import com.tau.nexusnote.datamodels.SchemaProperty
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer

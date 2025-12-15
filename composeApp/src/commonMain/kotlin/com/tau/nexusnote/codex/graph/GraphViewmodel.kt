@@ -92,14 +92,12 @@ class GraphViewmodel(
 
     private suspend fun recalculateNodeSizes() {
         val calc = nodeSizeCalculator ?: return
-        val schemaMap = repository.schema.value?.nodeSchemas?.associateBy { it.id }
 
         _fcGraph.nodes.forEach { node ->
             if (!node.isCompound() && !node.isDummy && !node.isRepresentative) {
                 val item = node.data as? NodeDisplayItem
                 if (item != null) {
-                    val schema = schemaMap?.get(item.schemaId)
-                    val size = calc.measure(item.content, schema?.config)
+                    val size = calc.measure(item.content, item.config)
                     node.width = size.width.toDouble()
                     node.height = size.height.toDouble()
                 }
@@ -115,7 +113,6 @@ class GraphViewmodel(
         val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
         val activeIds = mutableSetOf<String>()
         val calc = nodeSizeCalculator
-        val schemaMap = repository.schema.value?.nodeSchemas?.associateBy { it.id }
 
         // 1. Add Standard Nodes
         nodeList.forEach { item ->
@@ -127,8 +124,7 @@ class GraphViewmodel(
                 existing.data = item
                 // If calculator is ready, update size, else keep existing or default
                 if (!existing.isCompound() && calc != null) {
-                    val schema = schemaMap?.get(item.schemaId)
-                    val size = calc.measure(item.content, schema?.config)
+                    val size = calc.measure(item.content, item.config)
                     existing.width = size.width.toDouble()
                     existing.height = size.height.toDouble()
                 }
@@ -137,8 +133,7 @@ class GraphViewmodel(
                 newNode.data = item
 
                 if (calc != null) {
-                    val schema = schemaMap?.get(item.schemaId)
-                    val size = calc.measure(item.content, schema?.config)
+                    val size = calc.measure(item.content, item.config)
                     newNode.width = size.width.toDouble()
                     newNode.height = size.height.toDouble()
                 } else {
@@ -304,6 +299,7 @@ class GraphViewmodel(
             val isHyper: Boolean
             val colorInfo: ColorInfo
             val content: NodeContent? // Capture content for renderer
+            val config: SchemaConfig? // Capture config
 
             val data = fcNode.data
             if (data is NodeDisplayItem) {
@@ -313,6 +309,7 @@ class GraphViewmodel(
                 isHyper = false
                 colorInfo = labelToColor(label)
                 content = data.content
+                config = data.config
             } else if (data is EdgeDisplayItem) {
                 // Map Edge ID to a negative Long to distinguish from Node IDs
                 id = -1 * data.id
@@ -321,6 +318,7 @@ class GraphViewmodel(
                 isHyper = true
                 colorInfo = labelToColor(label)
                 content = null // Hypernodes are abstract
+                config = null
             } else {
                 // Fallback for nodes without data (shouldn't happen often)
                 id = fcNode.id.toLongOrNull() ?: fcNode.id.hashCode().toLong()
@@ -329,6 +327,7 @@ class GraphViewmodel(
                 isHyper = false
                 colorInfo = labelToColor("Unknown")
                 content = null
+                config = null
             }
 
             // Calculate radius based on the larger dimension to avoid clipping
@@ -349,6 +348,7 @@ class GraphViewmodel(
                 isCompound = fcNode.isCompound(),
                 isHyperNode = isHyper,
                 content = content, // Pass the content
+                config = config, // Pass the config
                 colorInfo = colorInfo,
                 isFixed = fcNode.isFixed
             )

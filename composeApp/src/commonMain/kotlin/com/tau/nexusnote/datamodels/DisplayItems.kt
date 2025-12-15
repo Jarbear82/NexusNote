@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
  * @param displayProperty The user-friendly text to show (e.g., "John Doe", "My Note").
  * @param schemaId The ID of the schema this node belongs to, or -1 if primitive.
  * @param content The full polymorphic content of the node.
+ * @param config The schema configuration associated with this node, determining its render style.
  * @param parentId The ID of the parent node, if any.
  * @param isCollapsed Whether this node's children are hidden (if it is a parent).
  */
@@ -18,6 +19,7 @@ data class NodeDisplayItem(
     val displayProperty: String,
     val schemaId: Long,
     val content: NodeContent,
+    val config: SchemaConfig? = null,
     val parentId: Long? = null,
     val isCollapsed: Boolean = false
 )

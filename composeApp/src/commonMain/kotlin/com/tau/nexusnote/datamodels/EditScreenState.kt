@@ -58,6 +58,12 @@ data class ParticipantSelection(
     val node: NodeDisplayItem? = null
 )
 
+// --- Helper for Task List Editing ---
+data class TaskItem(
+    val text: String,
+    val isCompleted: Boolean = false
+)
+
 // --- Data class for Edge Creation UI State ---
 data class EdgeCreationState(
     val schemas: List<SchemaDefinitionItem>, // All available EDGE schemas
@@ -71,6 +77,10 @@ data class EdgeCreationState(
 data class NodeSchemaCreationState(
     val tableName: String = "",
     val selectedNodeType: NodeType = NodeType.MAP,
+
+    // Sub-Type Selections
+    val textSchemaType: String = "Plain", // "Plain", "Heading", "Title"
+    val listSchemaType: String = "Ordered", // "Ordered", "Unordered", "Task"
 
     // MAP Config Data
     val properties: List<SchemaProperty> = listOf(SchemaProperty("name", CodexPropertyDataTypes.TEXT, isDisplayProperty = true)),

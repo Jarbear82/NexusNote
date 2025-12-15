@@ -24,20 +24,26 @@ class NodeSizeCalculator(
     private val textMeasurer: TextMeasurer,
     private val density: Density
 ) {
-    // --- Standard Typography Styles (Matching App Typography roughly) ---
+    // --- Standard Typography Styles ---
     private val titleStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Bold,
-        fontSize = 24.sp
+        fontSize = 32.sp
     )
     private val headingStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Bold,
-        fontSize = 18.sp
+        fontSize = 20.sp
     )
     private val bodyStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontSize = 14.sp
+    )
+    private val tagStyle = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        fontSize = 12.sp,
+        color = androidx.compose.ui.graphics.Color.White
     )
     private val codeStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
@@ -54,20 +60,18 @@ class NodeSizeCalculator(
             is NodeContent.TextContent -> measureText(content, config)
             is NodeContent.CodeContent -> measureCode(content, config)
             is NodeContent.TableContent -> measureTable(content, config)
-            is NodeContent.ImageContent -> measureImage(content)
+            is NodeContent.MediaContent -> measureMedia(content)
             is NodeContent.MapContent -> measureMap() // Default size for standard nodes
-            is NodeContent.ListContent -> measureList(content.items)
-            is NodeContent.TaskListContent -> measureList(content.items.map { it.text })
-            is NodeContent.SetContent -> measureList(content.items.toList())
-            is NodeContent.DateTimestampContent -> Size(120f, 60f)
-            is NodeContent.TagContent -> Size(100f, 40f)
+            is NodeContent.ListContent -> measureList(content.items.map { it.text }, config)
+            is NodeContent.TimestampContent -> Size(120f, 60f)
         }
     }
 
     private fun measureText(content: NodeContent.TextContent, config: SchemaConfig?): Size {
         val style = when (config) {
-            is SchemaConfig.TitleConfig -> titleStyle
-            is SchemaConfig.HeadingConfig -> headingStyle
+            is SchemaConfig.TextConfig.Title -> titleStyle
+            is SchemaConfig.TextConfig.Heading -> headingStyle
+            is SchemaConfig.TextConfig.Tag -> tagStyle
             else -> bodyStyle
         }
 
@@ -76,19 +80,57 @@ class NodeSizeCalculator(
         val minWidthPx = with(density) { minNodeWidth.toPx() }.toInt()
 
         val result = textMeasurer.measure(
-            text = AnnotatedString(content.text),
+            text = AnnotatedString(content.value),
             style = style,
             constraints = Constraints(maxWidth = maxWidthPx)
         )
 
-        val width = max(minWidthPx, result.size.width) + with(density) { padding.toPx() * 2 }
-        val height = result.size.height + with(density) { padding.toPx() * 2 }
+        var width = max(minWidthPx, result.size.width) + with(density) { padding.toPx() * 2 }
+        var height = result.size.height + with(density) { padding.toPx() * 2 }
+
+        // Special adjustments for Tags
+        if (config is SchemaConfig.TextConfig.Tag) {
+            width = result.size.width + with(density) { 24.dp.toPx() } // More tight, pill shape padding
+            height = result.size.height + with(density) { 12.dp.toPx() }
+        }
 
         return Size(width.toFloat(), height.toFloat())
     }
 
+    private fun measureList(items: List<String>, config: SchemaConfig?): Size {
+        val maxWidthPx = with(density) { maxNodeWidth.toPx() }.toInt()
+        var maxWidth = 0
+        var totalHeight = 0
+
+        // Determine list indicator width offset
+        val indicatorWidth = when (config) {
+            is SchemaConfig.ListConfig.Ordered -> with(density) { 24.dp.toPx() }.toInt()
+            is SchemaConfig.ListConfig.Task -> with(density) { 24.dp.toPx() }.toInt()
+            else -> with(density) { 12.dp.toPx() }.toInt() // Bullet
+        }
+
+        // Measure first few items to estimate or calculate bounds
+        items.take(10).forEach { item ->
+            val res = textMeasurer.measure(
+                text = AnnotatedString(item),
+                style = bodyStyle,
+                constraints = Constraints(maxWidth = maxWidthPx - indicatorWidth)
+            )
+            if (res.size.width > maxWidth) maxWidth = res.size.width
+            totalHeight += res.size.height + with(density) { 4.dp.toPx() }.toInt() // item spacing
+        }
+        // Add ellipsis estimate if cropped
+        if (items.size > 10) totalHeight += with(density) { 20.dp.toPx() }.toInt()
+
+        val paddingPx = with(density) { padding.toPx() }
+        val finalWidth = (maxWidth + indicatorWidth + paddingPx * 2).toFloat()
+        val finalHeight = (totalHeight + paddingPx * 2).toFloat()
+
+        return Size(finalWidth, finalHeight)
+    }
+
     private fun measureCode(content: NodeContent.CodeContent, config: SchemaConfig?): Size {
-        val showFilename = (config as? SchemaConfig.CodeBlockConfig)?.showFilename ?: true
+        val showFilename = (config as? SchemaConfig.CodeConfig)?.showFilename ?: true
         val maxWidthPx = with(density) { 400.dp.toPx() }.toInt() // Code blocks can be wider
 
         // Measure Code Content
@@ -127,7 +169,7 @@ class NodeSizeCalculator(
         return Size(width, height)
     }
 
-    private fun measureImage(content: NodeContent.ImageContent): Size {
+    private fun measureMedia(content: NodeContent.MediaContent): Size {
         // Return thumbnail size + label space
         val thumbSize = with(density) { 100.dp.toPx() }
         val labelHeight = if (content.caption != null) with(density) { 20.dp.toPx() } else 0f
@@ -138,28 +180,5 @@ class NodeSizeCalculator(
         // Default circular node size
         val size = with(density) { 50.dp.toPx() }
         return Size(size, size)
-    }
-
-    private fun measureList(items: List<String>): Size {
-        val maxWidthPx = with(density) { maxNodeWidth.toPx() }.toInt()
-        var maxWidth = 0
-        var totalHeight = 0
-
-        // Measure first few items to estimate or calculate bounds
-        items.take(10).forEach { item ->
-            // Use named argument for constraints to fix ambiguity
-            val res = textMeasurer.measure(
-                text = AnnotatedString(item),
-                style = bodyStyle,
-                constraints = Constraints(maxWidth = maxWidthPx)
-            )
-            if (res.size.width > maxWidth) maxWidth = res.size.width
-            totalHeight += res.size.height
-        }
-        // Add ellipsis estimate if cropped
-        if (items.size > 10) totalHeight += with(density) { 20.dp.toPx() }.toInt()
-
-        val paddingPx = with(density) { padding.toPx() }
-        return Size((maxWidth + paddingPx * 2).toFloat(), (totalHeight + paddingPx * 2).toFloat())
     }
 }

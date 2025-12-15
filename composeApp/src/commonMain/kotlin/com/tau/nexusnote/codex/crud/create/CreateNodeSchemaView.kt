@@ -35,6 +35,10 @@ fun CreateNodeSchemaView(
     onTableNameChange: (String) -> Unit,
     onTypeChange: (NodeType) -> Unit,
 
+    // Secondary Type Handlers
+    onTextTypeChange: (String) -> Unit,
+    onListTypeChange: (String) -> Unit,
+
     // Config Update Handlers
     onTableConfigChange: (String, Boolean, String) -> Unit, // rowType, showCols, maxRows
     onCodeConfigChange: (String, Boolean) -> Unit, // lang, showFile
@@ -115,6 +119,73 @@ fun CreateNodeSchemaView(
                             )
                         }
 
+                        NodeType.TEXT -> {
+                            // Secondary: Text Style
+                            CodexDropdown(
+                                label = "Text Style",
+                                options = listOf("Plain", "Heading", "Title"),
+                                selectedOption = state.textSchemaType,
+                                onOptionSelected = onTextTypeChange
+                            )
+                            Spacer(Modifier.height(8.dp))
+
+                            when (state.textSchemaType) {
+                                "Heading" -> {
+                                    Text("Heading Level: ${state.headingLevel.toInt()}")
+                                    Slider(
+                                        value = state.headingLevel,
+                                        onValueChange = { onTextConfigChange(state.textCasing, it, state.shortTextCharLimit) },
+                                        valueRange = 1f..6f,
+                                        steps = 4
+                                    )
+                                    CodexDropdown(
+                                        label = "Casing",
+                                        options = listOf("TitleCase", "UpperCase", "LowerCase", "SentenceCase"),
+                                        selectedOption = state.textCasing,
+                                        onOptionSelected = { onTextConfigChange(it, state.headingLevel, state.shortTextCharLimit) }
+                                    )
+                                }
+                                "Title" -> {
+                                    CodexDropdown(
+                                        label = "Casing",
+                                        options = listOf("TitleCase", "UpperCase", "LowerCase", "SentenceCase"),
+                                        selectedOption = state.textCasing,
+                                        onOptionSelected = { onTextConfigChange(it, state.headingLevel, state.shortTextCharLimit) }
+                                    )
+                                }
+                                "Plain" -> {
+                                    OutlinedTextField(
+                                        value = state.shortTextCharLimit,
+                                        onValueChange = { onTextConfigChange(state.textCasing, state.headingLevel, it) },
+                                        label = { Text("Character Limit (Empty for Long Text)") },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
+                        }
+
+                        NodeType.LIST -> {
+                            // Secondary: List Type
+                            CodexDropdown(
+                                label = "List Type",
+                                options = listOf("Ordered", "Unordered", "Task"),
+                                selectedOption = state.listSchemaType,
+                                onOptionSelected = onListTypeChange
+                            )
+                            Spacer(Modifier.height(8.dp))
+
+                            if (state.listSchemaType == "Ordered") {
+                                CodexDropdown(
+                                    label = "Indicator Style",
+                                    options = listOf("1.", "A.", "a.", "i.", "I."),
+                                    selectedOption = state.listIndicatorStyle,
+                                    onOptionSelected = { onListConfigChange(it) }
+                                )
+                            } else {
+                                Text("No additional configuration needed.")
+                            }
+                        }
+
                         NodeType.TABLE -> {
                             CodexDropdown(
                                 label = "Row Header Style",
@@ -138,7 +209,7 @@ fun CreateNodeSchemaView(
                             )
                         }
 
-                        NodeType.CODE_BLOCK -> {
+                        NodeType.CODE -> {
                             OutlinedTextField(
                                 value = state.codeDefaultLanguage,
                                 onValueChange = { onCodeConfigChange(it, state.codeShowFilename) },
@@ -155,49 +226,13 @@ fun CreateNodeSchemaView(
                             }
                         }
 
-                        NodeType.TITLE, NodeType.HEADING -> {
-                            CodexDropdown(
-                                label = "Casing",
-                                options = listOf("TitleCase", "UpperCase", "LowerCase", "SentenceCase"),
-                                selectedOption = state.textCasing,
-                                onOptionSelected = { onTextConfigChange(it, state.headingLevel, state.shortTextCharLimit) }
-                            )
-                            if (type == NodeType.HEADING) {
-                                Spacer(Modifier.height(8.dp))
-                                Text("Heading Level: ${state.headingLevel.toInt()}")
-                                Slider(
-                                    value = state.headingLevel,
-                                    onValueChange = { onTextConfigChange(state.textCasing, it, state.shortTextCharLimit) },
-                                    valueRange = 1f..6f,
-                                    steps = 4
-                                )
-                            }
+                        NodeType.TIMESTAMP -> {
+                            // Simple placeholder, could be format string
+                            Text("Standard timestamp format used.")
                         }
 
-                        NodeType.SHORT_TEXT -> {
-                            OutlinedTextField(
-                                value = state.shortTextCharLimit,
-                                onValueChange = { onTextConfigChange(state.textCasing, state.headingLevel, it) },
-                                label = { Text("Character Limit") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        NodeType.ORDERED_LIST -> {
-                            CodexDropdown(
-                                label = "Indicator Style",
-                                options = listOf("1.", "A.", "a.", "i.", "I."),
-                                selectedOption = state.listIndicatorStyle,
-                                onOptionSelected = { onListConfigChange(it) }
-                            )
-                        }
-
-                        else -> {
-                            Text(
-                                "No additional configuration required for ${type.name.replace("_", " ")}.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        NodeType.MEDIA -> {
+                            Text("Standard media container used.")
                         }
                     }
                 }

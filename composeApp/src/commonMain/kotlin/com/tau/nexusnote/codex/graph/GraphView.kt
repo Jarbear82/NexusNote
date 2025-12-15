@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GroupWork
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.GroupWork
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -59,6 +59,7 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
@@ -164,7 +165,6 @@ fun GraphView(
                 viewModel.onResize(it)
             }
     ) {
-        // --- UPDATED: Explicitly use FontFamily.Monospace ---
         val edgeLabelStyle = TextStyle(
             fontFamily = FontFamily.Monospace,
             fontSize = (10.sp.value / transform.zoom.coerceAtLeast(0.1f)).coerceIn(8.sp.value, 14.sp.value).sp,
@@ -172,7 +172,6 @@ fun GraphView(
         )
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            // Calculate the visible rectangle in world coordinates
             val worldTopLeft = viewModel.screenToWorld(Offset.Zero)
             val worldBottomRight = viewModel.screenToWorld(Offset(size.width, size.height))
             val visibleWorldRect = Rect(worldTopLeft, worldBottomRight)
@@ -183,9 +182,8 @@ fun GraphView(
                 translate(left = transform.pan.x, top = transform.pan.y)
             }) {
 
-                // --- 1. Draw Compound Nodes (Backgrounds) ---
+                // --- 1. Draw Compound Nodes ---
                 nodes.values.filter { it.isCompound }.forEach { node ->
-                    // Culling approximation
                     val halfW = node.width / 2
                     val halfH = node.height / 2
                     val nodeRect = Rect(
@@ -213,7 +211,6 @@ fun GraphView(
                             )
                         )
 
-                        // Label at Top-Left
                         if (renderingSettings.showNodeLabels) {
                             val labelStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
@@ -253,7 +250,6 @@ fun GraphView(
                     val nodeB = nodes[edge.targetId]
                     if (nodeA == null || nodeB == null) continue
 
-                    // --- CULLING CHECK ---
                     val cullingRect = visibleWorldRect.inflate(200f / transform.zoom)
                     if (!cullingRect.contains(nodeA.pos) && !cullingRect.contains(nodeB.pos)) {
                         continue
@@ -294,7 +290,7 @@ fun GraphView(
 
                 // --- 3. Draw Nodes (Foreground) ---
                 drawNodes(
-                    nodes = nodes.filterValues { !it.isCompound }, // Only simple nodes
+                    nodes = nodes.filterValues { !it.isCompound },
                     visibleWorldRect = visibleWorldRect,
                     textMeasurer = textMeasurer,
                     labelColor = labelColor,
@@ -306,9 +302,8 @@ fun GraphView(
                 )
             }
 
-            // --- Draw UI Elements (outside transform) ---
+            // --- Draw UI Elements ---
             val crosshairSize = 10f
-
             if(renderingSettings.showCrosshairs) {
                 drawLine(
                     color = crosshairColor,
@@ -325,7 +320,7 @@ fun GraphView(
             }
         }
 
-        // --- Detangling Lockout Overlay ---
+        // --- Overlays & Controls ---
         AnimatedVisibility(
             visible = isDetangling,
             modifier = Modifier.fillMaxSize()
@@ -334,7 +329,6 @@ fun GraphView(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                    // This empty pointerInput consumes all gestures, "locking" the UI
                     .pointerInput(Unit) {},
                 contentAlignment = Alignment.Center
             ) {
@@ -350,8 +344,6 @@ fun GraphView(
             }
         }
 
-
-        // --- Settings Toggle and Panel ---
         SmallFloatingActionButton(
             onClick = { viewModel.toggleSettings() },
             modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
@@ -373,8 +365,6 @@ fun GraphView(
             )
         }
 
-
-        // --- Floating Action Button Menu ---
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -387,21 +377,18 @@ fun GraphView(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Create Node
                     SmallFloatingActionButton(
                         onClick = { onAddNodeClick() },
                         containerColor = MaterialTheme.colorScheme.primary
                     ) {
                         Icon(Icons.Default.Hub, contentDescription = "Create Node")
                     }
-                    // Create Edge
                     SmallFloatingActionButton(
                         onClick = { onAddEdgeClick() },
                         containerColor = MaterialTheme.colorScheme.primary
                     ) {
                         Icon(Icons.Default.Link, contentDescription = "Create Edge")
                     }
-                    // Group Selected (Only visible if nodes are selected)
                     if (primarySelectedId != null || secondarySelectedId != null) {
                         SmallFloatingActionButton(
                             onClick = {
@@ -415,7 +402,6 @@ fun GraphView(
                     }
                 }
             }
-            // Main FAB
             FloatingActionButton(
                 onClick = { viewModel.onFabClick() },
                 containerColor = MaterialTheme.colorScheme.primary
@@ -427,8 +413,6 @@ fun GraphView(
             }
         }
     }
-
-
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -463,7 +447,6 @@ private fun DrawScope.drawSelfLoop(
 
     drawArrowhead(p3, p4, color, arrowSize)
 
-    // Draw regular label
     if (showLabel) {
         val labelPos = (p2 + p3) / 2f
         val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
@@ -497,18 +480,16 @@ private fun DrawScope.drawCurvedEdge(
 
     val isStraight = (total == 1)
 
-    // Style for the Role Label (smaller, slightly transparent)
     val roleStyle = style.copy(
         fontSize = (style.fontSize.value * 0.8).sp,
         color = style.color.copy(alpha = 0.8f)
     )
 
-    // Prepare role label logic if needed (measure once)
     val roleLabel = edge.roleLabel
     val hasRole = !roleLabel.isNullOrBlank() && showLabel
 
     val roleResult = if (hasRole) {
-        textMeasurer.measure(AnnotatedString(roleLabel), roleStyle)
+        textMeasurer.measure(AnnotatedString(roleLabel!!), roleStyle)
     } else null
 
     val textWidth = roleResult?.size?.width?.toFloat() ?: 0f
@@ -527,18 +508,14 @@ private fun DrawScope.drawCurvedEdge(
             val mid = startWithRadius + vec / 2f
 
             if (dist > gapSize) {
-                // Draw two segments with a gap
                 val line1End = mid - dir * (gapSize / 2f)
                 val line2Start = mid + dir * (gapSize / 2f)
                 drawLine(color, startWithRadius, line1End, strokeWidth)
                 drawLine(color, line2Start, endWithRadius, strokeWidth)
-            } else {
-                // If text is longer than line, don't draw line underneath
             }
 
             drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
 
-            // Draw Text
             val angleRad = atan2(dir.y, dir.x)
             var angleDeg = angleRad * (180f / PI.toFloat())
             if (angleDeg > 90f || angleDeg < -90f) {
@@ -557,7 +534,6 @@ private fun DrawScope.drawCurvedEdge(
             drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
         }
 
-        // Draw standard Edge Label (if any)
         if (showLabel && edge.label.isNotBlank()) {
             val labelOffset = Offset(0f, -10f)
             val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
@@ -602,7 +578,6 @@ private fun DrawScope.drawCurvedEdge(
                 drawPath(p2, color, style = Stroke(strokeWidth))
             }
 
-            // Text Position & Rotation
             val pos = pathMeasure.getPosition(midDist)
             val tan = pathMeasure.getTangent(midDist)
             val angleRad = atan2(tan.y, tan.x)
@@ -625,7 +600,6 @@ private fun DrawScope.drawCurvedEdge(
         val tangent = (endWithRadius - controlPoint).normalized()
         drawArrowhead(endWithRadius - (tangent * arrowSize * 2f), endWithRadius, color, arrowSize)
 
-        // Draw standard Edge Label
         if (showLabel && edge.label.isNotBlank()) {
             val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
             drawText(
@@ -653,8 +627,6 @@ private fun DrawScope.drawArrowhead(from: Offset, to: Offset, color: Color, size
         close()
     }
     drawPath(path, color)
-
-
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -673,7 +645,6 @@ private fun DrawScope.drawNodes(
     val maxSize = 14.sp
     val fontSize = ((12.sp.value / zoom.coerceAtLeast(0.1f)).coerceIn(minSize.value, maxSize.value)).sp
 
-    // --- UPDATED: Explicitly use FontFamily.Monospace ---
     val style = TextStyle(
         fontFamily = FontFamily.Monospace,
         fontSize = fontSize,
@@ -684,7 +655,6 @@ private fun DrawScope.drawNodes(
     val secondaryId = secondarySelectedId
 
     for (node in nodes.values) {
-        // --- CULLING CHECK ---
         val halfW = node.width / 2
         val halfH = node.height / 2
 
@@ -700,16 +670,14 @@ private fun DrawScope.drawNodes(
 
         val isSelected = node.id == primaryId || node.id == secondaryId
         val borderColor = if(isSelected) selectionColor else node.colorInfo.composeColor
-        val bgColor = node.colorInfo.composeColor.copy(alpha = 0.1f) // Lighter background for boxes
+        val bgColor = node.colorInfo.composeColor.copy(alpha = 0.1f)
 
         if (node.isHyperNode) {
-            // --- Hypernodes (Text Only) ---
             val textLayoutResult = textMeasurer.measure(
                 text = AnnotatedString(node.displayProperty),
-                style = style.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                style = style.copy(fontWeight = FontWeight.Bold)
             )
 
-            // Center the text
             val topLeft = Offset(
                 x = node.pos.x - (textLayoutResult.size.width / 2f),
                 y = node.pos.y - (textLayoutResult.size.height / 2f)
@@ -733,22 +701,11 @@ private fun DrawScope.drawNodes(
             )
 
         } else if (node.content != null) {
-            // --- Phase 3: Complex Node Rendering via CanvasNodeRenderer ---
+            // Render specific node types, driven by config
             when (node.content) {
                 is NodeContent.TextContent -> {
-                    // Detect subtype based on label or convention (or later add sub-types to Content)
-                    // For now, heuristic based on schema/label name?
-                    // Actually, NodeContent is polymorphic. Let's use basic type inference.
-                    // Ideally we should pass the NodeType or config here, but we lack it in GraphNode directly.
-                    // We can assume basic TextNode unless it's very short/long.
-
-                    if (node.label.equals("TITLE", ignoreCase = true)) {
-                        drawTitleNode(node, node.content, textMeasurer, style, bgColor, borderColor)
-                    } else if (node.label.equals("HEADING", ignoreCase = true)) {
-                        drawHeadingNode(node, node.content, textMeasurer, style, bgColor, borderColor)
-                    } else {
-                        drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor)
-                    }
+                    // drawTextNode is now config-aware
+                    drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config)
                 }
                 is NodeContent.CodeContent -> {
                     drawCodeNode(node, node.content, textMeasurer, style, Color(0xFF2B2B2B), borderColor)
@@ -756,24 +713,18 @@ private fun DrawScope.drawNodes(
                 is NodeContent.TableContent -> {
                     drawTableNode(node, node.content, textMeasurer, style, bgColor, borderColor)
                 }
-                is NodeContent.TaskListContent -> {
-                    drawTaskListNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                is NodeContent.ListContent -> {
+                    // New: drawListNode handles tasks/ordered/unordered based on config
+                    drawListNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config)
                 }
-                is NodeContent.TagContent -> {
-                    // Tag color usually distinct
-                    val tagColor = node.colorInfo.composeColor
-                    drawTagNode(node, node.content, textMeasurer, style, tagColor, borderColor)
-                }
-                is NodeContent.ImageContent -> {
+                is NodeContent.MediaContent -> {
                     drawImageNode(node, node.content, textMeasurer, style, bgColor, borderColor)
                 }
                 else -> {
-                    // Fallback to circle for Map, List, etc.
                     drawDefaultCircleNode(node, isSelected, selectionColor, showLabel, zoom, textMeasurer, style)
                 }
             }
         } else {
-            // --- Standard Nodes (Fallback) ---
             drawDefaultCircleNode(node, isSelected, selectionColor, showLabel, zoom, textMeasurer, style)
         }
     }
@@ -816,8 +767,6 @@ private fun DrawScope.drawDefaultCircleNode(
         )
     }
 }
-
-// --- Math Helpers ---
 
 private fun Offset.normalized(): Offset {
     val mag = this.getDistance()

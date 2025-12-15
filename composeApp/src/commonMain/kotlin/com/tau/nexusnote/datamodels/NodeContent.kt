@@ -4,53 +4,61 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Defines the specific type of content a Node holds.
- * This differentiates how the UI should render the node
- * and which NodeContent subclass is expected.
+ * Defines the generic structural primitive of the node.
+ * This separates storage format from semantic meaning (which is handled by SchemaConfig).
  */
 enum class NodeType {
-    MAP, // Generic Key-Value pairs
-    TITLE,
-    HEADING,
-    SHORT_TEXT,
-    LONG_TEXT,
-    CODE_BLOCK,
-    SET,
-    UNORDERED_LIST,
-    ORDERED_LIST,
-    TASK_LIST,
+    TEXT,
+    MAP,
+    LIST,
     TABLE,
-    IMAGE,
-    DATE_TIMESTAMP,
-    TAG
+    CODE,
+    MEDIA,
+    TIMESTAMP
 }
 
 /**
  * Polymorphic hierarchy for Node Data.
+ * Consolidates storage into generic primitives.
  */
 @Serializable
 sealed class NodeContent {
 
-    // --- Existing Structure Wrapper ---
+    /**
+     * Primitive: TEXT
+     * Stores any text-based content (Titles, Headings, Notes, Long form).
+     */
+    @Serializable @SerialName("text")
+    data class TextContent(val value: String) : NodeContent()
 
     /**
-     * Wrapper for the legacy/generic key-value pair structure.
-     * Corresponds to NodeType.MAP.
+     * Primitive: MAP
+     * Stores generic key-value pairs.
      */
     @Serializable @SerialName("map")
     data class MapContent(val values: Map<String, String>) : NodeContent()
 
-    // --- Text Types ---
-
     /**
-     * Shared content holder for TITLE, HEADING, SHORT_TEXT, LONG_TEXT.
-     * The specific rendering style is determined by the NodeType enum.
+     * Primitive: LIST
+     * Stores a list of items, optionally with completion state.
+     * Unifies Ordered Lists, Unordered Lists, Sets, and Task Lists.
      */
-    @Serializable @SerialName("text")
-    data class TextContent(val text: String) : NodeContent()
+    @Serializable @SerialName("list")
+    data class ListContent(val items: List<ListItem>) : NodeContent()
 
     /**
-     * Updated CodeContent with filename support.
+     * Primitive: TABLE
+     * Stores structured grid data.
+     */
+    @Serializable @SerialName("table")
+    data class TableContent(
+        val headers: List<String>,
+        val rows: List<List<String>>
+    ) : NodeContent()
+
+    /**
+     * Primitive: CODE
+     * Stores source code with language metadata.
      */
     @Serializable @SerialName("code")
     data class CodeContent(
@@ -59,52 +67,35 @@ sealed class NodeContent {
         val filename: String? = null
     ) : NodeContent()
 
-    // --- List Types ---
-
     /**
-     * Content for UNORDERED_LIST and ORDERED_LIST.
+     * Primitive: MEDIA
+     * Stores references to external media files (Images, Audio, Video).
+     * Renamed from ImageContent to generic MediaContent.
      */
-    @Serializable @SerialName("list")
-    data class ListContent(val items: List<String>) : NodeContent()
-
-    @Serializable @SerialName("task_list")
-    data class TaskListContent(val items: List<TaskItem>) : NodeContent()
-
-    @Serializable @SerialName("set")
-    data class SetContent(val items: Set<String>) : NodeContent()
-
-    // --- Structured Types ---
-
-    @Serializable @SerialName("table")
-    data class TableContent(
-        val headers: List<String>,
-        val rows: List<List<String>>
-    ) : NodeContent()
-
-    @Serializable @SerialName("image")
-    data class ImageContent(
+    @Serializable @SerialName("media")
+    data class MediaContent(
         val uri: String,
         val caption: String?
     ) : NodeContent()
 
-    @Serializable @SerialName("date_timestamp")
-    data class DateTimestampContent(
+    /**
+     * Primitive: TIMESTAMP
+     * Stores temporal data.
+     */
+    @Serializable @SerialName("timestamp")
+    data class TimestampContent(
         val timestamp: Long,
         val format: String? = null
-    ) : NodeContent()
-
-    @Serializable @SerialName("tag")
-    data class TagContent(
-        val name: String,
-        val color: String? = null
     ) : NodeContent()
 }
 
 /**
- * Represents a single item in a Task List.
+ * Generic item for list primitives.
+ * @param text The content of the list item.
+ * @param isCompleted True if this item represents a completed task. Ignored for standard lists.
  */
 @Serializable
-data class TaskItem(
+data class ListItem(
     val text: String,
-    val isCompleted: Boolean
+    val isCompleted: Boolean = false
 )

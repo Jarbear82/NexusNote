@@ -50,6 +50,8 @@ fun EditItemView(
     // Node Schema Creation Handlers
     onNodeSchemaTableNameChange: (String) -> Unit,
     onNodeSchemaTypeChange: (NodeType) -> Unit = {},
+    onNodeSchemaTextTypeChange: (String) -> Unit = {}, // New
+    onNodeSchemaListTypeChange: (String) -> Unit = {}, // New
     onNodeSchemaTableConfigChange: (String, Boolean, String) -> Unit = {_,_,_ ->},
     onNodeSchemaCodeConfigChange: (String, Boolean) -> Unit = {_,_ ->},
     onNodeSchemaTextConfigChange: (String, Float, String) -> Unit = {_,_,_ ->},
@@ -148,6 +150,8 @@ fun EditItemView(
                 state = editScreenState.state,
                 onTableNameChange = onNodeSchemaTableNameChange,
                 onTypeChange = onNodeSchemaTypeChange,
+                onTextTypeChange = onNodeSchemaTextTypeChange, // New
+                onListTypeChange = onNodeSchemaListTypeChange, // New
                 onTableConfigChange = onNodeSchemaTableConfigChange,
                 onCodeConfigChange = onNodeSchemaCodeConfigChange,
                 onTextConfigChange = onNodeSchemaTextConfigChange,
