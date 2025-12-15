@@ -155,7 +155,8 @@ fun EditEdgeSchemaView(
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.width(140.dp)) {
+                        // Replaced fixed width with weight for responsiveness
+                        Box(modifier = Modifier.weight(0.8f)) {
                             CodexDropdown(
                                 label = "Type",
                                 options = CodexPropertyDataTypes.entries,

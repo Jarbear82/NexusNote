@@ -167,7 +167,7 @@ fun CreateEdgeSchemaView(
                             singleLine = true
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.width(140.dp)) {
+                        Box(modifier = Modifier.weight(0.8f)) {
                             CodexDropdown(
                                 label = "Type",
                                 options = CodexPropertyDataTypes.entries,
@@ -215,6 +215,7 @@ fun RoleEditorItem(
         modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
+            // Updated: Use weights instead of fixed widths for responsiveness
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Role Name
                 OutlinedTextField(
@@ -229,7 +230,7 @@ fun RoleEditorItem(
                 Spacer(Modifier.width(8.dp))
 
                 // Direction
-                Box(modifier = Modifier.width(110.dp)) {
+                Box(modifier = Modifier.weight(0.6f)) {
                     CodexDropdown(
                         label = "Dir",
                         options = directionOptions,
@@ -242,7 +243,7 @@ fun RoleEditorItem(
                 Spacer(Modifier.width(8.dp))
 
                 // Cardinality
-                Box(modifier = Modifier.width(100.dp)) {
+                Box(modifier = Modifier.weight(0.6f)) {
                     CodexDropdown(
                         label = "Count",
                         options = cardinalityOptions,

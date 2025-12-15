@@ -298,205 +298,6 @@ fun getRectIntersection(center: Offset, width: Float, height: Float, target: Off
     return center + Offset(dx * scale, dy * scale)
 }
 
-@OptIn(ExperimentalTextApi::class)
-private fun DrawScope.drawSelfLoop(
-    node: GraphNode,
-    edge: GraphEdge,
-    index: Int,
-    textMeasurer: TextMeasurer,
-    style: TextStyle,
-    showLabel: Boolean
-) {
-    val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
-    val strokeWidth = 2f
-    val arrowSize = 12f
-    val loopRadius = 25f + (index * 12f)
-    val loopSeparation = node.radius + 5f
-    val startAngle = (45f).degToRad()
-    val endAngle = (-30f).degToRad()
-
-    val p1 = node.pos + Offset(cos(startAngle) * node.radius, sin(startAngle) * node.radius)
-    val p4 = node.pos + Offset(cos(endAngle) * node.radius, sin(endAngle) * node.radius)
-
-    val controlOffset = loopSeparation + loopRadius
-    val p2 = p1 + Offset(cos(startAngle) * controlOffset, sin(startAngle) * controlOffset)
-    val p3 = p4 + Offset(cos(endAngle) * controlOffset, sin(endAngle) * controlOffset)
-
-    val path = Path().apply {
-        moveTo(p1.x, p1.y)
-        cubicTo(p2.x, p2.y, p3.x, p3.y, p4.x, p4.y)
-    }
-    drawPath(path, color, style = Stroke(strokeWidth))
-
-    drawArrowhead(p3, p4, color, arrowSize)
-
-    if (showLabel) {
-        val labelPos = (p2 + p3) / 2f
-        val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
-        drawText(
-            textLayoutResult = textLayoutResult,
-            topLeft = labelPos - Offset(textLayoutResult.size.width / 2f, textLayoutResult.size.height / 2f),
-            color = style.color
-        )
-    }
-}
-
-@OptIn(ExperimentalTextApi::class)
-private fun DrawScope.drawCurvedEdge(
-    from: GraphNode,
-    to: GraphNode,
-    edge: GraphEdge,
-    index: Int,
-    total: Int,
-    textMeasurer: TextMeasurer,
-    style: TextStyle,
-    showLabel: Boolean
-) {
-    val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
-    val strokeWidth = 2f
-    val arrowSize = 12f
-
-    val start = from.pos
-    val end = to.pos
-    val delta = end - start
-    val midPoint = (start + end) / 2f
-
-    val isStraight = (total == 1)
-
-    val roleStyle = style.copy(
-        fontSize = (style.fontSize.value * 0.8).sp,
-        color = style.color.copy(alpha = 0.8f)
-    )
-
-    val roleLabel = edge.roleLabel
-    val hasRole = !roleLabel.isNullOrBlank() && showLabel
-
-    val roleResult = if (hasRole) {
-        textMeasurer.measure(AnnotatedString(roleLabel!!), roleStyle)
-    } else null
-
-    val textWidth = roleResult?.size?.width?.toFloat() ?: 0f
-    val textHeight = roleResult?.size?.height?.toFloat() ?: 0f
-    val gapPadding = 10f
-    val gapSize = if (hasRole) textWidth + gapPadding else 0f
-
-    if (isStraight) {
-        // Use getRectIntersection instead of radius math
-        val startEdge = getRectIntersection(from.pos, from.width, from.height, to.pos)
-        val endEdge = getRectIntersection(to.pos, to.width, to.height, from.pos)
-
-        if (hasRole) {
-            val vec = endEdge - startEdge
-            val dist = vec.getDistance()
-            val dir = vec.normalized()
-            val mid = startEdge + vec / 2f
-
-            if (dist > gapSize) {
-                val line1End = mid - dir * (gapSize / 2f)
-                val line2Start = mid + dir * (gapSize / 2f)
-                drawLine(color, startEdge, line1End, strokeWidth)
-                drawLine(color, line2Start, endEdge, strokeWidth)
-            }
-
-            drawArrowhead(startEdge, endEdge, color, arrowSize)
-
-            val angleRad = atan2(dir.y, dir.x)
-            var angleDeg = angleRad * (180f / PI.toFloat())
-            if (angleDeg > 90f || angleDeg < -90f) {
-                angleDeg += 180f
-            }
-
-            withTransform({
-                rotate(angleDeg, pivot = mid)
-            }) {
-                val topLeft = mid - Offset(textWidth / 2f, textHeight / 2f)
-                drawText(roleResult!!, topLeft = topLeft)
-            }
-
-        } else {
-            drawLine(color, startEdge, endEdge, strokeWidth)
-            drawArrowhead(startEdge, endEdge, color, arrowSize)
-        }
-
-        if (showLabel && edge.label.isNotBlank()) {
-            val labelOffset = Offset(0f, -10f)
-            val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
-            drawText(
-                textLayoutResult = textLayoutResult,
-                topLeft = midPoint + labelOffset - Offset(textLayoutResult.size.width / 2f, textLayoutResult.size.height / 2f),
-                color = style.color
-            )
-        }
-
-    } else {
-        val normal = Offset(-delta.y, delta.x).normalized()
-        val baseCurvature = 30f
-        val curveSign = if (index % 2 == 0) -1 else 1
-        val curveMagnitude = (index + 1) / 2
-        val curveOffset = curveSign * curveMagnitude * (baseCurvature * 0.75f)
-        val controlPoint = midPoint + normal * (baseCurvature + curveOffset)
-
-        // Calculate intersection towards the control point for curves
-        val startEdge = getRectIntersection(from.pos, from.width, from.height, controlPoint)
-        val endEdge = getRectIntersection(to.pos, to.width, to.height, controlPoint)
-
-        val path = Path().apply {
-            moveTo(startEdge.x, startEdge.y)
-            quadraticTo(controlPoint.x, controlPoint.y, endEdge.x, endEdge.y)
-        }
-
-        if (hasRole) {
-            val pathMeasure = PathMeasure()
-            pathMeasure.setPath(path, false)
-            val length = pathMeasure.length
-            val midDist = length / 2f
-            val halfGap = gapSize / 2f
-
-            if (midDist - halfGap > 0) {
-                val p1 = Path()
-                pathMeasure.getSegment(0f, midDist - halfGap, p1, true)
-                drawPath(p1, color, style = Stroke(strokeWidth))
-            }
-
-            if (midDist + halfGap < length) {
-                val p2 = Path()
-                pathMeasure.getSegment(midDist + halfGap, length, p2, true)
-                drawPath(p2, color, style = Stroke(strokeWidth))
-            }
-
-            val pos = pathMeasure.getPosition(midDist)
-            val tan = pathMeasure.getTangent(midDist)
-            val angleRad = atan2(tan.y, tan.x)
-            var angleDeg = angleRad * (180f / PI.toFloat())
-            if (angleDeg > 90f || angleDeg < -90f) {
-                angleDeg += 180f
-            }
-
-            withTransform({
-                rotate(angleDeg, pivot = pos)
-            }) {
-                val topLeft = pos - Offset(textWidth / 2f, textHeight / 2f)
-                drawText(roleResult!!, topLeft = topLeft)
-            }
-
-        } else {
-            drawPath(path, color, style = Stroke(strokeWidth))
-        }
-
-        val tangent = (endEdge - controlPoint).normalized()
-        drawArrowhead(endEdge - (tangent * arrowSize * 2f), endEdge, color, arrowSize)
-
-        if (showLabel && edge.label.isNotBlank()) {
-            val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
-            drawText(
-                textLayoutResult = textLayoutResult,
-                topLeft = controlPoint - Offset(textLayoutResult.size.width / 2f, textLayoutResult.size.height / 2f),
-                color = style.color
-            )
-        }
-    }
-}
-
 private fun DrawScope.drawArrowhead(from: Offset, to: Offset, color: Color, size: Float) {
     val delta = to - from
     if (delta == Offset.Zero) return
@@ -596,7 +397,7 @@ private fun DrawScope.drawNodes(
                     drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config, padding)
                 }
                 is NodeContent.CodeContent -> {
-                    drawCodeNode(node, node.content, textMeasurer, style, Color(0xFF2B2B2B), borderColor)
+                    drawCodeNode(node, node.content, textMeasurer, style, Color(0xFF2B2B2B), borderColor, padding)
                 }
                 is NodeContent.TableContent -> {
                     drawTableNode(node, node.content, textMeasurer, style, bgColor, borderColor, padding)
@@ -606,7 +407,7 @@ private fun DrawScope.drawNodes(
                     drawListNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config, padding, gap)
                 }
                 is NodeContent.MediaContent -> {
-                    drawImageNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                    drawImageNode(node, node.content, textMeasurer, style, bgColor, borderColor, padding)
                 }
                 else -> {
                     drawDefaultCircleNode(node, isSelected, selectionColor, showLabel, zoom, textMeasurer, style)

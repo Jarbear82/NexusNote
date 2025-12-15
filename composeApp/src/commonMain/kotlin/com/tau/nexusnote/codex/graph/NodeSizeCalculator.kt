@@ -47,12 +47,14 @@ class NodeSizeCalculator(
     )
     private val codeStyle = TextStyle(
         fontFamily = FontFamily.Monospace,
-        fontSize = 12.sp
+        fontSize = 14.sp
     )
 
     // --- Constraints ---
     private val minNodeWidth = 50.dp
-    private val maxNodeWidth = 300.dp
+    // Increased standard max width to accommodate wider screens better,
+    // though still capped to keep nodes readable.
+    private val maxNodeWidth = 400.dp
 
     // Exact match for CanvasRenderer padding
     private val basePadding = 16.dp
@@ -68,7 +70,7 @@ class NodeSizeCalculator(
             is NodeContent.MediaContent -> measureMedia(content)
             is NodeContent.MapContent -> measureMap()
             is NodeContent.ListContent -> measureList(content.items.map { it.text }, config)
-            is NodeContent.TimestampContent -> Size(120f, 60f)
+            is NodeContent.TimestampContent -> Size(with(density){120.dp.toPx()}, with(density){60.dp.toPx()})
         }
     }
 
@@ -137,7 +139,7 @@ class NodeSizeCalculator(
 
     private fun measureCode(content: NodeContent.CodeContent, config: SchemaConfig?): Size {
         val showFilename = (config as? SchemaConfig.CodeConfig)?.showFilename ?: true
-        val maxWidthPx = with(density) { 400.dp.toPx() }.toInt()
+        val maxWidthPx = with(density) { 450.dp.toPx() }.toInt() // Wider for code
 
         val codeResult = textMeasurer.measure(
             text = AnnotatedString(content.code),

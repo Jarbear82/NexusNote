@@ -30,10 +30,12 @@ fun GraphSettingsView(
     primarySelectedId: Long? = null,
     secondarySelectedId: Long? = null
 ) {
+    // Dynamic width card that fits within mobile screens but doesn't get too wide
     Card(
         modifier = modifier
-            .width(320.dp)
-            .heightIn(max = 600.dp),
+            .widthIn(min = 280.dp, max = 360.dp)
+            .fillMaxWidth(0.9f) // For very small screens
+            .fillMaxHeight(fraction = 0.85f), // Constrain height relative to screen
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
     ) {

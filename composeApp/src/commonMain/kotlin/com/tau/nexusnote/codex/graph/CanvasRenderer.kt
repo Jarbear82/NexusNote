@@ -15,6 +15,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.GraphNode
 import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.SchemaConfig
@@ -28,6 +29,7 @@ import kotlin.math.min
  * Extension functions for drawing specific NodeContent types directly on the Graph Canvas.
  * Decouples specific rendering logic from the main GraphView.
  * Driven by SchemaConfig for styling.
+ * Updated: Now uses density-aware sizing for all elements.
  */
 
 @OptIn(ExperimentalTextApi::class)
@@ -93,34 +95,39 @@ fun DrawScope.drawCodeNode(
     textMeasurer: TextMeasurer,
     style: TextStyle,
     backgroundColor: Color,
-    borderColor: Color
+    borderColor: Color,
+    padding: Float
 ) {
+    val density = drawContext.density
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
     val size = Size(node.width, node.height)
+
+    val cornerRadius = with(density) { 8.dp.toPx() }
+    val strokeWidth = with(density) { 2.dp.toPx() }
 
     // Background
     drawRoundRect(
         color = backgroundColor,
         topLeft = topLeft,
         size = size,
-        cornerRadius = CornerRadius(8f, 8f)
+        cornerRadius = CornerRadius(cornerRadius, cornerRadius)
     )
 
     // Check config for showing filename, default true for primitive
     val showFilename = (node.config as? SchemaConfig.CodeConfig)?.showFilename ?: true
 
     // Header Bar
-    val headerHeight = 36f
+    val headerHeight = with(density) { 36.dp.toPx() }
     drawRoundRect(
         color = borderColor.copy(alpha = 0.5f),
         topLeft = topLeft,
         size = Size(node.width, headerHeight),
-        cornerRadius = CornerRadius(8f, 8f)
+        cornerRadius = CornerRadius(cornerRadius, cornerRadius)
     )
     drawRect(
         color = borderColor.copy(alpha = 0.5f),
-        topLeft = topLeft + Offset(0f, headerHeight - 5f),
-        size = Size(node.width, 5f)
+        topLeft = topLeft + Offset(0f, headerHeight - with(density){5.dp.toPx()}),
+        size = Size(node.width, with(density){5.dp.toPx()})
     )
 
     // Border
@@ -128,8 +135,8 @@ fun DrawScope.drawCodeNode(
         color = borderColor,
         topLeft = topLeft,
         size = size,
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = 2f)
+        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+        style = Stroke(width = strokeWidth)
     )
 
     // Header Text
@@ -145,7 +152,7 @@ fun DrawScope.drawCodeNode(
     )
     drawText(
         textLayoutResult = headerLayout,
-        topLeft = topLeft + Offset(8f, 4f)
+        topLeft = topLeft + Offset(padding, with(density){4.dp.toPx()})
     )
 
     // Code Content
@@ -153,11 +160,11 @@ fun DrawScope.drawCodeNode(
     val codeLayout = textMeasurer.measure(
         text = AnnotatedString(content.code),
         style = codeStyle,
-        constraints = Constraints(maxWidth = (node.width - 16).toInt())
+        constraints = Constraints(maxWidth = (node.width - padding * 2).toInt())
     )
     drawText(
         textLayoutResult = codeLayout,
-        topLeft = topLeft + Offset(8f, headerHeight + 8f)
+        topLeft = topLeft + Offset(padding, headerHeight + padding/2)
     )
 }
 
@@ -171,6 +178,7 @@ fun DrawScope.drawTableNode(
     borderColor: Color,
     padding: Float
 ) {
+    val density = drawContext.density
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
     drawStandardBox(node, backgroundColor, borderColor)
 
@@ -179,7 +187,7 @@ fun DrawScope.drawTableNode(
     val hasRowHeaders = rowHeaderType != "None"
 
     // Calculate dimensions
-    val rowHeight = 30f
+    val rowHeight = with(density) { 30.dp.toPx() }
 
     // Determine number of visible columns (Data columns + 1 if row header exists)
     val dataColCount = max(1, content.headers.size)
@@ -215,9 +223,9 @@ fun DrawScope.drawTableNode(
             val measured = textMeasurer.measure(
                 text = AnnotatedString(headerText),
                 style = style.copy(fontWeight = FontWeight.Bold, color = style.color.copy(alpha = 0.7f)),
-                constraints = Constraints(maxWidth = (colWidth - 16).toInt())
+                constraints = Constraints(maxWidth = (colWidth - padding).toInt())
             )
-            drawText(measured, topLeft = Offset(topLeft.x + 8f, y + 5f))
+            drawText(measured, topLeft = Offset(topLeft.x + padding/2, y + with(density){5.dp.toPx()}))
 
             // Draw Vertical Separator
             drawLine(
@@ -231,7 +239,7 @@ fun DrawScope.drawTableNode(
         row.forEachIndexed { colIndex, text ->
             // Shift x based on whether we have a row header
             val visualColIndex = if (hasRowHeaders) colIndex + 1 else colIndex
-            val x = topLeft.x + (visualColIndex * colWidth) + 8f
+            val x = topLeft.x + (visualColIndex * colWidth) + padding/2
 
             val cellStyle = if(showColHeaders && rowIndex == 0) style.copy(fontWeight = FontWeight.Bold) else style
 
@@ -239,9 +247,9 @@ fun DrawScope.drawTableNode(
                 text = AnnotatedString(text),
                 style = cellStyle,
                 maxLines = 1,
-                constraints = Constraints(maxWidth = (colWidth - 16).toInt())
+                constraints = Constraints(maxWidth = (colWidth - padding).toInt())
             )
-            drawText(measured, topLeft = Offset(x, y + 5f))
+            drawText(measured, topLeft = Offset(x, y + with(density){5.dp.toPx()}))
         }
     }
 }
@@ -258,6 +266,7 @@ fun DrawScope.drawListNode(
     padding: Float,
     gap: Float
 ) {
+    val density = drawContext.density
     drawStandardBox(node, backgroundColor, borderColor)
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
     val startX = topLeft.x + padding
@@ -270,22 +279,25 @@ fun DrawScope.drawListNode(
         val isOrdered = config is SchemaConfig.ListConfig.Ordered
         val isUnordered = config is SchemaConfig.ListConfig.Unordered
 
-        var textOffset = 20f
+        var textOffset = with(density) { 20.dp.toPx() }
 
         if (isTask) {
             // Draw Checkbox
-            val checkboxRect = Rect(startX, currentY + 2f, startX + 12f, currentY + 14f)
+            val boxSize = with(density) { 12.dp.toPx() }
+            val checkSize = with(density) { 8.dp.toPx() }
+
+            val checkboxRect = Rect(startX, currentY + 2f, startX + boxSize, currentY + boxSize + 2f)
             drawRect(
                 color = borderColor,
                 topLeft = checkboxRect.topLeft,
-                size = Size(12f, 12f),
-                style = Stroke(width = 1f)
+                size = Size(boxSize, boxSize),
+                style = Stroke(width = with(density){1.dp.toPx()})
             )
             if (item.isCompleted) {
                 drawRect(
                     color = borderColor,
-                    topLeft = checkboxRect.topLeft + Offset(2f, 2f),
-                    size = Size(8f, 8f)
+                    topLeft = checkboxRect.topLeft + Offset((boxSize-checkSize)/2, (boxSize-checkSize)/2),
+                    size = Size(checkSize, checkSize)
                 )
             }
         } else if (isOrdered) {
@@ -301,19 +313,19 @@ fun DrawScope.drawListNode(
             }
             val numLayout = textMeasurer.measure(AnnotatedString(indicator), style)
             drawText(numLayout, topLeft = Offset(startX, currentY))
-            textOffset = numLayout.size.width + 8f
+            textOffset = numLayout.size.width + padding/2
         } else if (isUnordered) {
             // Draw configured symbol
             val symbol = (config as SchemaConfig.ListConfig.Unordered).indicatorSymbol
             val symLayout = textMeasurer.measure(AnnotatedString(symbol), style)
             drawText(symLayout, topLeft = Offset(startX, currentY))
-            textOffset = symLayout.size.width + 8f
+            textOffset = symLayout.size.width + padding/2
         } else {
             // Primitive Fallback (Bullet)
             drawCircle(
                 color = borderColor,
-                radius = 3f,
-                center = Offset(startX + 6f, currentY + 8f)
+                radius = with(density) { 3.dp.toPx() },
+                center = Offset(startX + with(density){6.dp.toPx()}, currentY + with(density){8.dp.toPx()})
             )
         }
 
@@ -340,8 +352,10 @@ fun DrawScope.drawImageNode(
     textMeasurer: TextMeasurer,
     style: TextStyle,
     backgroundColor: Color,
-    borderColor: Color
+    borderColor: Color,
+    padding: Float
 ) {
+    val density = drawContext.density
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
     val size = Size(node.width, node.height)
 
@@ -354,7 +368,7 @@ fun DrawScope.drawImageNode(
         color = borderColor,
         topLeft = topLeft,
         size = size,
-        style = Stroke(width = 4f)
+        style = Stroke(width = with(density) { 4.dp.toPx() })
     )
 
     // Placeholder Icon logic
@@ -382,7 +396,7 @@ fun DrawScope.drawImageNode(
             textLayoutResult = labelLayout,
             topLeft = topLeft + Offset(
                 (node.width - labelLayout.size.width) / 2,
-                node.height - labelLayout.size.height - 4f
+                node.height - labelLayout.size.height - padding/4
             )
         )
     }
@@ -391,19 +405,23 @@ fun DrawScope.drawImageNode(
 // --- Helpers ---
 
 private fun DrawScope.drawStandardBox(node: GraphNode, bgColor: Color, borderColor: Color) {
+    val density = drawContext.density
+    val cornerRadius = with(density) { 8.dp.toPx() }
+    val strokeWidth = with(density) { 2.dp.toPx() }
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
+
     drawRoundRect(
         color = bgColor,
         topLeft = topLeft,
         size = Size(node.width, node.height),
-        cornerRadius = CornerRadius(8f, 8f)
+        cornerRadius = CornerRadius(cornerRadius, cornerRadius)
     )
     drawRoundRect(
         color = borderColor,
         topLeft = topLeft,
         size = Size(node.width, node.height),
-        cornerRadius = CornerRadius(8f, 8f),
-        style = Stroke(width = 2f)
+        cornerRadius = CornerRadius(cornerRadius, cornerRadius),
+        style = Stroke(width = strokeWidth)
     )
 }
 
