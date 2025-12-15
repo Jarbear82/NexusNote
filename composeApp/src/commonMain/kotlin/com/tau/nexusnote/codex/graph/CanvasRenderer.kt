@@ -110,7 +110,7 @@ fun DrawScope.drawCodeNode(
     val showFilename = (node.config as? SchemaConfig.CodeConfig)?.showFilename ?: true
 
     // Header Bar
-    val headerHeight = 24f
+    val headerHeight = 36f
     drawRoundRect(
         color = borderColor.copy(alpha = 0.5f),
         topLeft = topLeft,
