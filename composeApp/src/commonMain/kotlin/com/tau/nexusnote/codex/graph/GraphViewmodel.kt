@@ -9,6 +9,7 @@ import com.tau.nexusnote.settings.SettingsData
 import com.tau.nexusnote.utils.labelToColor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.math.max
 
 class GraphViewmodel(
     private val viewModelScope: CoroutineScope,
@@ -56,6 +57,9 @@ class GraphViewmodel(
     private val _simulationRunning = MutableStateFlow(false)
     val simulationRunning = _simulationRunning.asStateFlow()
 
+    // --- Sizing Service ---
+    private var nodeSizeCalculator: NodeSizeCalculator? = null
+
     private var size = Size.Zero
     private var uiSyncJob: Job? = null
 
@@ -76,11 +80,42 @@ class GraphViewmodel(
         }
     }
 
+    // --- Phase 2: Sizing Integration ---
+
+    fun setNodeSizeCalculator(calculator: NodeSizeCalculator) {
+        this.nodeSizeCalculator = calculator
+        // Trigger a re-calculation for existing nodes
+        viewModelScope.launch(Dispatchers.Default) {
+            recalculateNodeSizes()
+        }
+    }
+
+    private suspend fun recalculateNodeSizes() {
+        val calc = nodeSizeCalculator ?: return
+        val schemaMap = repository.schema.value?.nodeSchemas?.associateBy { it.id }
+
+        _fcGraph.nodes.forEach { node ->
+            if (!node.isCompound() && !node.isDummy && !node.isRepresentative) {
+                val item = node.data as? NodeDisplayItem
+                if (item != null) {
+                    val schema = schemaMap?.get(item.schemaId)
+                    val size = calc.measure(item.content, schema?.config)
+                    node.width = size.width.toDouble()
+                    node.height = size.height.toDouble()
+                }
+            }
+        }
+        _fcGraph.nodes.filter { it.isCompound() }.forEach { it.updateBoundsFromChildren() }
+        pushUiUpdate()
+    }
+
     // --- Data Synchronization (SQLite -> FcGraph) ---
 
     fun updateGraphData(nodeList: List<NodeDisplayItem>, edgeList: List<EdgeDisplayItem>) {
         val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
         val activeIds = mutableSetOf<String>()
+        val calc = nodeSizeCalculator
+        val schemaMap = repository.schema.value?.nodeSchemas?.associateBy { it.id }
 
         // 1. Add Standard Nodes
         nodeList.forEach { item ->
@@ -90,15 +125,27 @@ class GraphViewmodel(
             val existing = currentFcNodes[idStr]
             if (existing != null) {
                 existing.data = item
-                if (!existing.isCompound()) {
-                    existing.width = _physicsOptions.value.nodeBaseRadius * 2.0
-                    existing.height = existing.width
+                // If calculator is ready, update size, else keep existing or default
+                if (!existing.isCompound() && calc != null) {
+                    val schema = schemaMap?.get(item.schemaId)
+                    val size = calc.measure(item.content, schema?.config)
+                    existing.width = size.width.toDouble()
+                    existing.height = size.height.toDouble()
                 }
             } else {
                 val newNode = _fcGraph.addNode(id = idStr)
                 newNode.data = item
-                newNode.width = _physicsOptions.value.nodeBaseRadius * 2.0
-                newNode.height = newNode.width
+
+                if (calc != null) {
+                    val schema = schemaMap?.get(item.schemaId)
+                    val size = calc.measure(item.content, schema?.config)
+                    newNode.width = size.width.toDouble()
+                    newNode.height = size.height.toDouble()
+                } else {
+                    newNode.width = _physicsOptions.value.nodeBaseRadius * 2.0
+                    newNode.height = newNode.width
+                }
+
                 newNode.x = (Math.random() - 0.5) * 100.0
                 newNode.y = (Math.random() - 0.5) * 100.0
             }
@@ -116,20 +163,17 @@ class GraphViewmodel(
 
             if (existing != null) {
                 existing.data = naryEdge
-                existing.width = hyperNodeSize
-                existing.height = hyperNodeSize
+                existing.width = hyperNodeSize.toDouble()
+                existing.height = hyperNodeSize.toDouble()
             } else {
                 val hyperNode = _fcGraph.addNode(id = hyperNodeId, isDummy = false)
                 hyperNode.data = naryEdge
-                hyperNode.width = hyperNodeSize
-                hyperNode.height = hyperNodeSize
+                hyperNode.width = hyperNodeSize.toDouble()
+                hyperNode.height = hyperNodeSize.toDouble()
                 // Randomize position initially
                 hyperNode.x = (Math.random() - 0.5) * 100.0
                 hyperNode.y = (Math.random() - 0.5) * 100.0
             }
-
-            // B. Create Binary Edges (Hypernode <-> ParticipantNode) for Layout Engine
-            // Note: We clear old edges first in step 4 below to ensure cleanliness
         }
 
         // 3. Remove Stale Nodes
@@ -259,6 +303,7 @@ class GraphViewmodel(
             val property: String
             val isHyper: Boolean
             val colorInfo: ColorInfo
+            val content: NodeContent? // Capture content for renderer
 
             val data = fcNode.data
             if (data is NodeDisplayItem) {
@@ -267,6 +312,7 @@ class GraphViewmodel(
                 property = data.displayProperty
                 isHyper = false
                 colorInfo = labelToColor(label)
+                content = data.content
             } else if (data is EdgeDisplayItem) {
                 // Map Edge ID to a negative Long to distinguish from Node IDs
                 id = -1 * data.id
@@ -274,6 +320,7 @@ class GraphViewmodel(
                 property = data.label // Display the edge label on the hypernode
                 isHyper = true
                 colorInfo = labelToColor(label)
+                content = null // Hypernodes are abstract
             } else {
                 // Fallback for nodes without data (shouldn't happen often)
                 id = fcNode.id.toLongOrNull() ?: fcNode.id.hashCode().toLong()
@@ -281,9 +328,13 @@ class GraphViewmodel(
                 property = "Unknown"
                 isHyper = false
                 colorInfo = labelToColor("Unknown")
+                content = null
             }
 
-            val radius = (fcNode.width / 2.0).toFloat()
+            // Calculate radius based on the larger dimension to avoid clipping
+            // Since PhysicsEngine treats nodes as circles for simple collision,
+            // we use the max dimension / 2 to encompass the shape.
+            val radius = (max(fcNode.width, fcNode.height) / 2.0).toFloat()
 
             val uiNode = GraphNode(
                 id = id,
@@ -297,6 +348,7 @@ class GraphViewmodel(
                 height = fcNode.height.toFloat(),
                 isCompound = fcNode.isCompound(),
                 isHyperNode = isHyper,
+                content = content, // Pass the content
                 colorInfo = colorInfo,
                 isFixed = fcNode.isFixed
             )

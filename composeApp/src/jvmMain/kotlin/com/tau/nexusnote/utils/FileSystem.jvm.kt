@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import java.io.File
 import java.io.IOException
 import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 /**
  * JVM implementation for getting the user's home directory.
@@ -43,8 +44,42 @@ actual fun DirectoryPicker(
 }
 
 /**
+ * JVM implementation for the file picker using JFileChooser.
+ */
+@Composable
+actual fun FilePicker(
+    show: Boolean,
+    title: String,
+    fileExtensions: List<String>,
+    onResult: (String?) -> Unit
+) {
+    LaunchedEffect(show) {
+        if (show) {
+            val fileChooser = JFileChooser().apply {
+                fileSelectionMode = JFileChooser.FILES_ONLY
+                dialogTitle = title
+                if (fileExtensions.isNotEmpty()) {
+                    val filter = FileNameExtensionFilter(
+                        "Allowed Files (${fileExtensions.joinToString(", ")})",
+                        *fileExtensions.toTypedArray()
+                    )
+                    addChoosableFileFilter(filter)
+                    fileFilter = filter
+                }
+            }
+
+            val result = fileChooser.showOpenDialog(null)
+            if (result == JFileChooser.APPROVE_OPTION) {
+                onResult(fileChooser.selectedFile.absolutePath)
+            } else {
+                onResult(null)
+            }
+        }
+    }
+}
+
+/**
  * JVM implementation for listing files with a specific extension.
- * @throws IOException if an error occurs while listing files.
  */
 actual fun listFilesWithExtension(path: String, extension: String): List<String> {
     try {
@@ -56,14 +91,11 @@ actual fun listFilesWithExtension(path: String, extension: String): List<String>
             file.isFile && file.name.endsWith(extension)
         }?.map { it.absolutePath } ?: emptyList()
     } catch (e: SecurityException) {
-        // Catch security exceptions and re-throw as IOException
         throw IOException("Permission denied for directory: $path", e)
     } catch (e: Exception) {
-        // Catch other potential IO errors
         throw IOException("Error listing files in: $path", e)
     }
 }
-
 
 /**
  * JVM implementation for getting a file name.
@@ -99,7 +131,6 @@ actual fun deleteFile(path: String) {
             }
         }
     } catch (e: Exception) {
-        // Throw an IOException so the ViewModel can catch it and show an error
         throw IOException("Error deleting codex at: $path", e)
     }
 }

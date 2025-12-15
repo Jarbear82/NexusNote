@@ -17,12 +17,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.NodeDisplayItem
 import com.tau.nexusnote.datamodels.EdgeDisplayItem
 import com.tau.nexusnote.ui.components.CodexListItem
+import com.tau.nexusnote.ui.components.NodeContentRenderer
 import com.tau.nexusnote.ui.components.SearchableListHeader
 import com.tau.nexusnote.utils.labelToColor
 
@@ -55,6 +55,7 @@ fun ListView(
     val nodeLazyListState = rememberLazyListState()
     val edgeLazyListState = rememberLazyListState()
 
+    // Pagination Triggers
     val isAtNodeListEnd by remember {
         derivedStateOf {
             val layoutInfo = nodeLazyListState.layoutInfo
@@ -81,17 +82,8 @@ fun ListView(
         }
     }
 
-    LaunchedEffect(isAtNodeListEnd) {
-        if (isAtNodeListEnd) {
-            onLoadMoreNodes()
-        }
-    }
-
-    LaunchedEffect(isAtEdgeListEnd) {
-        if (isAtEdgeListEnd) {
-            onLoadMoreEdges()
-        }
-    }
+    LaunchedEffect(isAtNodeListEnd) { if (isAtNodeListEnd) onLoadMoreNodes() }
+    LaunchedEffect(isAtEdgeListEnd) { if (isAtEdgeListEnd) onLoadMoreEdges() }
 
     Row(modifier = Modifier.fillMaxSize()) {
         // --- Nodes List ---
@@ -121,7 +113,20 @@ fun ListView(
                     val colorInfo = labelToColor(node.label)
 
                     CodexListItem(
-                        headline = "${node.label} : ${node.displayProperty}",
+                        // NEW: Use the Renderer for rich content
+                        headlineContent = {
+                            Column {
+                                // Small Label Badge
+                                Text(
+                                    text = node.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                                // Content Switch
+                                NodeContentRenderer(node.content)
+                            }
+                        },
                         colorSeed = node.label,
                         isSelected = isSelected,
                         onClick = { onNodeClick(node) },
@@ -178,7 +183,6 @@ fun ListView(
                     val isSelected = (primarySelectedItem as? EdgeDisplayItem)?.id == edge.id
                     val colorInfo = labelToColor(edge.label)
 
-                    // Phase 3: Construct participant string for N-nary edges
                     val participantsText = if (edge.participatingNodes.isEmpty()) {
                         "No participants"
                     } else {

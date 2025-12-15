@@ -15,6 +15,7 @@ import androidx.compose.ui.geometry.Offset
  * @param height The height of the node (important for compound nodes).
  * @param isCompound True if this node contains other nodes.
  * @param isHyperNode True if this node represents an Edge (N-nary relationship).
+ * @param content The actual content data of the node (e.g., Image path, Code snippet).
  * @param colorInfo The color for drawing.
  * @param isFixed True if the node is being dragged by the user.
  * @param oldForce The net force applied to this node in the *previous* frame.
@@ -33,6 +34,7 @@ data class GraphNode(
     val height: Float,
     val isCompound: Boolean = false,
     val isHyperNode: Boolean = false, // Flag for Hypernodes (Phase 5)
+    val content: NodeContent? = null, // Phase 3: Added to support complex rendering
     val colorInfo: ColorInfo,
     var isFixed: Boolean = false,
     // --- State for ForceAtlas2 Adaptive Speed ---

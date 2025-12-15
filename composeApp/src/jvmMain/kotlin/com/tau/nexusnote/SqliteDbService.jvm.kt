@@ -4,10 +4,10 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.tau.nexusnote.db.AppDatabase
 import com.tau.nexusnote.db.roleDefinitionListAdapter
-import com.tau.nexusnote.db.schemaPropertyAdapter
+import com.tau.nexusnote.db.schemaConfigAdapter
 import com.tau.nexusnote.db.stringMapAdapter
 import com.tau.nexusnote.db.longListAdapter
-import com.tau.nexusnote.db.booleanLongAdapter
+import com.tau.nexusnote.db.nodeContentAdapter
 import com.tau.nexusnote.db.Edge
 import com.tau.nexusnote.db.Node
 import com.tau.nexusnote.db.LayoutConstraint
@@ -48,11 +48,11 @@ actual class SqliteDbService actual constructor() {
         _database = AppDatabase(
             driver = driver!!,
             SchemaDefinitionAdapter = SchemaDefinition.Adapter(
-                properties_jsonAdapter = schemaPropertyAdapter,
+                config_jsonAdapter = schemaConfigAdapter,
                 roles_jsonAdapter = roleDefinitionListAdapter
             ),
             NodeAdapter = Node.Adapter(
-                properties_jsonAdapter = stringMapAdapter
+                content_jsonAdapter = nodeContentAdapter
                 // is_collapsedAdapter is handled automatically by SQLDelight for INTEGER AS Boolean
             ),
             EdgeAdapter = Edge.Adapter(

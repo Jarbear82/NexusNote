@@ -8,6 +8,7 @@ import com.tau.nexusnote.codex.crud.create.CreateNodeSchemaView
 import com.tau.nexusnote.codex.crud.create.CreateNodeView
 import com.tau.nexusnote.datamodels.EditScreenState
 import com.tau.nexusnote.datamodels.NodeDisplayItem
+import com.tau.nexusnote.datamodels.NodeType
 import com.tau.nexusnote.datamodels.RoleDefinition
 import com.tau.nexusnote.datamodels.SchemaDefinitionItem
 import com.tau.nexusnote.datamodels.SchemaProperty
@@ -20,7 +21,24 @@ fun EditItemView(
 
     // Node Creation Handlers
     onNodeCreationSchemaSelected: (SchemaDefinitionItem) -> Unit,
+    onNodeCreationTypeSelected: (NodeType) -> Unit = {},
     onNodeCreationPropertyChanged: (String, String) -> Unit,
+    onNodeCreationTextChanged: (String) -> Unit = {},
+    onNodeCreationImageChanged: (String?, String) -> Unit = {_,_ ->},
+    // New Creation Handlers
+    onNodeCreationTableDataChange: (Int, Int, String) -> Unit = {_,_,_ ->},
+    onNodeCreationTableHeaderChange: (Int, String) -> Unit = {_,_ ->},
+    onNodeCreationAddTableRow: () -> Unit = {},
+    onNodeCreationAddTableColumn: () -> Unit = {},
+    onNodeCreationCodeDataChange: (String, String, String) -> Unit = {_,_,_ ->},
+    onNodeCreationListItemChange: (Int, String) -> Unit = {_,_ ->},
+    onNodeCreationAddListItem: () -> Unit = {},
+    onNodeCreationRemoveListItem: (Int) -> Unit = {},
+    onNodeCreationTaskItemChange: (Int, String, Boolean) -> Unit = {_,_,_ ->},
+    onNodeCreationAddTaskItem: () -> Unit = {},
+    onNodeCreationRemoveTaskItem: (Int) -> Unit = {},
+    onNodeCreationAddTag: (String) -> Unit = {},
+    onNodeCreationRemoveTag: (String) -> Unit = {},
 
     // Edge Creation Handlers
     onEdgeCreationSchemaSelected: (SchemaDefinitionItem) -> Unit,
@@ -31,6 +49,11 @@ fun EditItemView(
 
     // Node Schema Creation Handlers
     onNodeSchemaTableNameChange: (String) -> Unit,
+    onNodeSchemaTypeChange: (NodeType) -> Unit = {},
+    onNodeSchemaTableConfigChange: (String, Boolean, String) -> Unit = {_,_,_ ->},
+    onNodeSchemaCodeConfigChange: (String, Boolean) -> Unit = {_,_ ->},
+    onNodeSchemaTextConfigChange: (String, Float, String) -> Unit = {_,_,_ ->},
+    onNodeSchemaListConfigChange: (String) -> Unit = {},
     onNodeSchemaPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddNodeSchemaProperty: (SchemaProperty) -> Unit,
     onRemoveNodeSchemaProperty: (Int) -> Unit,
@@ -46,6 +69,22 @@ fun EditItemView(
 
     // Node Edit Handlers
     onNodeEditPropertyChange: (String, String) -> Unit,
+    onNodeEditTextChanged: (String) -> Unit = {},
+    onNodeEditImageChanged: (String?, String) -> Unit = {_,_ ->},
+    // New Edit Handlers (Reuse signatures, route to edit VM logic)
+    onNodeEditTableDataChange: (Int, Int, String) -> Unit = {_,_,_ ->},
+    onNodeEditTableHeaderChange: (Int, String) -> Unit = {_,_ ->},
+    onNodeEditAddTableRow: () -> Unit = {},
+    onNodeEditAddTableColumn: () -> Unit = {},
+    onNodeEditCodeDataChange: (String, String, String) -> Unit = {_,_,_ ->},
+    onNodeEditListItemChange: (Int, String) -> Unit = {_,_ ->},
+    onNodeEditAddListItem: () -> Unit = {},
+    onNodeEditRemoveListItem: (Int) -> Unit = {},
+    onNodeEditTaskItemChange: (Int, String, Boolean) -> Unit = {_,_,_ ->},
+    onNodeEditAddTaskItem: () -> Unit = {},
+    onNodeEditRemoveTaskItem: (Int) -> Unit = {},
+    onNodeEditAddTag: (String) -> Unit = {},
+    onNodeEditRemoveTag: (String) -> Unit = {},
 
     // Edge Edit Handlers
     onEdgeEditPropertyChange: (String, String) -> Unit,
@@ -70,9 +109,26 @@ fun EditItemView(
             CreateNodeView(
                 nodeCreationState = editScreenState.state,
                 onSchemaSelected = onNodeCreationSchemaSelected,
+                onNodeTypeSelected = onNodeCreationTypeSelected,
                 onPropertyChanged = onNodeCreationPropertyChanged,
+                onTextChanged = onNodeCreationTextChanged,
+                onImageSelected = onNodeCreationImageChanged,
                 onCreateClick = onSaveClick,
-                onCancelClick = onCancelClick
+                onCancelClick = onCancelClick,
+                // Pass new handlers
+                onTableDataChange = onNodeCreationTableDataChange,
+                onTableHeaderChange = onNodeCreationTableHeaderChange,
+                onAddTableRow = onNodeCreationAddTableRow,
+                onAddTableColumn = onNodeCreationAddTableColumn,
+                onCodeDataChange = onNodeCreationCodeDataChange,
+                onListItemChange = onNodeCreationListItemChange,
+                onAddListItem = onNodeCreationAddListItem,
+                onRemoveListItem = onNodeCreationRemoveListItem,
+                onTaskItemChange = onNodeCreationTaskItemChange,
+                onAddTaskItem = onNodeCreationAddTaskItem,
+                onRemoveTaskItem = onNodeCreationRemoveTaskItem,
+                onAddTag = onNodeCreationAddTag,
+                onRemoveTag = onNodeCreationRemoveTag
             )
         }
         is EditScreenState.CreateEdge -> {
@@ -91,6 +147,11 @@ fun EditItemView(
             CreateNodeSchemaView(
                 state = editScreenState.state,
                 onTableNameChange = onNodeSchemaTableNameChange,
+                onTypeChange = onNodeSchemaTypeChange,
+                onTableConfigChange = onNodeSchemaTableConfigChange,
+                onCodeConfigChange = onNodeSchemaCodeConfigChange,
+                onTextConfigChange = onNodeSchemaTextConfigChange,
+                onListConfigChange = onNodeSchemaListConfigChange,
                 onPropertyChange = onNodeSchemaPropertyChange,
                 onAddProperty = onAddNodeSchemaProperty,
                 onRemoveProperty = onRemoveNodeSchemaProperty,
@@ -116,8 +177,24 @@ fun EditItemView(
             EditNodeView(
                 state = editScreenState.state,
                 onPropertyChange = onNodeEditPropertyChange,
+                onTextChanged = onNodeEditTextChanged,
+                onImageChanged = onNodeEditImageChanged,
                 onSave = onSaveClick,
-                onCancel = onCancelClick
+                onCancel = onCancelClick,
+                // Pass new handlers
+                onTableDataChange = onNodeEditTableDataChange,
+                onTableHeaderChange = onNodeEditTableHeaderChange,
+                onAddTableRow = onNodeEditAddTableRow,
+                onAddTableColumn = onNodeEditAddTableColumn,
+                onCodeDataChange = onNodeEditCodeDataChange,
+                onListItemChange = onNodeEditListItemChange,
+                onAddListItem = onNodeEditAddListItem,
+                onRemoveListItem = onNodeEditRemoveListItem,
+                onTaskItemChange = onNodeEditTaskItemChange,
+                onAddTaskItem = onNodeEditAddTaskItem,
+                onRemoveTaskItem = onNodeEditRemoveTaskItem,
+                onAddTag = onNodeEditAddTag,
+                onRemoveTag = onNodeEditRemoveTag
             )
         }
         is EditScreenState.EditEdge -> {

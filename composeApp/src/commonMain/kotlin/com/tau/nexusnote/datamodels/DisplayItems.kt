@@ -5,9 +5,10 @@ import androidx.compose.ui.graphics.Color
 /**
  * Represents a Node in the UI lists and graph.
  * @param id The unique ID from the SQLite 'Node' table.
- * @param label The name of the schema (e.g., "Person", "Note").
+ * @param label The name of the schema (e.g., "Person", "Note") or the Primitive Type name.
  * @param displayProperty The user-friendly text to show (e.g., "John Doe", "My Note").
- * @param schemaId The ID of the schema this node belongs to.
+ * @param schemaId The ID of the schema this node belongs to, or -1 if primitive.
+ * @param content The full polymorphic content of the node.
  * @param parentId The ID of the parent node, if any.
  * @param isCollapsed Whether this node's children are hidden (if it is a parent).
  */
@@ -16,6 +17,7 @@ data class NodeDisplayItem(
     val label: String,
     val displayProperty: String,
     val schemaId: Long,
+    val content: NodeContent,
     val parentId: Long? = null,
     val isCollapsed: Boolean = false
 )

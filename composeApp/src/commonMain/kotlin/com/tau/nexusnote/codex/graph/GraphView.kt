@@ -52,6 +52,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextMeasurer
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.GraphNode
 import com.tau.nexusnote.datamodels.GraphEdge
+import com.tau.nexusnote.datamodels.NodeContent
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -93,6 +95,13 @@ fun GraphView(
     val isSimulationRunning by viewModel.simulationRunning.collectAsState()
 
     val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+
+    // Inject Sizing Infrastructure
+    LaunchedEffect(density, textMeasurer) {
+        viewModel.setNodeSizeCalculator(NodeSizeCalculator(textMeasurer, density))
+    }
+
     val labelColor = MaterialTheme.colorScheme.onSurface
     val crosshairColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
     val selectionColor = MaterialTheme.colorScheme.primary
@@ -676,22 +685,25 @@ private fun DrawScope.drawNodes(
 
     for (node in nodes.values) {
         // --- CULLING CHECK ---
+        val halfW = node.width / 2
+        val halfH = node.height / 2
+
         val nodeRect = Rect(
-            left = node.pos.x - node.radius,
-            top = node.pos.y - node.radius,
-            right = node.pos.x + node.radius,
-            bottom = node.pos.y + node.radius
+            left = node.pos.x - halfW,
+            top = node.pos.y - halfH,
+            right = node.pos.x + halfW,
+            bottom = node.pos.y + halfH
         )
         if (!visibleWorldRect.overlaps(nodeRect)) {
             continue
         }
 
         val isSelected = node.id == primaryId || node.id == secondaryId
+        val borderColor = if(isSelected) selectionColor else node.colorInfo.composeColor
+        val bgColor = node.colorInfo.composeColor.copy(alpha = 0.1f) // Lighter background for boxes
 
         if (node.isHyperNode) {
-            // --- Phase 5: Hypernodes (Text Only) ---
-            // Draw just the display text centered at the node position.
-            // We use the edge label (displayProperty) for this.
+            // --- Hypernodes (Text Only) ---
             val textLayoutResult = textMeasurer.measure(
                 text = AnnotatedString(node.displayProperty),
                 style = style.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
@@ -703,7 +715,6 @@ private fun DrawScope.drawNodes(
                 y = node.pos.y - (textLayoutResult.size.height / 2f)
             )
 
-            // Optional: Draw a subtle background for readability if selected
             if (isSelected) {
                 drawRoundRect(
                     color = selectionColor.copy(alpha = 0.2f),
@@ -719,38 +730,90 @@ private fun DrawScope.drawNodes(
             drawText(
                 textLayoutResult = textLayoutResult,
                 topLeft = topLeft,
-                // color = if (isSelected) selectionColor else node.colorInfo.composeFontColor
             )
 
-        } else {
-            // --- Standard Nodes (Circle + Label) ---
-            drawCircle(
-                color = node.colorInfo.composeColor,
-                radius = node.radius,
-                center = node.pos
-            )
-            drawCircle(
-                color = if (isSelected) selectionColor else node.colorInfo.composeFontColor,
-                radius = node.radius,
-                center = node.pos,
-                style = Stroke(width = if (isSelected) 3f else 1f)
-            )
+        } else if (node.content != null) {
+            // --- Phase 3: Complex Node Rendering via CanvasNodeRenderer ---
+            when (node.content) {
+                is NodeContent.TextContent -> {
+                    // Detect subtype based on label or convention (or later add sub-types to Content)
+                    // For now, heuristic based on schema/label name?
+                    // Actually, NodeContent is polymorphic. Let's use basic type inference.
+                    // Ideally we should pass the NodeType or config here, but we lack it in GraphNode directly.
+                    // We can assume basic TextNode unless it's very short/long.
 
-            if (showLabel && zoom > 0.5f) {
-                val textLayoutResult = textMeasurer.measure(
-                    text = AnnotatedString(node.displayProperty),
-                    style = style
-                )
-                val textPadding = 3f
-                drawText(
-                    textLayoutResult = textLayoutResult,
-                    topLeft = Offset(
-                        x = node.pos.x - (textLayoutResult.size.width / 2f),
-                        y = node.pos.y + node.radius + textPadding
-                    )
-                )
+                    if (node.label.equals("TITLE", ignoreCase = true)) {
+                        drawTitleNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                    } else if (node.label.equals("HEADING", ignoreCase = true)) {
+                        drawHeadingNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                    } else {
+                        drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                    }
+                }
+                is NodeContent.CodeContent -> {
+                    drawCodeNode(node, node.content, textMeasurer, style, Color(0xFF2B2B2B), borderColor)
+                }
+                is NodeContent.TableContent -> {
+                    drawTableNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                }
+                is NodeContent.TaskListContent -> {
+                    drawTaskListNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                }
+                is NodeContent.TagContent -> {
+                    // Tag color usually distinct
+                    val tagColor = node.colorInfo.composeColor
+                    drawTagNode(node, node.content, textMeasurer, style, tagColor, borderColor)
+                }
+                is NodeContent.ImageContent -> {
+                    drawImageNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                }
+                else -> {
+                    // Fallback to circle for Map, List, etc.
+                    drawDefaultCircleNode(node, isSelected, selectionColor, showLabel, zoom, textMeasurer, style)
+                }
             }
+        } else {
+            // --- Standard Nodes (Fallback) ---
+            drawDefaultCircleNode(node, isSelected, selectionColor, showLabel, zoom, textMeasurer, style)
         }
+    }
+}
+
+@OptIn(ExperimentalTextApi::class)
+private fun DrawScope.drawDefaultCircleNode(
+    node: GraphNode,
+    isSelected: Boolean,
+    selectionColor: Color,
+    showLabel: Boolean,
+    zoom: Float,
+    textMeasurer: TextMeasurer,
+    style: TextStyle
+) {
+    drawCircle(
+        color = node.colorInfo.composeColor,
+        radius = node.radius,
+        center = node.pos
+    )
+    drawCircle(
+        color = if (isSelected) selectionColor else node.colorInfo.composeFontColor,
+        radius = node.radius,
+        center = node.pos,
+        style = Stroke(width = if (isSelected) 3f else 1f)
+    )
+
+    if (showLabel && zoom > 0.5f) {
+        val textLayoutResult = textMeasurer.measure(
+            text = AnnotatedString(node.displayProperty),
+            style = style
+        )
+        val textPadding = 3f
+        drawText(
+            textLayoutResult = textLayoutResult,
+            topLeft = Offset(
+                x = node.pos.x - (textLayoutResult.size.width / 2f),
+                y = node.pos.y + node.radius + textPadding
+            )
+        )
     }
 }
 

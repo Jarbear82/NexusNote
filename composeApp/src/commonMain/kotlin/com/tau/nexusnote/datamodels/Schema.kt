@@ -17,6 +17,111 @@ data class SchemaProperty(
 )
 
 /**
+ * The configuration hierarchy for schemas.
+ * Defines the strict structure and behavior of a node type.
+ */
+@Serializable
+sealed class SchemaConfig {
+
+    /**
+     * Legacy/Flexible configuration: A dynamic list of key-value properties.
+     * Used for generic objects, people, items, etc.
+     */
+    @Serializable @SerialName("Map")
+    data class MapConfig(val properties: List<SchemaProperty>) : SchemaConfig()
+
+    /**
+     * Configuration for Tabular data.
+     */
+    @Serializable @SerialName("Table")
+    data class TableConfig(
+        val rowHeaderType: String = "None", // None, Numeric, Alpha
+        val showColumnHeaders: Boolean = true,
+        val predefinedColumnHeaders: List<String> = emptyList(),
+        val predefinedRowHeaders: List<String> = emptyList(),
+        val maxRows: Int? = null
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Code Blocks.
+     */
+    @Serializable @SerialName("CodeBlock")
+    data class CodeBlockConfig(
+        val defaultLanguage: String = "kotlin",
+        val allowLanguageChange: Boolean = true,
+        val showFilename: Boolean = false
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Titles.
+     */
+    @Serializable @SerialName("Title")
+    data class TitleConfig(
+        val casing: String = "TitleCase" // TitleCase, UpperCase, etc.
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Headings (Levels 1-6).
+     */
+    @Serializable @SerialName("Heading")
+    data class HeadingConfig(
+        val level: Int = 1,
+        val casing: String = "TitleCase"
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Short Text (e.g., Tweets, Status).
+     */
+    @Serializable @SerialName("ShortText")
+    data class ShortTextConfig(
+        val charLimit: Int = 140
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Long Text (Documents, Articles).
+     */
+    @Serializable @SerialName("LongText")
+    object LongTextConfig : SchemaConfig()
+
+    /**
+     * Configuration for Ordered Lists.
+     */
+    @Serializable @SerialName("OrderedList")
+    data class OrderedListConfig(
+        val indicatorStyle: String = "1." // 1., A., i., etc.
+    ) : SchemaConfig()
+
+    /**
+     * Configuration for Unordered Lists (Simple bullets).
+     */
+    @Serializable @SerialName("UnorderedList")
+    object UnorderedListConfig : SchemaConfig()
+
+    /**
+     * Singleton Configurations for simple types.
+     */
+    @Serializable @SerialName("TaskList")
+    object TaskListConfig : SchemaConfig()
+
+    @Serializable @SerialName("Set")
+    object SetConfig : SchemaConfig()
+
+    @Serializable @SerialName("Tag")
+    object TagConfig : SchemaConfig()
+
+    @Serializable @SerialName("Image")
+    object ImageConfig : SchemaConfig()
+
+    /**
+     * Configuration for Dates.
+     */
+    @Serializable @SerialName("Date")
+    data class DateConfig(
+        val formatPattern: String = "yyyy-MM-dd"
+    ) : SchemaConfig()
+}
+
+/**
  * Defines how many nodes can/must fill a specific role.
  */
 @Serializable
@@ -46,10 +151,6 @@ enum class RoleDirection {
 
 /**
  * Represents a Role within an Edge Schema.
- * E.g., for a "Directed Edge", roles might be "Source" (One) and "Target" (One).
- * For a "Meeting", roles might be "Organizer" (One), "Attendees" (Many), "Room" (One).
- *
- * @param direction Determines the visual arrow direction in the graph. Defaults to Target.
  */
 @Serializable
 data class RoleDefinition(
@@ -65,13 +166,18 @@ data class RoleDefinition(
  * @param id The unique ID from the 'SchemaDefinition' table.
  * @param type "NODE" or "EDGE".
  * @param name The name of the schema (e.g., "Person", "KNOWS").
- * @param properties The list of user-defined properties.
+ * @param config The strict configuration for this schema.
  * @param roleDefinitions For EDGE schemas, the list of defined roles.
  */
 data class SchemaDefinitionItem(
     val id: Long,
     val type: String,
     val name: String,
-    val properties: List<SchemaProperty>,
+    val config: SchemaConfig,
     val roleDefinitions: List<RoleDefinition>? = null
-)
+) {
+    // Helper property to maintain compatibility with existing UI code that expects a property list.
+    // Returns properties only if this is a MapConfig.
+    val properties: List<SchemaProperty>
+        get() = (config as? SchemaConfig.MapConfig)?.properties ?: emptyList()
+}

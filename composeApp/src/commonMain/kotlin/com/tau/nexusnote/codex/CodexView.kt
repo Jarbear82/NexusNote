@@ -1,6 +1,5 @@
 package com.tau.nexusnote.codex
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -72,7 +71,6 @@ fun CodexView(viewModel: CodexViewModel) {
         viewModel.editCreateViewModel.cancelAllEditing()
         viewModel.metadataViewModel.clearSelectedItem()
         viewModel.selectDataTab(DataViewTabs.SCHEMA)
-        // On mobile, this might close the sheet if it was tied to edit state
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -132,6 +130,7 @@ fun CodexView(viewModel: CodexViewModel) {
                                     onToggleEdgeVisibility = viewModel.metadataViewModel::toggleEdgeVisibility
                                 )
                             }
+
                             ViewTabs.GRAPH -> {
                                 graphViewModel.let { vm ->
                                     val nodesState by vm.graphNodes.collectAsState()
@@ -146,7 +145,8 @@ fun CodexView(viewModel: CodexViewModel) {
                                         primarySelectedId = primaryId,
                                         secondarySelectedId = secondaryId,
                                         onNodeTap = { nodeId ->
-                                            val node = viewModel.metadataViewModel.nodeList.value.find { it.id == nodeId }
+                                            val node =
+                                                viewModel.metadataViewModel.nodeList.value.find { it.id == nodeId }
                                             if (node != null) {
                                                 viewModel.metadataViewModel.selectItem(node)
                                             }
@@ -166,7 +166,7 @@ fun CodexView(viewModel: CodexViewModel) {
                         }
                     }
 
-                    // Mobile-only FAB to open the detail pane (Schema list) if closed
+                    // Mobile-only FAB
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                         if (maxWidth <= 700.dp && !isDetailPaneOpen) {
                             FloatingActionButton(
@@ -182,7 +182,7 @@ fun CodexView(viewModel: CodexViewModel) {
             },
             detailContent = {
                 Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                    // Dialog handling within the pane context
+                    // Dialog handling
                     val itemToDelete = schemaToDelete
                     if (itemToDelete != null && selectedDataTab == DataViewTabs.SCHEMA) {
                         val text = if (dependencyCount == 0L) {
@@ -242,6 +242,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             onListNodesClick = { viewModel.metadataViewModel.listNodes() },
                             onListEdgesClick = { viewModel.metadataViewModel.listEdges() }
                         )
+
                         DataViewTabs.SCHEMA -> SchemaView(
                             schema = schema,
                             primarySelectedItem = primarySelectedItem,
@@ -281,6 +282,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             schemaVisibility = schemaVisibility,
                             onToggleSchemaVisibility = viewModel.schemaViewModel::toggleSchemaVisibility
                         )
+
                         DataViewTabs.EDIT -> EditItemView(
                             editScreenState = editScreenState,
                             onSaveClick = onSave,
@@ -288,7 +290,23 @@ fun CodexView(viewModel: CodexViewModel) {
 
                             // Node Creation
                             onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
+                            onNodeCreationTypeSelected = { viewModel.editCreateViewModel.updateNodeCreationType(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
+                            onNodeCreationTextChanged = { viewModel.editCreateViewModel.updateNodeCreationText(it) },
+                            onNodeCreationImageChanged = { path, caption -> viewModel.editCreateViewModel.updateNodeCreationImage(path, caption) },
+                            onNodeCreationTableDataChange = { r, c, v -> viewModel.editCreateViewModel.updateTableData(r, c, v, isCreation = true) },
+                            onNodeCreationTableHeaderChange = { c, v -> viewModel.editCreateViewModel.updateTableHeader(c, v, isCreation = true) },
+                            onNodeCreationAddTableRow = { viewModel.editCreateViewModel.addTableRow(isCreation = true) },
+                            onNodeCreationAddTableColumn = { viewModel.editCreateViewModel.addTableColumn(isCreation = true) },
+                            onNodeCreationCodeDataChange = { c, l, f -> viewModel.editCreateViewModel.updateCodeData(c, l, f, isCreation = true) },
+                            onNodeCreationListItemChange = { i, v -> viewModel.editCreateViewModel.updateListItem(i, v, isCreation = true) },
+                            onNodeCreationAddListItem = { viewModel.editCreateViewModel.addListItem(isCreation = true) },
+                            onNodeCreationRemoveListItem = { viewModel.editCreateViewModel.removeListItem(it, isCreation = true) },
+                            onNodeCreationTaskItemChange = { i, t, c -> viewModel.editCreateViewModel.updateTaskItem(i, t, c, isCreation = true) },
+                            onNodeCreationAddTaskItem = { viewModel.editCreateViewModel.addTaskItem(isCreation = true) },
+                            onNodeCreationRemoveTaskItem = { viewModel.editCreateViewModel.removeTaskItem(it, isCreation = true) },
+                            onNodeCreationAddTag = { viewModel.editCreateViewModel.addTag(it, isCreation = true) },
+                            onNodeCreationRemoveTag = { viewModel.editCreateViewModel.removeTag(it, isCreation = true) },
 
                             // Edge Creation
                             onEdgeCreationSchemaSelected = { viewModel.editCreateViewModel.updateEdgeCreationSchema(it) },
@@ -299,6 +317,11 @@ fun CodexView(viewModel: CodexViewModel) {
 
                             // Node Schema Creation
                             onNodeSchemaTableNameChange = { viewModel.editCreateViewModel.onNodeSchemaTableNameChange(it) },
+                            onNodeSchemaTypeChange = { viewModel.editCreateViewModel.onNodeSchemaTypeChange(it) },
+                            onNodeSchemaTableConfigChange = { r, s, m -> viewModel.editCreateViewModel.onNodeSchemaTableConfigChange(r, s, m) },
+                            onNodeSchemaCodeConfigChange = { l, f -> viewModel.editCreateViewModel.onNodeSchemaCodeConfigChange(l, f) },
+                            onNodeSchemaTextConfigChange = { c, l, lim -> viewModel.editCreateViewModel.onNodeSchemaTextConfigChange(c, l, lim) },
+                            onNodeSchemaListConfigChange = { viewModel.editCreateViewModel.onNodeSchemaListConfigChange(it) },
                             onNodeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onNodeSchemaPropertyChange(i, p) },
                             onAddNodeSchemaProperty = { viewModel.editCreateViewModel.onAddNodeSchemaProperty(it) },
                             onRemoveNodeSchemaProperty = { viewModel.editCreateViewModel.onRemoveNodeSchemaProperty(it) },
@@ -314,6 +337,22 @@ fun CodexView(viewModel: CodexViewModel) {
 
                             // Edit Instance
                             onNodeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateNodeEditProperty(k, v) },
+                            onNodeEditTextChanged = { viewModel.editCreateViewModel.updateNodeEditText(it) },
+                            onNodeEditImageChanged = { path, caption -> viewModel.editCreateViewModel.updateNodeEditImage(path, caption) },
+                            onNodeEditTableDataChange = { r, c, v -> viewModel.editCreateViewModel.updateTableData(r, c, v, isCreation = false) },
+                            onNodeEditTableHeaderChange = { c, v -> viewModel.editCreateViewModel.updateTableHeader(c, v, isCreation = false) },
+                            onNodeEditAddTableRow = { viewModel.editCreateViewModel.addTableRow(isCreation = false) },
+                            onNodeEditAddTableColumn = { viewModel.editCreateViewModel.addTableColumn(isCreation = false) },
+                            onNodeEditCodeDataChange = { c, l, f -> viewModel.editCreateViewModel.updateCodeData(c, l, f, isCreation = false) },
+                            onNodeEditListItemChange = { i, v -> viewModel.editCreateViewModel.updateListItem(i, v, isCreation = false) },
+                            onNodeEditAddListItem = { viewModel.editCreateViewModel.addListItem(isCreation = false) },
+                            onNodeEditRemoveListItem = { viewModel.editCreateViewModel.removeListItem(it, isCreation = false) },
+                            onNodeEditTaskItemChange = { i, t, c -> viewModel.editCreateViewModel.updateTaskItem(i, t, c, isCreation = false) },
+                            onNodeEditAddTaskItem = { viewModel.editCreateViewModel.addTaskItem(isCreation = false) },
+                            onNodeEditRemoveTaskItem = { viewModel.editCreateViewModel.removeTaskItem(it, isCreation = false) },
+                            onNodeEditAddTag = { viewModel.editCreateViewModel.addTag(it, isCreation = false) },
+                            onNodeEditRemoveTag = { viewModel.editCreateViewModel.removeTag(it, isCreation = false) },
+
                             onEdgeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateEdgeEditProperty(k, v) },
 
                             // Edit Node Schema
@@ -336,7 +375,7 @@ fun CodexView(viewModel: CodexViewModel) {
             }
         )
 
-        // Detangle Dialog (floats over everything)
+        // Detangle Dialog
         if (showDetangleDialog) {
             DetangleSettingsDialog(
                 onDismiss = { graphViewModel.onDismissDetangleDialog() },

@@ -1,6 +1,7 @@
 -- AppDatabase.sq
-import com.tau.nexusnote.datamodels.SchemaProperty;
+import com.tau.nexusnote.datamodels.SchemaConfig;
 import com.tau.nexusnote.datamodels.RoleDefinition;
+import com.tau.nexusnote.datamodels.NodeContent;
 import kotlin.collections.List;
 import kotlin.Boolean;
 
@@ -8,15 +9,16 @@ CREATE TABLE SchemaDefinition (
 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
 name TEXT NOT NULL UNIQUE,
-properties_json TEXT AS List<SchemaProperty> NOT NULL,
+config_json TEXT AS SchemaConfig NOT NULL,
 roles_json TEXT AS List<RoleDefinition> NOT NULL
 );
 
 CREATE TABLE Node (
 id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-schema_id INTEGER NOT NULL,
+schema_id INTEGER DEFAULT NULL, -- Nullable for primitive types
+node_type TEXT NOT NULL DEFAULT 'MAP', -- Stores NodeType enum name
 display_label TEXT NOT NULL,
-properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
+content_json TEXT AS NodeContent NOT NULL, -- Polymorphic JSON
 parent_id INTEGER DEFAULT NULL,
 is_collapsed INTEGER AS Boolean NOT NULL DEFAULT 0,
 FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
@@ -57,12 +59,12 @@ selectSchemaById:
 SELECT * FROM SchemaDefinition WHERE id = ?;
 
 insertSchema:
-INSERT INTO SchemaDefinition(type, name, properties_json, roles_json)
+INSERT INTO SchemaDefinition(type, name, config_json, roles_json)
 VALUES (?, ?, ?, ?);
 
 updateSchema:
 UPDATE SchemaDefinition
-SET name = ?, properties_json = ?, roles_json = ?
+SET name = ?, config_json = ?, roles_json = ?
 WHERE id = ?;
 
 deleteSchemaById:
@@ -80,12 +82,12 @@ countNodesForSchema:
 SELECT COUNT(*) FROM Node WHERE schema_id = ?;
 
 insertNode:
-INSERT INTO Node(schema_id, display_label, properties_json, parent_id, is_collapsed)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO Node(schema_id, node_type, display_label, content_json, parent_id, is_collapsed)
+VALUES (?, ?, ?, ?, ?, ?);
 
 updateNodeProperties:
 UPDATE Node
-SET display_label = ?, properties_json = ?
+SET display_label = ?, content_json = ?
 WHERE id = ?;
 
 updateNodeParent:

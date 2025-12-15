@@ -7,12 +7,15 @@ import com.tau.nexusnote.datamodels.EdgeParticipant
 import com.tau.nexusnote.datamodels.EdgeSchemaCreationState
 import com.tau.nexusnote.datamodels.EdgeSchemaEditState
 import com.tau.nexusnote.datamodels.LayoutConstraintItem
+import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.NodeCreationState
 import com.tau.nexusnote.datamodels.NodeDisplayItem
 import com.tau.nexusnote.datamodels.NodeEditState
 import com.tau.nexusnote.datamodels.NodeSchemaCreationState
 import com.tau.nexusnote.datamodels.NodeSchemaEditState
+import com.tau.nexusnote.datamodels.NodeType
 import com.tau.nexusnote.datamodels.ParticipantSelection
+import com.tau.nexusnote.datamodels.SchemaConfig
 import com.tau.nexusnote.datamodels.SchemaDefinitionItem
 import com.tau.nexusnote.codex.schema.SchemaData
 import kotlinx.coroutines.CoroutineScope
@@ -70,16 +73,16 @@ class CodexRepository(
             val edgeSchemas = mutableListOf<SchemaDefinitionItem>()
 
             dbSchemas.forEach { dbSchema ->
-                val properties = dbSchema.properties_json
+                val config = dbSchema.config_json
 
                 if (dbSchema.type == "NODE") {
                     nodeSchemas.add(
-                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, null)
+                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, config, null)
                     )
                 } else if (dbSchema.type == "EDGE") {
                     val roles = dbSchema.roles_json
                     edgeSchemas.add(
-                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, roles)
+                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, config, roles)
                     )
                 }
             }
@@ -102,16 +105,25 @@ class CodexRepository(
         try {
             val dbNodes = dbService.database.appDatabaseQueries.selectAllNodes().executeAsList()
             _nodeList.value = dbNodes.mapNotNull { dbNode ->
-                val nodeSchema = schemaMap[dbNode.schema_id]
-                if (nodeSchema == null) {
-                    println("Warning: Found node with unknown schema ID ${dbNode.schema_id}")
+                val schemaId = dbNode.schema_id
+                val nodeSchema = if (schemaId != null) schemaMap[schemaId] else null
+
+                // If it has a schema ID but we can't find it, that's an error.
+                if (schemaId != null && nodeSchema == null) {
+                    println("Warning: Found node with unknown schema ID $schemaId")
                     null
                 } else {
+                    val content = dbNode.content_json
+                    // Derive dynamic display property based on Content Type
+                    val displayProp = deriveDisplayProperty(content, nodeSchema, dbNode.display_label)
+                    val typeLabel = nodeSchema?.name ?: dbNode.node_type // e.g. "Person" or "HEADING"
+
                     NodeDisplayItem(
                         id = dbNode.id,
-                        label = nodeSchema.name,
-                        displayProperty = dbNode.display_label,
-                        schemaId = nodeSchema.id,
+                        label = typeLabel,
+                        displayProperty = displayProp,
+                        schemaId = schemaId ?: -1L,
+                        content = content,
                         parentId = dbNode.parent_id,
                         isCollapsed = dbNode.is_collapsed
                     )
@@ -187,6 +199,57 @@ class CodexRepository(
         }
     }
 
+    // --- Helper: Display Property Derivation ---
+    private fun deriveDisplayProperty(
+        content: NodeContent,
+        schema: SchemaDefinitionItem?,
+        fallbackLabel: String
+    ): String {
+        return when (content) {
+            is NodeContent.MapContent -> {
+                // Look up display key from schema config if it is a MapConfig
+                val displayKey = (schema?.config as? SchemaConfig.MapConfig)
+                    ?.properties?.find { it.isDisplayProperty }?.name
+
+                if (displayKey != null) {
+                    content.values[displayKey] ?: fallbackLabel
+                } else {
+                    fallbackLabel
+                }
+            }
+            is NodeContent.TextContent -> {
+                if (content.text.length > 50) content.text.take(50) + "..." else content.text
+            }
+            is NodeContent.ImageContent -> {
+                content.caption?.takeIf { it.isNotBlank() } ?: "Image"
+            }
+            is NodeContent.CodeContent -> {
+                val name = content.filename ?: "Snippet"
+                "$name (${content.language})"
+            }
+            is NodeContent.ListContent -> {
+                "${content.items.size} items"
+            }
+            is NodeContent.TaskListContent -> {
+                val completed = content.items.count { it.isCompleted }
+                "$completed/${content.items.size} tasks"
+            }
+            is NodeContent.SetContent -> {
+                "${content.items.size} items"
+            }
+            is NodeContent.TableContent -> {
+                "Table (${content.rows.size} rows)"
+            }
+            is NodeContent.DateTimestampContent -> {
+                "Date: ${content.timestamp}"
+            }
+            is NodeContent.TagContent -> {
+                content.name
+            }
+        }
+    }
+
+
     // --- Compound Nodes ---
 
     fun createCompoundNode(label: String, childrenIds: List<Long>) {
@@ -194,17 +257,15 @@ class CodexRepository(
             try {
                 val schema = _schema.value?.nodeSchemas?.find {
                     it.name.equals("Group", ignoreCase = true) || it.name.equals("Compound", ignoreCase = true)
-                } ?: _schema.value?.nodeSchemas?.firstOrNull()
-
-                if (schema == null) {
-                    _errorFlow.value = "No node schemas available to create compound node."
-                    return@launch
                 }
 
+                val content = NodeContent.MapContent(mapOf("name" to label))
+
                 dbService.database.appDatabaseQueries.insertNode(
-                    schema_id = schema.id,
+                    schema_id = schema?.id,
+                    node_type = NodeType.MAP.name,
                     display_label = label,
-                    properties_json = mapOf("name" to label),
+                    content_json = content,
                     parent_id = null,
                     is_collapsed = false
                 )
@@ -273,17 +334,26 @@ class CodexRepository(
         return@withContext try {
             val dbNodes = dbService.database.appDatabaseQueries.getNodesPaginated(limit, offset).executeAsList()
             dbNodes.mapNotNull { dbNode ->
-                val nodeSchema = schemaMap[dbNode.schema_id]
-                if (nodeSchema != null) {
+                val schemaId = dbNode.schema_id
+                val nodeSchema = if (schemaId != null) schemaMap[schemaId] else null
+
+                if (schemaId != null && nodeSchema == null) {
+                    null
+                } else {
+                    val content = dbNode.content_json
+                    val displayProp = deriveDisplayProperty(content, nodeSchema, dbNode.display_label)
+                    val typeLabel = nodeSchema?.name ?: dbNode.node_type
+
                     NodeDisplayItem(
                         id = dbNode.id,
-                        label = nodeSchema.name,
-                        displayProperty = dbNode.display_label,
-                        schemaId = nodeSchema.id,
+                        label = typeLabel,
+                        displayProperty = displayProp,
+                        schemaId = schemaId ?: -1L,
+                        content = content,
                         parentId = dbNode.parent_id,
                         isCollapsed = dbNode.is_collapsed
                     )
-                } else null
+                }
             }
         } catch (e: Exception) {
             _errorFlow.value = "Error fetching paginated nodes: ${e.message}"
@@ -354,13 +424,13 @@ class CodexRepository(
         }
     }
 
-    fun createNodeSchema(state: NodeSchemaCreationState) {
+    fun createNodeSchema(config: SchemaConfig, name: String) {
         repositoryScope.launch {
             try {
                 dbService.database.appDatabaseQueries.insertSchema(
                     type = "NODE",
-                    name = state.tableName,
-                    properties_json = state.properties,
+                    name = name,
+                    config_json = config,
                     roles_json = emptyList()
                 )
                 refreshSchema()
@@ -373,10 +443,12 @@ class CodexRepository(
     fun createEdgeSchema(state: EdgeSchemaCreationState) {
         repositoryScope.launch {
             try {
+                // Default Edge Schemas to MapConfig for their properties
+                val config = SchemaConfig.MapConfig(state.properties)
                 dbService.database.appDatabaseQueries.insertSchema(
                     type = "EDGE",
                     name = state.tableName,
-                    properties_json = state.properties,
+                    config_json = config,
                     roles_json = state.roles
                 )
                 refreshSchema()
@@ -389,10 +461,14 @@ class CodexRepository(
     fun updateNodeSchema(state: NodeSchemaEditState) {
         repositoryScope.launch {
             try {
+                // Reconstruct config (legacy assumption: MapConfig)
+                // If we support editing other configs later, this needs logic.
+                val config = SchemaConfig.MapConfig(state.properties)
+
                 dbService.database.appDatabaseQueries.updateSchema(
                     id = state.originalSchema.id,
                     name = state.currentName,
-                    properties_json = state.properties,
+                    config_json = config,
                     roles_json = emptyList()
                 )
                 refreshSchema()
@@ -406,10 +482,11 @@ class CodexRepository(
     fun updateEdgeSchema(state: EdgeSchemaEditState) {
         repositoryScope.launch {
             try {
+                val config = SchemaConfig.MapConfig(state.properties)
                 dbService.database.appDatabaseQueries.updateSchema(
                     id = state.originalSchema.id,
                     name = state.currentName,
-                    properties_json = state.properties,
+                    config_json = config,
                     roles_json = state.roles
                 )
                 refreshSchema()
@@ -420,18 +497,21 @@ class CodexRepository(
         }
     }
 
-    fun createNode(state: NodeCreationState) {
+    fun createNode(
+        schemaId: Long?,
+        nodeType: NodeType,
+        displayLabel: String,
+        content: NodeContent,
+        parentId: Long? = null
+    ) {
         repositoryScope.launch {
-            if (state.selectedSchema == null) return@launch
             try {
-                val displayKey = state.selectedSchema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node"
-
                 dbService.database.appDatabaseQueries.insertNode(
-                    schema_id = state.selectedSchema.id,
+                    schema_id = schemaId,
+                    node_type = nodeType.name,
                     display_label = displayLabel,
-                    properties_json = state.properties,
-                    parent_id = null,
+                    content_json = content,
+                    parent_id = parentId,
                     is_collapsed = false
                 )
                 refreshNodes()
@@ -441,14 +521,31 @@ class CodexRepository(
         }
     }
 
+    // Overload for UI convenience (Schema-based Map nodes)
+    fun createNode(state: NodeCreationState) {
+        val schema = state.selectedSchema
+        if (schema == null) return
+
+        // Extract display key from the schema config
+        val displayKey = (schema.config as? SchemaConfig.MapConfig)
+            ?.properties?.firstOrNull { it.isDisplayProperty }?.name
+
+        val displayLabel = state.properties[displayKey] ?: "Node"
+        val content = NodeContent.MapContent(state.properties)
+
+        createNode(
+            schemaId = schema.id,
+            nodeType = NodeType.MAP,
+            displayLabel = displayLabel,
+            content = content
+        )
+    }
+
     fun createEdge(state: EdgeCreationState) {
         repositoryScope.launch {
             if (state.selectedSchema == null || state.participants.isEmpty()) return@launch
 
-            // Filter out any participants that haven't been selected yet
             val validParticipants = state.participants.filter { it.node != null }
-            // Basic validation: ensure at least 2 participants (unless schema allows self-loops with 1 role?)
-            // New Flow Requirement: "edge must have at least 2 nodes"
             if (validParticipants.size < 2) {
                 _errorFlow.value = "Edge must have at least 2 participants."
                 return@launch
@@ -456,15 +553,12 @@ class CodexRepository(
 
             try {
                 dbService.database.transaction {
-                    // 1. Insert the Edge (Entity)
                     dbService.database.appDatabaseQueries.insertEdge(
                         schema_id = state.selectedSchema.id,
                         properties_json = state.properties
                     )
-                    // 2. Get the new ID
                     val edgeId = dbService.database.appDatabaseQueries.getLastInsertId().executeAsOne()
 
-                    // 3. Insert the Links dynamically (Participant -> Edge)
                     validParticipants.forEach { selection ->
                         dbService.database.appDatabaseQueries.insertEdgeLink(
                             edge_id = edgeId,
@@ -482,8 +576,17 @@ class CodexRepository(
 
     fun getNodeEditState(itemId: Long): NodeEditState? {
         val dbNode = dbService.database.appDatabaseQueries.selectNodeById(itemId).executeAsOneOrNull() ?: return null
-        val schema = _schema.value?.nodeSchemas?.firstOrNull { it.id == dbNode.schema_id } ?: return null
-        return NodeEditState(id = dbNode.id, schema = schema, properties = dbNode.properties_json)
+        val schemaId = dbNode.schema_id ?: return null
+        val schema = _schema.value?.nodeSchemas?.firstOrNull { it.id == schemaId } ?: return null
+
+        val props = (dbNode.content_json as? NodeContent.MapContent)?.values ?: emptyMap()
+
+        return NodeEditState(
+            id = dbNode.id,
+            nodeType = NodeType.MAP,
+            schema = schema,
+            properties = props
+        )
     }
 
     @OptIn(ExperimentalUuidApi::class)
@@ -491,10 +594,9 @@ class CodexRepository(
         val dbEdge = dbService.database.appDatabaseQueries.selectEdgeById(item.id).executeAsOneOrNull() ?: return null
         val schema = _schema.value?.edgeSchemas?.firstOrNull { it.id == dbEdge.schema_id } ?: return null
 
-        // Reconstruct participant selections from the display item
         val participants = item.participatingNodes.map { part ->
             ParticipantSelection(
-                id = Uuid.random().toString(), // Generate new UI ID
+                id = Uuid.random().toString(),
                 role = part.role ?: "",
                 node = part.node
             )
@@ -511,27 +613,33 @@ class CodexRepository(
     fun updateNode(state: NodeEditState) {
         repositoryScope.launch {
             try {
-                val displayKey = state.schema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node ${state.id}"
+                val displayLabel = if (state.nodeType == NodeType.MAP && state.schema != null) {
+                    val displayKey = (state.schema.config as? SchemaConfig.MapConfig)
+                        ?.properties?.firstOrNull { it.isDisplayProperty }?.name
+                    state.properties[displayKey] ?: "Node ${state.id}"
+                } else {
+                    when(state.nodeType) {
+                        NodeType.HEADING -> state.textContent.take(30)
+                        NodeType.IMAGE -> state.imageCaption.ifBlank { "Image" }
+                        else -> "Node ${state.id}"
+                    }
+                }
+
+                val content = when(state.nodeType) {
+                    NodeType.MAP -> NodeContent.MapContent(state.properties)
+                    NodeType.HEADING -> NodeContent.TextContent(state.textContent)
+                    NodeType.IMAGE -> NodeContent.ImageContent(state.imagePath ?: "", state.imageCaption)
+                    else -> NodeContent.MapContent(emptyMap())
+                }
 
                 dbService.database.appDatabaseQueries.updateNodeProperties(
-                    id = state.id,
                     display_label = displayLabel,
-                    properties_json = state.properties
-                )
-                val currentItem = _nodeList.value.find { it.id == state.id }
-                val updatedItem = NodeDisplayItem(
-                    id = state.id,
-                    label = state.schema.name,
-                    displayProperty = displayLabel,
-                    schemaId = state.schema.id,
-                    parentId = currentItem?.parentId,
-                    isCollapsed = currentItem?.isCollapsed ?: false
+                    content_json = content,
+                    id = state.id
                 )
 
-                _nodeList.update { currentList ->
-                    currentList.map { node -> if (node.id == updatedItem.id) updatedItem else node }
-                }
+                refreshNodes()
+
             } catch (e: Exception) {
                 _errorFlow.value = "Error updating node: ${e.message}"
             }
@@ -542,11 +650,9 @@ class CodexRepository(
         repositoryScope.launch {
             try {
                 dbService.database.appDatabaseQueries.updateEdgeProperties(
-                    id = state.id,
-                    properties_json = state.properties
+                    properties_json = state.properties,
+                    id = state.id
                 )
-                // Note: Participant editing is complex (requires deleting/re-inserting links).
-                // Skipping implementation for now as per prompt scope focusing on properties.
                 refreshEdges()
             } catch (e: Exception) {
                 _errorFlow.value = "Error updating edge: ${e.message}"

@@ -1,7 +1,9 @@
 package com.tau.nexusnote.db
 
 import app.cash.sqldelight.ColumnAdapter
+import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.RoleDefinition
+import com.tau.nexusnote.datamodels.SchemaConfig
 import com.tau.nexusnote.datamodels.SchemaProperty
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.MapSerializer
@@ -16,19 +18,19 @@ private val dbJson = Json {
     isLenient = true
     coerceInputValues = true
     encodeDefaults = true
-    classDiscriminator = "type" // For sealed class polymorphism if needed, default is 'type'
+    classDiscriminator = "type" // For polymorphic NodeContent and SchemaConfig
 }
 
 /**
- * Adapter for `SchemaDefinition.properties_json`
- * Converts List<SchemaProperty> to/from a JSON String.
+ * Adapter for `SchemaDefinition.config_json`
+ * Converts SchemaConfig polymorphic hierarchy to/from a JSON String.
  */
-val schemaPropertyAdapter = object : ColumnAdapter<List<SchemaProperty>, String> {
-    override fun decode(databaseValue: String): List<SchemaProperty> {
-        return dbJson.decodeFromString(ListSerializer(SchemaProperty.serializer()), databaseValue)
+val schemaConfigAdapter = object : ColumnAdapter<SchemaConfig, String> {
+    override fun decode(databaseValue: String): SchemaConfig {
+        return dbJson.decodeFromString(SchemaConfig.serializer(), databaseValue)
     }
-    override fun encode(value: List<SchemaProperty>): String {
-        return dbJson.encodeToString(ListSerializer(SchemaProperty.serializer()), value)
+    override fun encode(value: SchemaConfig): String {
+        return dbJson.encodeToString(SchemaConfig.serializer(), value)
     }
 }
 
@@ -46,9 +48,21 @@ val roleDefinitionListAdapter = object : ColumnAdapter<List<RoleDefinition>, Str
     }
 }
 
+/**
+ * Adapter for `Node.content_json`
+ * Converts NodeContent polymorphic hierarchy to/from a JSON String.
+ */
+val nodeContentAdapter = object : ColumnAdapter<NodeContent, String> {
+    override fun decode(databaseValue: String): NodeContent {
+        return dbJson.decodeFromString(NodeContent.serializer(), databaseValue)
+    }
+    override fun encode(value: NodeContent): String {
+        return dbJson.encodeToString(NodeContent.serializer(), value)
+    }
+}
 
 /**
- * Adapter for `Node.properties_json`, `Edge.properties_json`, and `LayoutConstraint.params_json`
+ * Adapter for `Edge.properties_json`, and `LayoutConstraint.params_json`
  * Converts Map<String, String> to/from a JSON String.
  */
 val stringMapAdapter = object : ColumnAdapter<Map<String, String>, String> {

@@ -24,6 +24,22 @@ expect fun DirectoryPicker(
 )
 
 /**
+ * A Composable function that shows a platform-native file picker.
+ *
+ * @param show Whether to show the picker.
+ * @param title The title for the picker window.
+ * @param fileExtensions List of allowed file extensions (e.g., listOf("png", "jpg")).
+ * @param onResult A callback that returns the selected file path, or null if cancelled.
+ */
+@Composable
+expect fun FilePicker(
+    show: Boolean,
+    title: String,
+    fileExtensions: List<String>,
+    onResult: (String?) -> Unit
+)
+
+/**
  * Lists all files within a given directory path that have a specific extension.
  * Returns a list of absolute paths.
  */
