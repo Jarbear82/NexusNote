@@ -318,10 +318,12 @@ fun CodexView(viewModel: CodexViewModel) {
                             // Node Schema Creation
                             onNodeSchemaTableNameChange = { viewModel.editCreateViewModel.onNodeSchemaTableNameChange(it) },
                             onNodeSchemaTypeChange = { viewModel.editCreateViewModel.onNodeSchemaTypeChange(it) },
+                            onNodeSchemaTextTypeChange = { viewModel.editCreateViewModel.onNodeSchemaTextTypeChange(it) },
+                            onNodeSchemaListTypeChange = { viewModel.editCreateViewModel.onNodeSchemaListTypeChange(it) },
                             onNodeSchemaTableConfigChange = { r, s, m -> viewModel.editCreateViewModel.onNodeSchemaTableConfigChange(r, s, m) },
                             onNodeSchemaCodeConfigChange = { l, f -> viewModel.editCreateViewModel.onNodeSchemaCodeConfigChange(l, f) },
                             onNodeSchemaTextConfigChange = { c, l, lim -> viewModel.editCreateViewModel.onNodeSchemaTextConfigChange(c, l, lim) },
-                            onNodeSchemaListConfigChange = { viewModel.editCreateViewModel.onNodeSchemaListConfigChange(it) },
+                            onNodeSchemaListConfigChange = { t, s -> viewModel.editCreateViewModel.onNodeSchemaListConfigChange(t, s) },
                             onNodeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onNodeSchemaPropertyChange(i, p) },
                             onAddNodeSchemaProperty = { viewModel.editCreateViewModel.onAddNodeSchemaProperty(it) },
                             onRemoveNodeSchemaProperty = { viewModel.editCreateViewModel.onRemoveNodeSchemaProperty(it) },

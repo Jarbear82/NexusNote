@@ -28,7 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.SchemaConfig
+import com.tau.nexusnote.utils.toAlphaIndex
 import com.tau.nexusnote.utils.toPascalCase
+import com.tau.nexusnote.utils.toRomanIndex
 
 /**
  * A "switch" composable that renders the correct UI for a specific NodeContent type.
@@ -112,15 +114,32 @@ fun NodeContentRenderer(
                                     )
                                 }
                                 is SchemaConfig.ListConfig.Ordered -> {
+                                    val indicator = when(config.indicatorType) {
+                                        "Numeric" -> "${index + 1}."
+                                        "AlphaUpper" -> "${index.toAlphaIndex(true)}."
+                                        "AlphaLower" -> "${index.toAlphaIndex(false)}."
+                                        "RomanUpper" -> "${index.toRomanIndex(true)}."
+                                        "RomanLower" -> "${index.toRomanIndex(false)}."
+                                        else -> "${index + 1}."
+                                    }
                                     Text(
-                                        "${index + 1}.",
+                                        indicator,
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.width(20.dp)
+                                        modifier = Modifier.width(28.dp) // Slightly wider for Roman
+                                    )
+                                }
+                                is SchemaConfig.ListConfig.Unordered -> {
+                                    Text(
+                                        config.indicatorSymbol,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.width(16.dp).padding(end = 4.dp)
                                     )
                                 }
                                 else -> {
-                                    Icon(Icons.Default.FormatListBulleted, null, modifier = Modifier.size(12.dp).padding(end=4.dp))
+                                    // Default bullet if config missing
+                                    Text("•", modifier = Modifier.width(16.dp).padding(end = 4.dp))
                                 }
                             }
 

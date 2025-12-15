@@ -18,7 +18,10 @@ import androidx.compose.ui.unit.Constraints
 import com.tau.nexusnote.datamodels.GraphNode
 import com.tau.nexusnote.datamodels.NodeContent
 import com.tau.nexusnote.datamodels.SchemaConfig
+import com.tau.nexusnote.utils.toAlphaIndex
 import com.tau.nexusnote.utils.toPascalCase
+import com.tau.nexusnote.utils.toRomanIndex
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -26,9 +29,6 @@ import kotlin.math.min
  * Decouples specific rendering logic from the main GraphView.
  * Driven by SchemaConfig for styling.
  */
-
-// --- Constants ---
-private const val PADDING = 16f
 
 @OptIn(ExperimentalTextApi::class)
 fun DrawScope.drawTextNode(
@@ -38,7 +38,8 @@ fun DrawScope.drawTextNode(
     style: TextStyle,
     backgroundColor: Color,
     borderColor: Color,
-    config: SchemaConfig?
+    config: SchemaConfig?,
+    padding: Float
 ) {
     // Determine Style based on Config
     when (config) {
@@ -48,7 +49,7 @@ fun DrawScope.drawTextNode(
                 fontWeight = FontWeight.Bold
             )
             drawStandardBox(node, backgroundColor, borderColor)
-            drawWrappedText(node, content.value, textMeasurer, headingStyle, center = true)
+            drawWrappedText(node, content.value, textMeasurer, headingStyle, padding, center = true)
         }
         is SchemaConfig.TextConfig.Title -> {
             val titleStyle = style.copy(
@@ -58,7 +59,7 @@ fun DrawScope.drawTextNode(
             // Titles might have casing rules
             val text = if (config.casing == "TitleCase") content.value.toPascalCase() else content.value
             drawStandardBox(node, backgroundColor, borderColor)
-            drawWrappedText(node, text, textMeasurer, titleStyle, center = true)
+            drawWrappedText(node, text, textMeasurer, titleStyle, padding, center = true)
         }
         is SchemaConfig.TextConfig.Tag -> {
             val tagStyle = style.copy(
@@ -74,13 +75,13 @@ fun DrawScope.drawTextNode(
                 size = Size(node.width, node.height),
                 cornerRadius = CornerRadius(node.height / 2, node.height / 2)
             )
-            drawWrappedText(node, "#${content.value}", textMeasurer, tagStyle, center = true)
+            drawWrappedText(node, "#${content.value}", textMeasurer, tagStyle, padding, center = true)
         }
         else -> {
             // Default / PlainText (Primitive fallback)
             drawStandardBox(node, backgroundColor, borderColor)
             val displayText = content.value.take(140)
-            drawWrappedText(node, displayText, textMeasurer, style)
+            drawWrappedText(node, displayText, textMeasurer, style, padding)
         }
     }
 }
@@ -167,23 +168,31 @@ fun DrawScope.drawTableNode(
     textMeasurer: TextMeasurer,
     style: TextStyle,
     backgroundColor: Color,
-    borderColor: Color
+    borderColor: Color,
+    padding: Float
 ) {
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
     drawStandardBox(node, backgroundColor, borderColor)
 
-    // Check config for header row visibility, default true
-    val showHeaders = (node.config as? SchemaConfig.TableConfig)?.showColumnHeaders ?: true
+    val showColHeaders = (node.config as? SchemaConfig.TableConfig)?.showColumnHeaders ?: true
+    val rowHeaderType = (node.config as? SchemaConfig.TableConfig)?.rowHeaderType ?: "None"
+    val hasRowHeaders = rowHeaderType != "None"
 
-    // If headers are hidden, treat the first row of data as the first visual row
-    val rowsToRender = if (showHeaders) listOf(content.headers) + content.rows else content.rows
-
+    // Calculate dimensions
     val rowHeight = 30f
-    val colWidth = node.width / content.headers.size.coerceAtLeast(1)
+
+    // Determine number of visible columns (Data columns + 1 if row header exists)
+    val dataColCount = max(1, content.headers.size)
+    val visualColCount = if (hasRowHeaders) dataColCount + 1 else dataColCount
+    val colWidth = node.width / visualColCount
+
+    // Prepare rows including headers if needed
+    val rowsToRender = if (showColHeaders) listOf(content.headers) + content.rows else content.rows
 
     rowsToRender.take(min(rowsToRender.size, (node.height / rowHeight).toInt())).forEachIndexed { rowIndex, row ->
-        val y = topLeft.y + (rowIndex * rowHeight) + PADDING
+        val y = topLeft.y + (rowIndex * rowHeight) + padding
 
+        // Draw Divider
         if (rowIndex > 0) {
             drawLine(
                 color = borderColor.copy(alpha = 0.3f),
@@ -192,10 +201,39 @@ fun DrawScope.drawTableNode(
             )
         }
 
+        // Draw Row Header (Column 0)
+        if (hasRowHeaders) {
+            // Determine header text
+            val headerText = if (showColHeaders && rowIndex == 0) {
+                "#" // Corner cell
+            } else {
+                val dataIndex = if (showColHeaders) rowIndex else rowIndex + 1
+                if (rowHeaderType == "Numeric") "$dataIndex"
+                else "${('A'.code + (dataIndex - 1) % 26).toChar()}" // Simple Alpha
+            }
+
+            val measured = textMeasurer.measure(
+                text = AnnotatedString(headerText),
+                style = style.copy(fontWeight = FontWeight.Bold, color = style.color.copy(alpha = 0.7f)),
+                constraints = Constraints(maxWidth = (colWidth - 16).toInt())
+            )
+            drawText(measured, topLeft = Offset(topLeft.x + 8f, y + 5f))
+
+            // Draw Vertical Separator
+            drawLine(
+                color = borderColor.copy(alpha = 0.3f),
+                start = Offset(topLeft.x + colWidth, topLeft.y),
+                end = Offset(topLeft.x + colWidth, topLeft.y + node.height)
+            )
+        }
+
+        // Draw Data Cells
         row.forEachIndexed { colIndex, text ->
-            val x = topLeft.x + (colIndex * colWidth) + 8f
-            // Bold the header row if we are showing headers and this is the first row
-            val cellStyle = if(showHeaders && rowIndex == 0) style.copy(fontWeight = FontWeight.Bold) else style
+            // Shift x based on whether we have a row header
+            val visualColIndex = if (hasRowHeaders) colIndex + 1 else colIndex
+            val x = topLeft.x + (visualColIndex * colWidth) + 8f
+
+            val cellStyle = if(showColHeaders && rowIndex == 0) style.copy(fontWeight = FontWeight.Bold) else style
 
             val measured = textMeasurer.measure(
                 text = AnnotatedString(text),
@@ -203,11 +241,7 @@ fun DrawScope.drawTableNode(
                 maxLines = 1,
                 constraints = Constraints(maxWidth = (colWidth - 16).toInt())
             )
-
-            drawText(
-                textLayoutResult = measured,
-                topLeft = Offset(x, y + 5f)
-            )
+            drawText(measured, topLeft = Offset(x, y + 5f))
         }
     }
 }
@@ -220,25 +254,27 @@ fun DrawScope.drawListNode(
     style: TextStyle,
     backgroundColor: Color,
     borderColor: Color,
-    config: SchemaConfig?
+    config: SchemaConfig?,
+    padding: Float,
+    gap: Float
 ) {
     drawStandardBox(node, backgroundColor, borderColor)
     val topLeft = node.pos - Offset(node.width / 2, node.height / 2)
-    val startY = topLeft.y + PADDING
-    val startX = topLeft.x + PADDING
+    val startX = topLeft.x + padding
+
+    // Start Y accumulation
+    var currentY = topLeft.y + padding
 
     content.items.take(10).forEachIndexed { index, item ->
-        val y = startY + (index * 24f)
-
-        // Determine indicator
         val isTask = config is SchemaConfig.ListConfig.Task
         val isOrdered = config is SchemaConfig.ListConfig.Ordered
+        val isUnordered = config is SchemaConfig.ListConfig.Unordered
 
         var textOffset = 20f
 
         if (isTask) {
             // Draw Checkbox
-            val checkboxRect = Rect(startX, y + 4f, startX + 12f, y + 16f)
+            val checkboxRect = Rect(startX, currentY + 2f, startX + 12f, currentY + 14f)
             drawRect(
                 color = borderColor,
                 topLeft = checkboxRect.topLeft,
@@ -253,17 +289,31 @@ fun DrawScope.drawListNode(
                 )
             }
         } else if (isOrdered) {
-            // Draw Number
-            val numStr = "${index + 1}."
-            val numLayout = textMeasurer.measure(AnnotatedString(numStr), style)
-            drawText(numLayout, topLeft = Offset(startX, y))
+            val orderedConfig = config as SchemaConfig.ListConfig.Ordered
+            // Draw Number/Alpha/Roman
+            val indicator = when(orderedConfig.indicatorType) {
+                "Numeric" -> "${index + 1}."
+                "AlphaUpper" -> "${index.toAlphaIndex(true)}."
+                "AlphaLower" -> "${index.toAlphaIndex(false)}."
+                "RomanUpper" -> "${index.toRomanIndex(true)}."
+                "RomanLower" -> "${index.toRomanIndex(false)}."
+                else -> "${index + 1}."
+            }
+            val numLayout = textMeasurer.measure(AnnotatedString(indicator), style)
+            drawText(numLayout, topLeft = Offset(startX, currentY))
             textOffset = numLayout.size.width + 8f
+        } else if (isUnordered) {
+            // Draw configured symbol
+            val symbol = (config as SchemaConfig.ListConfig.Unordered).indicatorSymbol
+            val symLayout = textMeasurer.measure(AnnotatedString(symbol), style)
+            drawText(symLayout, topLeft = Offset(startX, currentY))
+            textOffset = symLayout.size.width + 8f
         } else {
-            // Draw Bullet (Default for Primitives)
+            // Primitive Fallback (Bullet)
             drawCircle(
                 color = borderColor,
                 radius = 3f,
-                center = Offset(startX + 6f, y + 10f)
+                center = Offset(startX + 6f, currentY + 8f)
             )
         }
 
@@ -271,12 +321,15 @@ fun DrawScope.drawListNode(
         val textLayout = textMeasurer.measure(
             text = AnnotatedString(item.text),
             style = style,
-            constraints = Constraints(maxWidth = (node.width - PADDING * 2 - textOffset).toInt())
+            constraints = Constraints(maxWidth = (node.width - padding * 2 - textOffset).toInt())
         )
         drawText(
             textLayoutResult = textLayout,
-            topLeft = Offset(startX + textOffset, y)
+            topLeft = Offset(startX + textOffset, currentY)
         )
+
+        // Advance Y based on real text height plus gap
+        currentY += textLayout.size.height + gap
     }
 }
 
@@ -360,9 +413,10 @@ private fun DrawScope.drawWrappedText(
     text: String,
     measurer: TextMeasurer,
     style: TextStyle,
+    padding: Float,
     center: Boolean = false
 ) {
-    val maxWidth = (node.width - PADDING * 2).toInt()
+    val maxWidth = (node.width - padding * 2).toInt()
     val layoutResult = measurer.measure(
         text = AnnotatedString(text),
         style = style,
@@ -376,7 +430,7 @@ private fun DrawScope.drawWrappedText(
             (node.height - layoutResult.size.height) / 2
         )
     } else {
-        Offset(PADDING, PADDING)
+        Offset(padding, padding)
     }
 
     drawText(

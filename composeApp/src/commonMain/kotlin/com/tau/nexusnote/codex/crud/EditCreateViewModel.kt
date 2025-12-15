@@ -248,11 +248,13 @@ class EditCreateViewModel(
             }
             NodeType.LIST -> {
                 when (state.listSchemaType) {
-                    "Unordered" -> SchemaConfig.ListConfig.Unordered
-                    "Task" -> SchemaConfig.ListConfig.Task
-                    else -> SchemaConfig.ListConfig.Ordered( // "Ordered"
-                        indicatorStyle = state.listIndicatorStyle
+                    "Ordered" -> SchemaConfig.ListConfig.Ordered(
+                        indicatorType = state.listOrderedType
                     )
+                    "Unordered" -> SchemaConfig.ListConfig.Unordered(
+                        indicatorSymbol = state.listUnorderedSymbol
+                    )
+                    else -> SchemaConfig.ListConfig.Task // "Task"
                 }
             }
             NodeType.MEDIA -> SchemaConfig.MediaConfig
@@ -840,10 +842,10 @@ class EditCreateViewModel(
             current.copy(state = current.state.copy(textCasing = casing, headingLevel = headingLevel, shortTextCharLimit = charLimit))
         }
     }
-    fun onNodeSchemaListConfigChange(indicator: String) {
+    fun onNodeSchemaListConfigChange(orderedType: String, unorderedSymbol: String) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNodeSchema) return@update current
-            current.copy(state = current.state.copy(listIndicatorStyle = indicator))
+            current.copy(state = current.state.copy(listOrderedType = orderedType, listUnorderedSymbol = unorderedSymbol))
         }
     }
     fun onNodeSchemaPropertyChange(index: Int, property: SchemaProperty) {
@@ -870,6 +872,27 @@ class EditCreateViewModel(
             val newProperties = current.state.properties.toMutableList()
             newProperties.removeAt(index)
             current.copy(state = current.state.copy(properties = newProperties))
+        }
+    }
+
+    // FIX: Preserve original config type if not MapConfig
+    fun updateNodeSchema(state: NodeSchemaEditState) {
+        viewModelScope.launch {
+            try {
+                val oldConfig = state.originalSchema.config
+                // If it was a MapConfig, we update properties from the state.
+                // Otherwise (List, Text, etc), we keep the original config because
+                // the EditNodeSchema view currently only supports property editing.
+                val config = if (oldConfig is SchemaConfig.MapConfig) {
+                    SchemaConfig.MapConfig(state.properties)
+                } else {
+                    oldConfig
+                }
+
+                repository.updateNodeSchema(state.copy(originalSchema = state.originalSchema.copy(config = config)))
+            } catch (e: Exception) {
+                // Handle error
+            }
         }
     }
 }

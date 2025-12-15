@@ -55,7 +55,7 @@ fun EditItemView(
     onNodeSchemaTableConfigChange: (String, Boolean, String) -> Unit = {_,_,_ ->},
     onNodeSchemaCodeConfigChange: (String, Boolean) -> Unit = {_,_ ->},
     onNodeSchemaTextConfigChange: (String, Float, String) -> Unit = {_,_,_ ->},
-    onNodeSchemaListConfigChange: (String) -> Unit = {},
+    onNodeSchemaListConfigChange: (String, String) -> Unit = {_,_ ->},
     onNodeSchemaPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddNodeSchemaProperty: (SchemaProperty) -> Unit,
     onRemoveNodeSchemaProperty: (Int) -> Unit,

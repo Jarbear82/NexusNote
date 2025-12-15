@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tau.nexusnote.codex.graph.fcose.LayoutConfig
 import com.tau.nexusnote.ui.components.CodexSectionHeader
 import com.tau.nexusnote.utils.hexToColor
 import kotlin.math.roundToInt
@@ -84,8 +85,6 @@ fun SettingsView(
             }
         }
     }
-
-
 }
 
 // --- Appearance Section ---
@@ -95,7 +94,6 @@ private fun ThemeSettingsSection(
     theme: ThemeSettings,
     viewModel: SettingsViewModel
 ) {
-// --- Theme Mode Dropdown ---
     SettingDropdown(
         label = "Theme Mode",
         selected = theme.themeMode.name,
@@ -103,14 +101,12 @@ private fun ThemeSettingsSection(
         onSelected = { viewModel.onThemeModeChange(ThemeMode.valueOf(it)) }
     )
 
-// --- Single Accent Color Picker (always visible) ---
     ColorSettingItem(
         label = "Accent Color",
         color = Color(theme.accentColor),
         onColorChange = { viewModel.onAccentColorChange(it) }
     )
 
-// --- Conditional visibility for Custom Background ---
     AnimatedVisibility(visible = theme.themeMode == ThemeMode.CUSTOM) {
         Column(
             modifier = Modifier.padding(start = 16.dp, top = 8.dp)
@@ -127,7 +123,6 @@ private fun ThemeSettingsSection(
         }
     }
 
-// --- Reset Button ---
     Spacer(Modifier.height(16.dp))
     Button(
         onClick = viewModel::onResetTheme,
@@ -135,8 +130,6 @@ private fun ThemeSettingsSection(
     ) {
         Text("Reset Theme to Defaults")
     }
-
-
 }
 
 // --- Graph View Section ---
@@ -146,7 +139,7 @@ private fun GraphSettingsSection(
     viewModel: SettingsViewModel
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Physics", "Rendering", "Interaction")
+    val tabs = listOf("Layout (fCoSE)", "Rendering", "Interaction")
 
     PrimaryTabRow(selectedTabIndex = selectedTab) {
         tabs.forEachIndexed { index, title ->
@@ -165,8 +158,6 @@ private fun GraphSettingsSection(
         1 -> GraphRenderingSubSection(settings.graphRendering, viewModel)
         2 -> GraphInteractionSubSection(settings.graphInteraction, viewModel)
     }
-
-
 }
 
 @Composable
@@ -174,46 +165,35 @@ private fun GraphPhysicsSubSection(
     physics: GraphPhysicsSettings,
     viewModel: SettingsViewModel
 ) {
-// Recommended Defaults Text
+    val config = physics.config
+
     InfoCard(
-        "Recommended Defaults: Gravity: 0.5, Repulsion: 2000, Spring: 0.1, Damping: 0.9, Barnes-Hut: 1.2, Tolerance: 1.0"
+        "Standard fCoSE parameters. Gravity pulls nodes to center. Repulsion pushes them apart. Edge Length sets the target distance."
     )
 
     SettingSlider(
-        label = "Gravity",
-        value = physics.options.gravity,
+        label = "Gravity Constant",
+        value = config.gravityConstant.toFloat(),
         onValueChange = viewModel::onGravityChange,
         range = 0f..2f
     )
     SettingSlider(
-        label = "Repulsion",
-        value = physics.options.repulsion,
+        label = "Repulsion Constant",
+        value = config.repulsionConstant.toFloat(),
         onValueChange = viewModel::onRepulsionChange,
-        range = 0f..10000f
+        range = 100f..10000f
     )
     SettingSlider(
-        label = "Spring Stiffness",
-        value = physics.options.spring,
-        onValueChange = viewModel::onSpringChange,
-        range = 0.01f..1f
+        label = "Ideal Edge Length",
+        value = config.idealEdgeLength.toFloat(),
+        onValueChange = viewModel::onIdealEdgeLengthChange,
+        range = 10f..200f
     )
     SettingSlider(
-        label = "Damping",
-        value = physics.options.damping,
-        onValueChange = viewModel::onDampingChange,
-        range = 0.5f..1f
-    )
-    SettingSlider(
-        label = "Barnes-Hut Theta",
-        value = physics.options.barnesHutTheta,
-        onValueChange = viewModel::onBarnesHutThetaChange,
-        range = 0.1f..3f
-    )
-    SettingSlider(
-        label = "Tolerance (Speed)",
-        value = physics.options.tolerance,
-        onValueChange = viewModel::onToleranceChange,
-        range = 0.1f..10f
+        label = "Cooling Factor",
+        value = config.coolingFactor.toFloat(),
+        onValueChange = viewModel::onCoolingFactorChange,
+        range = 0.8f..0.99f
     )
 
     Spacer(Modifier.height(8.dp))
@@ -221,10 +201,8 @@ private fun GraphPhysicsSubSection(
         onClick = viewModel::onResetPhysics,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text("Reset Physics to Defaults")
+        Text("Reset Layout Config to Defaults")
     }
-
-
 }
 
 @Composable
@@ -312,9 +290,6 @@ private fun DataSettingsSection(
         checked = data.autoRefreshCodex,
         onCheckedChange = viewModel::onAutoRefreshCodexChange
     )
-// Add other data settings here
-
-
 }
 
 // --- General Section ---
@@ -463,14 +438,8 @@ private fun SettingDropdown(
             }
         }
     }
-
-
 }
 
-/**
- * A compact, two-row widget for editing a color.
- * Includes label, color preview, hex input, and RGB sliders.
- */
 @OptIn(ExperimentalStdlibApi::class)
 @Composable
 private fun ColorSettingItem(
@@ -541,8 +510,6 @@ private fun ColorSettingItem(
                 colors = SliderDefaults.colors(thumbColor = Color.Blue, activeTrackColor = Color.Blue)
             )
         }
-
-
     }
 }
 

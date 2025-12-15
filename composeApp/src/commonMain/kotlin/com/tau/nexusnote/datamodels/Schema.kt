@@ -52,11 +52,13 @@ sealed class SchemaConfig {
     sealed class ListConfig : SchemaConfig() {
         @Serializable @SerialName("Ordered")
         data class Ordered(
-            val indicatorStyle: String = "1."
+            val indicatorType: String = "Numeric" // Numeric, AlphaUpper, AlphaLower, RomanUpper, RomanLower
         ) : ListConfig()
 
         @Serializable @SerialName("Unordered")
-        data object Unordered : ListConfig()
+        data class Unordered(
+            val indicatorSymbol: String = "•" // Dot, Dash, Star, Plus, etc.
+        ) : ListConfig()
 
         @Serializable @SerialName("Task")
         data object Task : ListConfig()

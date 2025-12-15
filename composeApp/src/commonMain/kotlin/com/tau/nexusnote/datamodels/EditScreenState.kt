@@ -102,7 +102,10 @@ data class NodeSchemaCreationState(
     val shortTextCharLimit: String = "140",
 
     // ORDERED_LIST Config Data
-    val listIndicatorStyle: String = "1.",
+    val listOrderedType: String = "Numeric", // Numeric, AlphaUpper, AlphaLower, RomanUpper, RomanLower
+
+    // UNORDERED_LIST Config Data
+    val listUnorderedSymbol: String = "•",
 
     // Validation
     val tableNameError: String? = null,

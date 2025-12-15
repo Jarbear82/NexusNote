@@ -43,7 +43,7 @@ fun CreateNodeSchemaView(
     onTableConfigChange: (String, Boolean, String) -> Unit, // rowType, showCols, maxRows
     onCodeConfigChange: (String, Boolean) -> Unit, // lang, showFile
     onTextConfigChange: (String, Float, String) -> Unit, // casing, level, limit
-    onListConfigChange: (String) -> Unit, // indicator
+    onListConfigChange: (String, String) -> Unit, // orderedType, unorderedSymbol
 
     // Property Handlers
     onAddProperty: (SchemaProperty) -> Unit,
@@ -174,15 +174,27 @@ fun CreateNodeSchemaView(
                             )
                             Spacer(Modifier.height(8.dp))
 
-                            if (state.listSchemaType == "Ordered") {
-                                CodexDropdown(
-                                    label = "Indicator Style",
-                                    options = listOf("1.", "A.", "a.", "i.", "I."),
-                                    selectedOption = state.listIndicatorStyle,
-                                    onOptionSelected = { onListConfigChange(it) }
-                                )
-                            } else {
-                                Text("No additional configuration needed.")
+                            when (state.listSchemaType) {
+                                "Ordered" -> {
+                                    CodexDropdown(
+                                        label = "Indicator Style",
+                                        options = listOf("Numeric", "AlphaUpper", "AlphaLower", "RomanUpper", "RomanLower"),
+                                        selectedOption = state.listOrderedType,
+                                        onOptionSelected = { onListConfigChange(it, state.listUnorderedSymbol) }
+                                    )
+                                }
+                                "Unordered" -> {
+                                    OutlinedTextField(
+                                        value = state.listUnorderedSymbol,
+                                        onValueChange = { onListConfigChange(state.listOrderedType, it) },
+                                        label = { Text("Symbol (e.g. •, -, *)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                else -> {
+                                    Text("Task lists use standard checkboxes.")
+                                }
                             }
                         }
 

@@ -18,29 +18,22 @@ import org.jetbrains.kotlinx.multik.ndarray.data.*
 import org.jetbrains.kotlinx.multik.ndarray.operations.*
 
 /**
- * Robust Spectral Layout Implementation (Phase 1).
- * Refactored to implement LayoutPhase interface.
- *
- * Phase 3: Linear Algebra Refactor (Kotlin Multik).
- * Replaces manual matrix math with Multik ndarrays and operations.
- *
- * Pipeline:
- * 1. Graph Unification (Connect disconnected components)
- * 2. Compound Simplification (Collapse compound nodes to representatives)
- * 3. PivotMDS (High-dimensional embedding + PCA projection)
- *
- * Phase 4 Optimization: Adaptive Pivot Selection.
+ * Robust Spectral Layout Implementation.
+ * * Fixes:
+ * - Unify Graph: Uses peripheral connections to prevent "hairball" clustering.
  */
 class SpectralLayout : LayoutPhase {
 
     // Track dummy elements locally to clean up after run
     private val dummyEdges = mutableListOf<FcEdge>()
+    private val dummyNodes = mutableListOf<FcNode>()
 
     override suspend fun run(graph: FcGraph, config: LayoutConfig) = coroutineScope {
         println("[Spectral] Starting robust layout...")
 
         // Clear local state
         dummyEdges.clear()
+        dummyNodes.clear()
 
         // Step 1.1: Preprocessing (Graph Unification)
         unifyGraph(graph)
@@ -62,7 +55,6 @@ class SpectralLayout : LayoutPhase {
         val nodeToIndex = calcNodes.mapIndexed { index, node -> node.id to index }.toMap()
 
         // Step 1.3: PivotMDS Implementation with MaxMin Selection
-        // Heavy calculation runs on default dispatcher (Background)
         val numPivots = calculateAdaptivePivots(n)
         val (pivots, distanceMatrix) = selectPivotsMaxMin(calcNodes, calcEdges, numPivots, nodeToIndex)
 
@@ -84,16 +76,13 @@ class SpectralLayout : LayoutPhase {
         println("[Spectral] Finished.")
     }
 
-    /**
-     * Phase 4: Adaptive Pivot Calculation.
-     */
     private fun calculateAdaptivePivots(n: Int): Int {
         if (n <= 50) return n
         val scalingTarget = sqrt(n.toDouble()).toInt()
         return min(n, max(50, scalingTarget))
     }
 
-    // --- Step 1.1: Graph Unification ---
+    // --- Step 1.1: Graph Unification (Anti-Hairball Fix) ---
 
     private fun unifyGraph(graph: FcGraph) {
         val allNodes = graph.nodes.toSet()
@@ -113,16 +102,18 @@ class SpectralLayout : LayoutPhase {
 
         println("[Spectral] Unifying ${components.size} disconnected components.")
 
-        components.sortByDescending { it.size }
-        val mainComponent = components[0]
-        val mainCenter = findCenterNode(mainComponent)
+        // FIX: Create a central dummy "Hub" node.
+        // Connect the "Peripheral" (lowest degree) node of each component to this hub.
+        // This spreads components out rather than dragging their centers together.
 
-        // Connect other components to the main component
-        for (i in 1 until components.size) {
-            val comp = components[i]
-            val compCenter = findCenterNode(comp)
+        val hub = graph.addNode(id = "dummy_hub_${Random.nextInt()}", isDummy = true)
+        dummyNodes.add(hub)
 
-            val edge = graph.addEdge(mainCenter.id, compCenter.id, isDummy = true)
+        components.forEach { comp ->
+            val peripheralNode = findPeripheralNode(comp)
+
+            // Long edge to separate components
+            val edge = graph.addEdge(hub.id, peripheralNode.id, isDummy = true)
             if (edge != null) dummyEdges.add(edge)
         }
     }
@@ -150,8 +141,10 @@ class SpectralLayout : LayoutPhase {
         return component
     }
 
-    private fun findCenterNode(nodes: List<FcNode>): FcNode {
-        return nodes.maxByOrNull { it.getDegree() } ?: nodes[0]
+    private fun findPeripheralNode(nodes: List<FcNode>): FcNode {
+        // Find node with minimum degree (closest to being a leaf)
+        // If multiple, pick one far from the "center" if possible, but random/first is fine.
+        return nodes.minByOrNull { it.getDegree() } ?: nodes[0]
     }
 
     // --- Step 1.2: Compound Simplification ---
@@ -303,7 +296,7 @@ class SpectralLayout : LayoutPhase {
         return dists
     }
 
-    // --- Linear Algebra Refactor (Multik Integration) ---
+    // --- Linear Algebra (Multik Integration) ---
 
     private fun computePCA(
         data: Array<DoubleArray>,
@@ -311,16 +304,11 @@ class SpectralLayout : LayoutPhase {
         k: Int,
         iterations: Int
     ): List<Pair<Double, Double>> {
-        // 1. Data Conversion: Array<DoubleArray> -> D2Array
         val flattenedData = data.flatMap { it.toList() }
-        val matrix = mk.ndarray(flattenedData, k, n) // k rows (pivots), n columns (nodes)
+        val matrix = mk.ndarray(flattenedData, k, n)
 
-        // 2. Centering
-        // Calculate mean of each row (axis 1) manually to be safe across Multik versions
-        // and create centered matrix
         val centeredData = DoubleArray(k * n)
         for (i in 0 until k) {
-            // Extract row i manually or via slicing
             var sum = 0.0
             for (j in 0 until n) sum += matrix[i, j]
             val mean = sum / n
@@ -331,40 +319,23 @@ class SpectralLayout : LayoutPhase {
         }
         val centered = mk.ndarray(centeredData, k, n)
 
-        // 3. Covariance: (centered dot centered.transpose()) / n
-        // Multik 'dot' handles matrix multiplication efficiently.
-        // centered (k x n) dot centered.transpose (n x k) -> (k x k)
         val cov = (centered dot centered.transpose()) / n.toDouble()
 
-        // 4. Eigen Decomposition (Refactored Power Iteration using Multik)
-        // We need the top 2 eigenvectors (v1, v2).
-
-        // Calculate v1
         val v1 = powerIterationMultik(cov, k, iterations)
-
-        // Calculate Lambda1 (Rayleigh Quotient)
-        // lambda1 = (v1 . (cov . v1)) / (v1 . v1) -> v1 is normalized, so denom is 1
         val covV1 = cov dot v1
-        val lambda1 = v1 dot covV1 // scalar result
+        val lambda1 = v1 dot covV1
 
-        // Deflate Covariance Matrix: cov2 = cov - lambda1 * (v1 * v1.T)
-        // Outer product: v1 (k x 1) dot v1.T (1 x k) -> k x k
         val v1Col = v1.reshape(k, 1)
         val v1Row = v1.reshape(1, k)
         val outer = v1Col dot v1Row
         val cov2 = cov - (outer * lambda1)
 
-        // Calculate v2
         val v2 = powerIterationMultik(cov2, k, iterations)
 
-        // 5. Projection / Coordinates
-        // Project data onto eigenvectors: Coords = EigenVector dot CenteredData
-        // v1 (size k) needs to be treated as row vector (1 x k) to dot with centered (k x n)
-        val xRow = v1.reshape(1, k) dot centered // Result: 1 x n
-        val yRow = v2.reshape(1, k) dot centered // Result: 1 x n
+        val xRow = v1.reshape(1, k) dot centered
+        val yRow = v2.reshape(1, k) dot centered
 
         val coords = mutableListOf<Pair<Double, Double>>()
-        // Accessing D2Array elements: [row, col]
         for (j in 0 until n) {
             coords.add(xRow[0, j] to yRow[0, j])
         }
@@ -372,26 +343,15 @@ class SpectralLayout : LayoutPhase {
         return coords
     }
 
-    /**
-     * Refactored Power Iteration using Multik's vector operations.
-     * Replaces manual loops with optimized dot products and norms.
-     */
     private fun powerIterationMultik(matrix: D2Array<Double>, size: Int, iter: Int): D1Array<Double> {
-        // Initialize random vector
         val randData = DoubleArray(size) { Random.nextDouble() }
         var v = mk.ndarray(randData)
 
-        // Normalize
-        // FIX: mk.linalg.norm(v) is not supported for D1Array in this version.
-        // Use manual Euclidean norm: sqrt(v dot v)
         var norm = sqrt(v dot v)
         if (norm > 0) v = v / norm
 
         repeat(iter) {
-            // Matrix-Vector multiplication
             val next = matrix dot v
-
-            // FIX: Manual norm calculation for the next vector as well
             norm = sqrt(next dot next)
             if (norm > 1e-9) {
                 v = next / norm
@@ -404,7 +364,6 @@ class SpectralLayout : LayoutPhase {
         nodes.forEachIndexed { index, node ->
             if (!node.isFixed) {
                 val (x, y) = coords[index]
-                // Add random noise
                 val jitterX = (Math.random() - 0.5) * 50.0
                 val jitterY = (Math.random() - 0.5) * 50.0
 
@@ -412,8 +371,11 @@ class SpectralLayout : LayoutPhase {
             }
         }
     }
+
     private fun cleanup(graph: FcGraph) {
         dummyEdges.forEach { graph.removeEdge(it) }
+        dummyNodes.forEach { graph.removeNode(it) }
         dummyEdges.clear()
+        dummyNodes.clear()
     }
 }

@@ -52,8 +52,13 @@ class NodeSizeCalculator(
 
     // --- Constraints ---
     private val minNodeWidth = 50.dp
-    private val maxNodeWidth = 300.dp // Max width for text blocks before wrapping
-    private val padding = 16.dp
+    private val maxNodeWidth = 300.dp
+
+    // Exact match for CanvasRenderer padding
+    private val basePadding = 16.dp
+
+    // NEW: Extra safety buffer for physics engine to prevent "kissing" nodes
+    private val safetyBuffer = 8.dp
 
     fun measure(content: NodeContent, config: SchemaConfig?): Size {
         return when (content) {
@@ -61,7 +66,7 @@ class NodeSizeCalculator(
             is NodeContent.CodeContent -> measureCode(content, config)
             is NodeContent.TableContent -> measureTable(content, config)
             is NodeContent.MediaContent -> measureMedia(content)
-            is NodeContent.MapContent -> measureMap() // Default size for standard nodes
+            is NodeContent.MapContent -> measureMap()
             is NodeContent.ListContent -> measureList(content.items.map { it.text }, config)
             is NodeContent.TimestampContent -> Size(120f, 60f)
         }
@@ -75,7 +80,6 @@ class NodeSizeCalculator(
             else -> bodyStyle
         }
 
-        // Apply width constraints for wrapping
         val maxWidthPx = with(density) { maxNodeWidth.toPx() }.toInt()
         val minWidthPx = with(density) { minNodeWidth.toPx() }.toInt()
 
@@ -85,12 +89,15 @@ class NodeSizeCalculator(
             constraints = Constraints(maxWidth = maxWidthPx)
         )
 
-        var width = max(minWidthPx, result.size.width) + with(density) { padding.toPx() * 2 }
-        var height = result.size.height + with(density) { padding.toPx() * 2 }
+        val paddingPx = with(density) { basePadding.toPx() }
+        val safetyPx = with(density) { safetyBuffer.toPx() }
 
-        // Special adjustments for Tags
+        // Add safety buffer to width to ensure text doesn't overflow visually
+        var width = max(minWidthPx, result.size.width) + (paddingPx * 2) + safetyPx
+        var height = result.size.height + (paddingPx * 2) + safetyPx
+
         if (config is SchemaConfig.TextConfig.Tag) {
-            width = result.size.width + with(density) { 24.dp.toPx() } // More tight, pill shape padding
+            width = result.size.width + with(density) { 24.dp.toPx() }
             height = result.size.height + with(density) { 12.dp.toPx() }
         }
 
@@ -102,14 +109,12 @@ class NodeSizeCalculator(
         var maxWidth = 0
         var totalHeight = 0
 
-        // Determine list indicator width offset
         val indicatorWidth = when (config) {
             is SchemaConfig.ListConfig.Ordered -> with(density) { 24.dp.toPx() }.toInt()
             is SchemaConfig.ListConfig.Task -> with(density) { 24.dp.toPx() }.toInt()
-            else -> with(density) { 12.dp.toPx() }.toInt() // Bullet
+            else -> with(density) { 12.dp.toPx() }.toInt()
         }
 
-        // Measure first few items to estimate or calculate bounds
         items.take(10).forEach { item ->
             val res = textMeasurer.measure(
                 text = AnnotatedString(item),
@@ -117,23 +122,23 @@ class NodeSizeCalculator(
                 constraints = Constraints(maxWidth = maxWidthPx - indicatorWidth)
             )
             if (res.size.width > maxWidth) maxWidth = res.size.width
-            totalHeight += res.size.height + with(density) { 4.dp.toPx() }.toInt() // item spacing
+            totalHeight += res.size.height + with(density) { 4.dp.toPx() }.toInt()
         }
-        // Add ellipsis estimate if cropped
         if (items.size > 10) totalHeight += with(density) { 20.dp.toPx() }.toInt()
 
-        val paddingPx = with(density) { padding.toPx() }
-        val finalWidth = (maxWidth + indicatorWidth + paddingPx * 2).toFloat()
-        val finalHeight = (totalHeight + paddingPx * 2).toFloat()
+        val paddingPx = with(density) { basePadding.toPx() }
+        val safetyPx = with(density) { safetyBuffer.toPx() }
+
+        val finalWidth = (maxWidth + indicatorWidth + paddingPx * 2 + safetyPx).toFloat()
+        val finalHeight = (totalHeight + paddingPx * 2 + safetyPx).toFloat()
 
         return Size(finalWidth, finalHeight)
     }
 
     private fun measureCode(content: NodeContent.CodeContent, config: SchemaConfig?): Size {
         val showFilename = (config as? SchemaConfig.CodeConfig)?.showFilename ?: true
-        val maxWidthPx = with(density) { 400.dp.toPx() }.toInt() // Code blocks can be wider
+        val maxWidthPx = with(density) { 400.dp.toPx() }.toInt()
 
-        // Measure Code Content
         val codeResult = textMeasurer.measure(
             text = AnnotatedString(content.code),
             style = codeStyle,
@@ -143,23 +148,20 @@ class NodeSizeCalculator(
         var height = codeResult.size.height.toFloat()
         var width = codeResult.size.width.toFloat()
 
-        // Add Header Height if filename is shown
         if (showFilename || content.filename != null) {
             val headerHeight = with(density) { 24.dp.toPx() }
             height += headerHeight
         }
 
-        // Add Padding
-        val paddingPx = with(density) { padding.toPx() }
-        return Size(width + paddingPx * 2, height + paddingPx * 2)
+        val paddingPx = with(density) { basePadding.toPx() }
+        val safetyPx = with(density) { safetyBuffer.toPx() }
+        return Size(width + paddingPx * 2 + safetyPx, height + paddingPx * 2 + safetyPx)
     }
 
     private fun measureTable(content: NodeContent.TableContent, config: SchemaConfig?): Size {
         val colCount = max(1, content.headers.size)
-        val rowCount = content.rows.size + 1 // +1 for header
+        val rowCount = content.rows.size + 1
 
-        // Estimate based on fixed cell size for performance
-        // Real implementation might measure each cell, but that's expensive.
         val estColWidth = with(density) { 100.dp.toPx() }
         val estRowHeight = with(density) { 30.dp.toPx() }
 
@@ -170,14 +172,12 @@ class NodeSizeCalculator(
     }
 
     private fun measureMedia(content: NodeContent.MediaContent): Size {
-        // Return thumbnail size + label space
         val thumbSize = with(density) { 100.dp.toPx() }
         val labelHeight = if (content.caption != null) with(density) { 20.dp.toPx() } else 0f
         return Size(thumbSize, thumbSize + labelHeight)
     }
 
     private fun measureMap(): Size {
-        // Default circular node size
         val size = with(density) { 50.dp.toPx() }
         return Size(size, size)
     }

@@ -10,6 +10,7 @@ import com.tau.nexusnote.utils.labelToColor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.math.max
+import kotlin.math.sqrt
 
 class GraphViewmodel(
     private val viewModelScope: CoroutineScope,
@@ -19,24 +20,20 @@ class GraphViewmodel(
     // --- Engine & State ---
     private val layoutEngine = LayoutEngine(SpectralLayout(), CoseLayout())
 
-    // The Layout Model (Source of Truth for Positions)
     private val _fcGraph = FcGraph()
 
-    // The UI Model (Derived from FcGraph for rendering)
     private val _graphNodes = MutableStateFlow<Map<Long, GraphNode>>(emptyMap())
     val graphNodes = _graphNodes.asStateFlow()
 
     private val _graphEdges = MutableStateFlow<List<GraphEdge>>(emptyList())
     val graphEdges = _graphEdges.asStateFlow()
 
-    // --- Configuration & Settings ---
-    private val _physicsOptions = MutableStateFlow(settingsFlow.value.graphPhysics.options)
-    val physicsOptions = _physicsOptions.asStateFlow()
+    private val _layoutConfig = MutableStateFlow(settingsFlow.value.graphPhysics.config)
+    val layoutConfig = _layoutConfig.asStateFlow()
 
     private val _renderingSettings = MutableStateFlow(settingsFlow.value.graphRendering)
     val renderingSettings = _renderingSettings.asStateFlow()
 
-    // --- Interaction State ---
     private val _transform = MutableStateFlow(TransformState())
     val transform = _transform.asStateFlow()
 
@@ -57,22 +54,19 @@ class GraphViewmodel(
     private val _simulationRunning = MutableStateFlow(false)
     val simulationRunning = _simulationRunning.asStateFlow()
 
-    // --- Sizing Service ---
     private var nodeSizeCalculator: NodeSizeCalculator? = null
 
     private var size = Size.Zero
     private var uiSyncJob: Job? = null
 
     init {
-        // Observer for settings updates
         viewModelScope.launch {
             settingsFlow.collect { settings ->
-                _physicsOptions.value = settings.graphPhysics.options
+                _layoutConfig.value = settings.graphPhysics.config
                 _renderingSettings.value = settings.graphRendering
             }
         }
 
-        // Observer for Repository Constraints (Phase 6 Sync)
         viewModelScope.launch {
             repository.constraints.collect { dbConstraints ->
                 updateGraphConstraints(dbConstraints)
@@ -80,11 +74,8 @@ class GraphViewmodel(
         }
     }
 
-    // --- Phase 2: Sizing Integration ---
-
     fun setNodeSizeCalculator(calculator: NodeSizeCalculator) {
         this.nodeSizeCalculator = calculator
-        // Trigger a re-calculation for existing nodes
         viewModelScope.launch(Dispatchers.Default) {
             recalculateNodeSizes()
         }
@@ -95,11 +86,20 @@ class GraphViewmodel(
 
         _fcGraph.nodes.forEach { node ->
             if (!node.isCompound() && !node.isDummy && !node.isRepresentative) {
-                val item = node.data as? NodeDisplayItem
-                if (item != null) {
-                    val size = calc.measure(item.content, item.config)
-                    node.width = size.width.toDouble()
-                    node.height = size.height.toDouble()
+                val data = node.data
+
+                // Add buffer to physics body to ensure visual gap
+                val physicsBuffer = 20.0
+
+                if (data is NodeDisplayItem) {
+                    val size = calc.measure(data.content, data.config)
+                    node.width = size.width.toDouble() + physicsBuffer
+                    node.height = size.height.toDouble() + physicsBuffer
+                } else if (data is EdgeDisplayItem) {
+                    val content = NodeContent.TextContent(data.label)
+                    val size = calc.measure(content, null)
+                    node.width = size.width.toDouble() + physicsBuffer
+                    node.height = size.height.toDouble() + physicsBuffer
                 }
             }
         }
@@ -107,14 +107,13 @@ class GraphViewmodel(
         pushUiUpdate()
     }
 
-    // --- Data Synchronization (SQLite -> FcGraph) ---
-
     fun updateGraphData(nodeList: List<NodeDisplayItem>, edgeList: List<EdgeDisplayItem>) {
         val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
         val activeIds = mutableSetOf<String>()
         val calc = nodeSizeCalculator
+        val baseWidth = (settingsFlow.value.graphInteraction.nodeBaseRadius * 2.0).toDouble()
+        val physicsBuffer = 20.0
 
-        // 1. Add Standard Nodes
         nodeList.forEach { item ->
             val idStr = item.id.toString()
             activeIds.add(idStr)
@@ -122,11 +121,10 @@ class GraphViewmodel(
             val existing = currentFcNodes[idStr]
             if (existing != null) {
                 existing.data = item
-                // If calculator is ready, update size, else keep existing or default
                 if (!existing.isCompound() && calc != null) {
                     val size = calc.measure(item.content, item.config)
-                    existing.width = size.width.toDouble()
-                    existing.height = size.height.toDouble()
+                    existing.width = size.width.toDouble() + physicsBuffer
+                    existing.height = size.height.toDouble() + physicsBuffer
                 }
             } else {
                 val newNode = _fcGraph.addNode(id = idStr)
@@ -134,11 +132,11 @@ class GraphViewmodel(
 
                 if (calc != null) {
                     val size = calc.measure(item.content, item.config)
-                    newNode.width = size.width.toDouble()
-                    newNode.height = size.height.toDouble()
+                    newNode.width = size.width.toDouble() + physicsBuffer
+                    newNode.height = size.height.toDouble() + physicsBuffer
                 } else {
-                    newNode.width = _physicsOptions.value.nodeBaseRadius * 2.0
-                    newNode.height = newNode.width
+                    newNode.width = baseWidth
+                    newNode.height = baseWidth
                 }
 
                 newNode.x = (Math.random() - 0.5) * 100.0
@@ -146,36 +144,32 @@ class GraphViewmodel(
             }
         }
 
-        // 2. Process N-nary Edges -> Convert to Hypernodes + Binary Edges
         edgeList.forEach { naryEdge ->
             val hyperNodeId = "edge_${naryEdge.id}"
             activeIds.add(hyperNodeId)
 
-            // A. Create the "Hypernode" (The visual representation of the Edge)
-            val existing = currentFcNodes[hyperNodeId]
-            // Hypernodes are slightly smaller than regular nodes
-            val hyperNodeSize = _physicsOptions.value.nodeBaseRadius * 1.2
+            val existing = currentFcNodes[hyperNodeId] ?: _fcGraph.addNode(id = hyperNodeId, isDummy = false)
+            existing.data = naryEdge
 
-            if (existing != null) {
-                existing.data = naryEdge
-                existing.width = hyperNodeSize.toDouble()
-                existing.height = hyperNodeSize.toDouble()
+            if (calc != null) {
+                val labelContent = NodeContent.TextContent(naryEdge.label)
+                val size = calc.measure(labelContent, null)
+                existing.width = size.width.toDouble() + physicsBuffer
+                existing.height = size.height.toDouble() + physicsBuffer
             } else {
-                val hyperNode = _fcGraph.addNode(id = hyperNodeId, isDummy = false)
-                hyperNode.data = naryEdge
-                hyperNode.width = hyperNodeSize.toDouble()
-                hyperNode.height = hyperNodeSize.toDouble()
-                // Randomize position initially
-                hyperNode.x = (Math.random() - 0.5) * 100.0
-                hyperNode.y = (Math.random() - 0.5) * 100.0
+                existing.width = baseWidth
+                existing.height = baseWidth
+            }
+
+            if (existing.x == 0.0 && existing.y == 0.0) {
+                existing.x = (Math.random() - 0.5) * 100.0
+                existing.y = (Math.random() - 0.5) * 100.0
             }
         }
 
-        // 3. Remove Stale Nodes
         val nodesToRemove = _fcGraph.nodes.filter { it.id !in activeIds }
         nodesToRemove.forEach { _fcGraph.removeNode(it) }
 
-        // 4. Rebuild Hierarchy (Nodes only)
         _fcGraph.nodes.forEach {
             it.parent = null
             it.children.clear()
@@ -191,7 +185,6 @@ class GraphViewmodel(
             }
         }
 
-        // 5. Sync Edges (Rebuild connectivity for Layout Engine)
         _fcGraph.edges.clear()
         edgeList.forEach { edge ->
             val hyperNodeId = "edge_${edge.id}"
@@ -201,29 +194,21 @@ class GraphViewmodel(
             }
         }
 
-        // 6. Generate UI Edges (Visual Lines)
         val uiEdges = mutableListOf<GraphEdge>()
-        var edgeIdCounter = -100000L // Arbitrary start for purely visual edge IDs
+        var edgeIdCounter = -100000L
 
-        // Cache Schema Map for efficient lookup inside the loop
         val currentSchemaData = repository.schema.value
         val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
 
         edgeList.forEach { edge ->
-            val hyperNodeUiId = -1 * edge.id // Negative ID represents a hypernode
+            val hyperNodeUiId = -1 * edge.id
             val schema = edgeSchemaMap[edge.schemaId]
 
             edge.participatingNodes.forEach { participant ->
                 val nodeUiId = participant.node.id
                 val roleName = participant.role ?: ""
-
-                // Lookup Role Definition to determine direction
-                // Default to TARGET (Hypernode -> Node) if not found or unspecified
                 val roleDef = schema?.roleDefinitions?.find { it.name == roleName }
                 val direction = roleDef?.direction ?: RoleDirection.Target
-
-                // SOURCE: Arrow points FROM Node TO Hypernode
-                // TARGET: Arrow points FROM Hypernode TO Node
                 val isSource = direction == RoleDirection.Source
 
                 val sId = if (isSource) nodeUiId else hyperNodeUiId
@@ -234,8 +219,8 @@ class GraphViewmodel(
                         id = edgeIdCounter--,
                         sourceId = sId,
                         targetId = tId,
-                        label = "", // Spoke edges usually don't need labels
-                        roleLabel = roleName, // Pass the role name to be rendered
+                        label = "",
+                        roleLabel = roleName,
                         strength = 1.0f,
                         colorInfo = labelToColor(edge.label)
                     )
@@ -245,11 +230,15 @@ class GraphViewmodel(
         _graphEdges.value = uiEdges
 
         _fcGraph.nodes.filter { it.isCompound() }.forEach { it.updateBoundsFromChildren() }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            recalculateNodeSizes()
+        }
+
         pushUiUpdate()
     }
 
     private fun updateGraphConstraints(constraints: List<LayoutConstraintItem>) {
-        // Clear existing
         _fcGraph.fixedConstraints.clear()
         _fcGraph.alignConstraints.clear()
         _fcGraph.relativeConstraints.clear()
@@ -284,12 +273,8 @@ class GraphViewmodel(
                 }
             }
         }
-        // Force an update to the constraint processor if it exists
         runEnforce()
     }
-
-
-    // --- UI Synchronization ---
 
     private fun pushUiUpdate() {
         val newMap = _fcGraph.nodes.associate { fcNode ->
@@ -298,8 +283,8 @@ class GraphViewmodel(
             val property: String
             val isHyper: Boolean
             val colorInfo: ColorInfo
-            val content: NodeContent? // Capture content for renderer
-            val config: SchemaConfig? // Capture config
+            val content: NodeContent?
+            val config: SchemaConfig?
 
             val data = fcNode.data
             if (data is NodeDisplayItem) {
@@ -311,16 +296,14 @@ class GraphViewmodel(
                 content = data.content
                 config = data.config
             } else if (data is EdgeDisplayItem) {
-                // Map Edge ID to a negative Long to distinguish from Node IDs
                 id = -1 * data.id
                 label = data.label
-                property = data.label // Display the edge label on the hypernode
+                property = data.label
                 isHyper = true
                 colorInfo = labelToColor(label)
-                content = null // Hypernodes are abstract
+                content = null
                 config = null
             } else {
-                // Fallback for nodes without data (shouldn't happen often)
                 id = fcNode.id.toLongOrNull() ?: fcNode.id.hashCode().toLong()
                 label = "Unknown"
                 property = "Unknown"
@@ -330,25 +313,20 @@ class GraphViewmodel(
                 config = null
             }
 
-            // Calculate radius based on the larger dimension to avoid clipping
-            // Since PhysicsEngine treats nodes as circles for simple collision,
-            // we use the max dimension / 2 to encompass the shape.
-            val radius = (max(fcNode.width, fcNode.height) / 2.0).toFloat()
+            val radius = (sqrt(fcNode.width * fcNode.width + fcNode.height * fcNode.height) / 2.0).toFloat()
 
             val uiNode = GraphNode(
                 id = id,
                 label = label,
                 displayProperty = property,
                 pos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
-                vel = Offset(0f, 0f),
-                mass = 1.0f,
                 radius = radius,
                 width = fcNode.width.toFloat(),
                 height = fcNode.height.toFloat(),
                 isCompound = fcNode.isCompound(),
                 isHyperNode = isHyper,
-                content = content, // Pass the content
-                config = config, // Pass the config
+                content = content,
+                config = config,
                 colorInfo = colorInfo,
                 isFixed = fcNode.isFixed
             )
@@ -381,8 +359,6 @@ class GraphViewmodel(
         pushUiUpdate()
     }
 
-    // --- Layout Pipeline Steps ---
-
     fun runRandomize() {
         viewModelScope.launch {
             layoutEngine.randomize(_fcGraph)
@@ -393,7 +369,7 @@ class GraphViewmodel(
     fun runDraft() {
         viewModelScope.launch(Dispatchers.Default) {
             _isDetangling.value = true
-            layoutEngine.runDraft(_fcGraph, LayoutConfig())
+            layoutEngine.runDraft(_fcGraph, _layoutConfig.value)
             pushUiUpdate()
             _isDetangling.value = false
         }
@@ -418,20 +394,20 @@ class GraphViewmodel(
             _isDetangling.value = true
             startUiSync()
 
-            val config = LayoutConfig()
+            val config = _layoutConfig.value
             if (burst) {
-                config.maxIterations = 60
-                config.initialTemp = 50.0
+                layoutEngine.runPolishing(_fcGraph, config.copy(
+                    maxIterations = 60,
+                    initialTemp = 50.0
+                ))
+            } else {
+                layoutEngine.runPolishing(_fcGraph, config)
             }
-
-            layoutEngine.runPolishing(_fcGraph, config)
 
             stopUiSync()
             _isDetangling.value = false
         }
     }
-
-    // --- Constraint Management ---
 
     fun addConstraint(type: ConstraintUiType, nodeIds: List<Long>) {
         if (nodeIds.isEmpty()) return
@@ -451,8 +427,6 @@ class GraphViewmodel(
         if (nodeIds.isEmpty()) return
         repository.createCompoundNode("New Group", nodeIds)
     }
-
-    // --- Gesture Handlers ---
 
     fun screenToWorld(screenPos: Offset): Offset {
         val pan = _transform.value.pan
@@ -523,7 +497,7 @@ class GraphViewmodel(
         node.parent?.updateBoundsFromChildren()
 
         viewModelScope.launch(Dispatchers.Default) {
-            val config = LayoutConfig(maxIterations = 5, initialTemp = 20.0)
+            val config = _layoutConfig.value.copy(maxIterations = 5, initialTemp = 20.0)
             layoutEngine.runPolishing(_fcGraph, config)
             pushUiUpdate()
         }
@@ -556,10 +530,9 @@ class GraphViewmodel(
         val tappedNode = candidates.minByOrNull { it.width * it.height }
 
         if (tappedNode != null) {
-            // Resolve the visual ID (Long) from the internal Node (String ID/Data)
             val id = when (val data = tappedNode.data) {
                 is NodeDisplayItem -> data.id
-                is EdgeDisplayItem -> -1 * data.id // Ensure we pass the negative ID for hypernodes
+                is EdgeDisplayItem -> -1 * data.id
                 else -> tappedNode.id.toLongOrNull()
             }
             if (id != null) {
@@ -580,10 +553,14 @@ class GraphViewmodel(
         _showSettings.update { !it }
     }
 
-    fun startSimulation() {
+    fun startSimulation(fullPipeline: Boolean = false) {
         _simulationRunning.value = true
         if (_fcGraph.nodes.isNotEmpty()) {
-            runPolishing(burst = true)
+            if (fullPipeline) {
+                runDraft()
+            } else {
+                runPolishing(burst = true)
+            }
         }
     }
 

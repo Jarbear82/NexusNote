@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GroupWork
 import androidx.compose.material.icons.filled.Hub
@@ -61,14 +62,16 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
-import com.tau.nexusnote.datamodels.GraphNode
+import androidx.compose.ui.unit.sp
 import com.tau.nexusnote.datamodels.GraphEdge
+import com.tau.nexusnote.datamodels.GraphNode
 import com.tau.nexusnote.datamodels.NodeContent
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 
 @OptIn(ExperimentalGraphicsApi::class, ExperimentalTextApi::class, ExperimentalComposeUiApi::class)
@@ -86,22 +89,21 @@ fun GraphView(
 ) {
     val transform by viewModel.transform.collectAsState()
     val showFabMenu by viewModel.showFabMenu.collectAsState()
-
     val isDetangling by viewModel.isDetangling.collectAsState()
-    val physicsOptions by viewModel.physicsOptions.collectAsState()
+    val layoutConfig by viewModel.layoutConfig.collectAsState()
     val showSettings by viewModel.showSettings.collectAsState()
-
     val renderingSettings by viewModel.renderingSettings.collectAsState()
-
     val isSimulationRunning by viewModel.simulationRunning.collectAsState()
 
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
 
-    // Inject Sizing Infrastructure
     LaunchedEffect(density, textMeasurer) {
         viewModel.setNodeSizeCalculator(NodeSizeCalculator(textMeasurer, density))
     }
+
+    val paddingPx = with(density) { 16.dp.toPx() }
+    val gapPx = with(density) { 4.dp.toPx() }
 
     val labelColor = MaterialTheme.colorScheme.onSurface
     val crosshairColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
@@ -118,9 +120,7 @@ fun GraphView(
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            viewModel.stopSimulation()
-        }
+        onDispose { viewModel.stopSimulation() }
     }
 
     Box(
@@ -128,31 +128,19 @@ fun GraphView(
             .fillMaxSize()
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDragStart = { offset ->
-                        isDraggingNode = viewModel.onDragStart(offset)
-                    },
+                    onDragStart = { offset -> isDraggingNode = viewModel.onDragStart(offset) },
                     onDrag = { change, dragAmount ->
                         change.consume()
-                        if (isDraggingNode) {
-                            viewModel.onDrag(dragAmount)
-                        } else {
-                            viewModel.onPan(dragAmount)
-                        }
+                        if (isDraggingNode) viewModel.onDrag(dragAmount) else viewModel.onPan(dragAmount)
                     },
                     onDragEnd = {
-                        if (isDraggingNode) {
-                            viewModel.onDragEnd()
-                        }
+                        if (isDraggingNode) viewModel.onDragEnd()
                         isDraggingNode = false
                     }
                 )
             }
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { offset ->
-                        viewModel.onTap(offset, onNodeTap)
-                    }
-                )
+                detectTapGestures(onTap = { offset -> viewModel.onTap(offset, onNodeTap) })
             }
             .onPointerEvent(PointerEventType.Scroll) {
                 it.changes.firstOrNull()?.let { change ->
@@ -161,9 +149,7 @@ fun GraphView(
                     change.consume()
                 }
             }
-            .onSizeChanged {
-                viewModel.onResize(it)
-            }
+            .onSizeChanged { viewModel.onResize(it) }
     ) {
         val edgeLabelStyle = TextStyle(
             fontFamily = FontFamily.Monospace,
@@ -181,167 +167,74 @@ fun GraphView(
                 scale(scaleX = transform.zoom, scaleY = transform.zoom, pivot = Offset.Zero)
                 translate(left = transform.pan.x, top = transform.pan.y)
             }) {
-
-                // --- 1. Draw Compound Nodes ---
+                // 1. Compounds
                 nodes.values.filter { it.isCompound }.forEach { node ->
                     val halfW = node.width / 2
                     val halfH = node.height / 2
-                    val nodeRect = Rect(
-                        left = node.pos.x - halfW,
-                        top = node.pos.y - halfH,
-                        right = node.pos.x + halfW,
-                        bottom = node.pos.y + halfH
-                    )
+                    val nodeRect = Rect(node.pos.x - halfW, node.pos.y - halfH, node.pos.x + halfW, node.pos.y + halfH)
 
                     if (visibleWorldRect.overlaps(nodeRect)) {
-                        drawRoundRect(
-                            color = compoundFillColor,
-                            topLeft = nodeRect.topLeft,
-                            size = Size(node.width, node.height),
-                            cornerRadius = CornerRadius(10f, 10f)
-                        )
-                        drawRoundRect(
-                            color = compoundBorderColor,
-                            topLeft = nodeRect.topLeft,
-                            size = Size(node.width, node.height),
-                            cornerRadius = CornerRadius(10f, 10f),
-                            style = Stroke(
-                                width = 2f,
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
-                            )
-                        )
-
+                        drawRoundRect(compoundFillColor, nodeRect.topLeft, Size(node.width, node.height), CornerRadius(10f, 10f))
+                        drawRoundRect(compoundBorderColor, nodeRect.topLeft, Size(node.width, node.height), CornerRadius(10f, 10f),
+                            style = Stroke(width = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)))
                         if (renderingSettings.showNodeLabels) {
                             val labelStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = (14.sp.value / transform.zoom.coerceAtLeast(0.1f)).coerceIn(10.sp.value, 18.sp.value).sp,
                                 color = labelColor
                             )
-                            val measured = textMeasurer.measure(AnnotatedString(node.displayProperty), labelStyle)
-                            drawText(
-                                textLayoutResult = measured,
-                                topLeft = nodeRect.topLeft + Offset(10f, 10f)
-                            )
+                            drawText(textMeasurer.measure(AnnotatedString(node.displayProperty), labelStyle), topLeft = nodeRect.topLeft + Offset(10f, 10f))
                         }
                     }
                 }
 
-                // --- 2. Draw Edges ---
-                val edgesByPair = edges.groupBy { Pair(it.sourceId, it.targetId) }
-                val linkCounts = mutableMapOf<Pair<Long, Long>, Int>()
-                val uniquePairs = mutableSetOf<Pair<Long, Long>>()
-
-                for (edge in edges) {
-                    if (edge.sourceId == edge.targetId) continue
-                    val pair = if (edge.sourceId < edge.targetId) Pair(edge.sourceId, edge.targetId) else Pair(edge.targetId, edge.sourceId)
-                    uniquePairs.add(pair)
-                }
-
-                for (pair in uniquePairs) {
-                    val count = (edgesByPair[pair]?.size ?: 0) + (edgesByPair[Pair(pair.second, pair.first)]?.size ?: 0)
-                    linkCounts[pair] = count
-                }
-
-                val pairDrawIndex = mutableMapOf<Pair<Long, Long>, Int>()
-                val selfLoopDrawIndex = mutableMapOf<Long, Int>()
-
-                for (edge in edges) {
+                // 2. Edges
+                edges.forEach { edge ->
                     val nodeA = nodes[edge.sourceId]
                     val nodeB = nodes[edge.targetId]
-                    if (nodeA == null || nodeB == null) continue
+                    if (nodeA != null && nodeB != null) {
+                        val startEdge = getRectIntersection(nodeA.pos, nodeA.width, nodeA.height, nodeB.pos)
+                        val endEdge = getRectIntersection(nodeB.pos, nodeB.width, nodeB.height, nodeA.pos)
+                        val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
 
-                    val cullingRect = visibleWorldRect.inflate(200f / transform.zoom)
-                    if (!cullingRect.contains(nodeA.pos) && !cullingRect.contains(nodeB.pos)) {
-                        continue
-                    }
+                        drawLine(color, startEdge, endEdge, strokeWidth = 2f)
+                        drawArrowhead(startEdge, endEdge, color, 12f)
 
-                    if (nodeA.id == nodeB.id) {
-                        val index = selfLoopDrawIndex.getOrPut(nodeA.id) { 0 }
-                        drawSelfLoop(
-                            node = nodeA,
-                            edge = edge,
-                            index = index,
-                            textMeasurer = textMeasurer,
-                            style = edgeLabelStyle,
-                            showLabel = renderingSettings.showEdgeLabels
-                        )
-                        selfLoopDrawIndex[nodeA.id] = index + 1
-                    } else {
-                        val pair = Pair(nodeA.id, nodeB.id)
-                        val undirectedPair = if (nodeA.id < nodeB.id) Pair(nodeA.id, nodeB.id) else Pair(nodeB.id, nodeA.id)
-
-                        val total = linkCounts[undirectedPair] ?: 1
-                        val index = pairDrawIndex.getOrPut(pair) { 0 }
-
-                        drawCurvedEdge(
-                            from = nodeA,
-                            to = nodeB,
-                            edge = edge,
-                            index = index,
-                            total = total,
-                            textMeasurer = textMeasurer,
-                            style = edgeLabelStyle,
-                            showLabel = renderingSettings.showEdgeLabels
-                        )
-
-                        pairDrawIndex[pair] = index + 1
+                        if (renderingSettings.showEdgeLabels && edge.label.isNotBlank()) {
+                            val mid = (startEdge + endEdge) / 2f
+                            drawText(textMeasurer.measure(AnnotatedString(edge.label), edgeLabelStyle), topLeft = mid)
+                        }
                     }
                 }
 
-                // --- 3. Draw Nodes (Foreground) ---
-                drawNodes(
-                    nodes = nodes.filterValues { !it.isCompound },
-                    visibleWorldRect = visibleWorldRect,
-                    textMeasurer = textMeasurer,
-                    labelColor = labelColor,
-                    selectionColor = selectionColor,
-                    zoom = transform.zoom,
-                    primarySelectedId = primarySelectedId,
-                    secondarySelectedId = secondarySelectedId,
-                    showLabel = renderingSettings.showNodeLabels
-                )
+                // 3. Nodes
+                drawNodes(nodes.filterValues { !it.isCompound }, visibleWorldRect, textMeasurer, labelColor, selectionColor, transform.zoom, primarySelectedId, secondarySelectedId, renderingSettings.showNodeLabels, paddingPx, gapPx)
             }
 
-            // --- Draw UI Elements ---
-            val crosshairSize = 10f
             if(renderingSettings.showCrosshairs) {
-                drawLine(
-                    color = crosshairColor,
-                    start = Offset(center.x - crosshairSize, center.y),
-                    end = Offset(center.x + crosshairSize, center.y),
-                    strokeWidth = 2f
-                )
-                drawLine(
-                    color = crosshairColor,
-                    start = Offset(center.x, center.y - crosshairSize),
-                    end = Offset(center.x, center.y + crosshairSize),
-                    strokeWidth = 2f
-                )
+                drawLine(crosshairColor, Offset(center.x - 10f, center.y), Offset(center.x + 10f, center.y), 2f)
+                drawLine(crosshairColor, Offset(center.x, center.y - 10f), Offset(center.x, center.y + 10f), 2f)
             }
         }
 
-        // --- Overlays & Controls ---
-        AnimatedVisibility(
-            visible = isDetangling,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                    .pointerInput(Unit) {},
-                contentAlignment = Alignment.Center
-            ) {
+        // --- Controls ---
+        AnimatedVisibility(visible = isDetangling, modifier = Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(16.dp))
-                    Text(
-                        "Detangling Graph... (Interaction Disabled)",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Text("Organizing Layout...", style = MaterialTheme.typography.titleMedium)
                 }
             }
+        }
+
+        // Magic Detangle Button (Replaces Detangle Dialog)
+        SmallFloatingActionButton(
+            onClick = { viewModel.startSimulation(fullPipeline = true) },
+            modifier = Modifier.align(Alignment.TopEnd).padding(end = 64.dp, top = 16.dp),
+            containerColor = MaterialTheme.colorScheme.secondary
+        ) {
+            Icon(Icons.Default.AutoFixHigh, "Fix Layout")
         }
 
         SmallFloatingActionButton(
@@ -352,13 +245,10 @@ fun GraphView(
             Icon(Icons.Default.Settings, "Graph Settings")
         }
 
-        AnimatedVisibility(
-            visible = showSettings,
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 16.dp)
-        ) {
+        AnimatedVisibility(visible = showSettings, modifier = Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 16.dp)) {
             GraphSettingsView(
-                options = physicsOptions,
-                onDetangleClick = onDetangleClick,
+                options = layoutConfig,
+                onDetangleClick = onDetangleClick, // Legacy
                 viewModel = viewModel,
                 primarySelectedId = primarySelectedId,
                 secondarySelectedId = secondarySelectedId
@@ -366,53 +256,46 @@ fun GraphView(
         }
 
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AnimatedVisibility(visible = showFabMenu) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    SmallFloatingActionButton(
-                        onClick = { onAddNodeClick() },
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Icon(Icons.Default.Hub, contentDescription = "Create Node")
-                    }
-                    SmallFloatingActionButton(
-                        onClick = { onAddEdgeClick() },
-                        containerColor = MaterialTheme.colorScheme.primary
-                    ) {
-                        Icon(Icons.Default.Link, contentDescription = "Create Edge")
-                    }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SmallFloatingActionButton(onClick = onAddNodeClick, containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Hub, "Create Node") }
+                    SmallFloatingActionButton(onClick = onAddEdgeClick, containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Link, "Create Edge") }
                     if (primarySelectedId != null || secondarySelectedId != null) {
-                        SmallFloatingActionButton(
-                            onClick = {
-                                val ids = listOfNotNull(primarySelectedId, secondarySelectedId)
-                                viewModel.groupSelectedNodes(ids)
-                            },
-                            containerColor = MaterialTheme.colorScheme.secondary
-                        ) {
-                            Icon(Icons.Default.GroupWork, contentDescription = "Group Selected")
-                        }
+                        SmallFloatingActionButton(onClick = { viewModel.groupSelectedNodes(listOfNotNull(primarySelectedId, secondarySelectedId)) }, containerColor = MaterialTheme.colorScheme.secondary) { Icon(Icons.Default.GroupWork, "Group") }
                     }
                 }
             }
-            FloatingActionButton(
-                onClick = { viewModel.onFabClick() },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(
-                    imageVector = if (showFabMenu) Icons.Default.Close else Icons.Default.Add,
-                    contentDescription = "Toggle Create Menu"
-                )
+            FloatingActionButton(onClick = { viewModel.onFabClick() }, containerColor = MaterialTheme.colorScheme.primary) {
+                Icon(if (showFabMenu) Icons.Default.Close else Icons.Default.Add, "Menu")
             }
         }
     }
+}
+
+// Helper function to find where a line (from center to target) hits the rectangle edge
+fun getRectIntersection(center: Offset, width: Float, height: Float, target: Offset): Offset {
+    val dx = target.x - center.x
+    val dy = target.y - center.y
+
+    if (dx == 0f && dy == 0f) return center
+
+    // Calculate half dimensions
+    val hW = width / 2f
+    val hH = height / 2f
+
+    // Calculate the scaling factor needed to reach the edge
+    // We check both X and Y planes to see which edge we hit first
+    val scaleX = if (dx != 0f) hW / abs(dx) else Float.MAX_VALUE
+    val scaleY = if (dy != 0f) hH / abs(dy) else Float.MAX_VALUE
+
+    // Use the smaller scale to stay within the box
+    val scale = min(scaleX, scaleY)
+
+    return center + Offset(dx * scale, dy * scale)
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -498,23 +381,24 @@ private fun DrawScope.drawCurvedEdge(
     val gapSize = if (hasRole) textWidth + gapPadding else 0f
 
     if (isStraight) {
-        val startWithRadius = from.pos + delta.normalized() * from.radius
-        val endWithRadius = to.pos - delta.normalized() * to.radius
+        // Use getRectIntersection instead of radius math
+        val startEdge = getRectIntersection(from.pos, from.width, from.height, to.pos)
+        val endEdge = getRectIntersection(to.pos, to.width, to.height, from.pos)
 
         if (hasRole) {
-            val vec = endWithRadius - startWithRadius
+            val vec = endEdge - startEdge
             val dist = vec.getDistance()
             val dir = vec.normalized()
-            val mid = startWithRadius + vec / 2f
+            val mid = startEdge + vec / 2f
 
             if (dist > gapSize) {
                 val line1End = mid - dir * (gapSize / 2f)
                 val line2Start = mid + dir * (gapSize / 2f)
-                drawLine(color, startWithRadius, line1End, strokeWidth)
-                drawLine(color, line2Start, endWithRadius, strokeWidth)
+                drawLine(color, startEdge, line1End, strokeWidth)
+                drawLine(color, line2Start, endEdge, strokeWidth)
             }
 
-            drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
+            drawArrowhead(startEdge, endEdge, color, arrowSize)
 
             val angleRad = atan2(dir.y, dir.x)
             var angleDeg = angleRad * (180f / PI.toFloat())
@@ -530,8 +414,8 @@ private fun DrawScope.drawCurvedEdge(
             }
 
         } else {
-            drawLine(color, startWithRadius, endWithRadius, strokeWidth)
-            drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
+            drawLine(color, startEdge, endEdge, strokeWidth)
+            drawArrowhead(startEdge, endEdge, color, arrowSize)
         }
 
         if (showLabel && edge.label.isNotBlank()) {
@@ -551,12 +435,14 @@ private fun DrawScope.drawCurvedEdge(
         val curveMagnitude = (index + 1) / 2
         val curveOffset = curveSign * curveMagnitude * (baseCurvature * 0.75f)
         val controlPoint = midPoint + normal * (baseCurvature + curveOffset)
-        val startWithRadius = from.pos + (controlPoint - from.pos).normalized() * from.radius
-        val endWithRadius = to.pos + (controlPoint - to.pos).normalized() * to.radius
+
+        // Calculate intersection towards the control point for curves
+        val startEdge = getRectIntersection(from.pos, from.width, from.height, controlPoint)
+        val endEdge = getRectIntersection(to.pos, to.width, to.height, controlPoint)
 
         val path = Path().apply {
-            moveTo(startWithRadius.x, startWithRadius.y)
-            quadraticTo(controlPoint.x, controlPoint.y, endWithRadius.x, endWithRadius.y)
+            moveTo(startEdge.x, startEdge.y)
+            quadraticTo(controlPoint.x, controlPoint.y, endEdge.x, endEdge.y)
         }
 
         if (hasRole) {
@@ -597,8 +483,8 @@ private fun DrawScope.drawCurvedEdge(
             drawPath(path, color, style = Stroke(strokeWidth))
         }
 
-        val tangent = (endWithRadius - controlPoint).normalized()
-        drawArrowhead(endWithRadius - (tangent * arrowSize * 2f), endWithRadius, color, arrowSize)
+        val tangent = (endEdge - controlPoint).normalized()
+        drawArrowhead(endEdge - (tangent * arrowSize * 2f), endEdge, color, arrowSize)
 
         if (showLabel && edge.label.isNotBlank()) {
             val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
@@ -639,7 +525,9 @@ private fun DrawScope.drawNodes(
     zoom: Float,
     primarySelectedId: Long?,
     secondarySelectedId: Long?,
-    showLabel: Boolean
+    showLabel: Boolean,
+    padding: Float, // New param
+    gap: Float      // New param
 ) {
     val minSize = 8.sp
     val maxSize = 14.sp
@@ -704,18 +592,18 @@ private fun DrawScope.drawNodes(
             // Render specific node types, driven by config
             when (node.content) {
                 is NodeContent.TextContent -> {
-                    // drawTextNode is now config-aware
-                    drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config)
+                    // drawTextNode is now config-aware and takes padding
+                    drawTextNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config, padding)
                 }
                 is NodeContent.CodeContent -> {
                     drawCodeNode(node, node.content, textMeasurer, style, Color(0xFF2B2B2B), borderColor)
                 }
                 is NodeContent.TableContent -> {
-                    drawTableNode(node, node.content, textMeasurer, style, bgColor, borderColor)
+                    drawTableNode(node, node.content, textMeasurer, style, bgColor, borderColor, padding)
                 }
                 is NodeContent.ListContent -> {
-                    // New: drawListNode handles tasks/ordered/unordered based on config
-                    drawListNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config)
+                    // New: drawListNode handles tasks/ordered/unordered based on config and uses correct spacing
+                    drawListNode(node, node.content, textMeasurer, style, bgColor, borderColor, node.config, padding, gap)
                 }
                 is NodeContent.MediaContent -> {
                     drawImageNode(node, node.content, textMeasurer, style, bgColor, borderColor)

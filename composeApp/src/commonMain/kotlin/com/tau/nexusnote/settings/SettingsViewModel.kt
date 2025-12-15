@@ -2,24 +2,14 @@ package com.tau.nexusnote.settings
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import com.tau.nexusnote.codex.graph.fcose.LayoutConfig
 import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Manages the state for the Settings screen.
- * It receives the master StateFlow from MainViewModel (which is fed by the SettingsRepository)
- * and provides event handlers to update it via a lambda.
  */
 class SettingsViewModel(
-    /**
-     * A flow that emits the current, persisted settings.
-     * The View should collect this.
-     */
     val settingsFlow: StateFlow<SettingsData>,
-
-    /**
-     * A lambda function to call when settings need to be updated.
-     * This will trigger the SettingsRepository to save the new data.
-     */
     private val onUpdateSettings: (SettingsData) -> Unit
 ) {
 
@@ -32,12 +22,9 @@ class SettingsViewModel(
     }
 
     fun onResetTheme() {
-        // Now just resets to the simple default
         val newSettings = settingsFlow.value.copy(theme = ThemeSettings.Default)
         onUpdateSettings(newSettings)
     }
-
-    // --- ADDED: New simplified color handlers ---
 
     fun onAccentColorChange(color: Color) {
         val newSettings = settingsFlow.value.copy(
@@ -53,11 +40,13 @@ class SettingsViewModel(
         onUpdateSettings(newSettings)
     }
 
-    // --- Graph Physics ---
+    // --- Graph Physics (Updated for LayoutConfig) ---
+    // Note: LayoutConfig uses Double, Sliders use Float. Conversions required.
+
     fun onGravityChange(value: Float) {
         val newSettings = settingsFlow.value.copy(
             graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(gravity = value)
+                config = settingsFlow.value.graphPhysics.config.copy(gravityConstant = value.toDouble())
             )
         )
         onUpdateSettings(newSettings)
@@ -66,43 +55,25 @@ class SettingsViewModel(
     fun onRepulsionChange(value: Float) {
         val newSettings = settingsFlow.value.copy(
             graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(repulsion = value)
+                config = settingsFlow.value.graphPhysics.config.copy(repulsionConstant = value.toDouble())
             )
         )
         onUpdateSettings(newSettings)
     }
 
-    fun onSpringChange(value: Float) {
+    fun onIdealEdgeLengthChange(value: Float) { // Replaces "Spring" length/stiffness concept roughly
         val newSettings = settingsFlow.value.copy(
             graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(spring = value)
+                config = settingsFlow.value.graphPhysics.config.copy(idealEdgeLength = value.toDouble())
             )
         )
         onUpdateSettings(newSettings)
     }
 
-    fun onDampingChange(value: Float) {
+    fun onCoolingFactorChange(value: Float) { // Replaces Damping
         val newSettings = settingsFlow.value.copy(
             graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(damping = value)
-            )
-        )
-        onUpdateSettings(newSettings)
-    }
-
-    fun onBarnesHutThetaChange(value: Float) {
-        val newSettings = settingsFlow.value.copy(
-            graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(barnesHutTheta = value)
-            )
-        )
-        onUpdateSettings(newSettings)
-    }
-
-    fun onToleranceChange(value: Float) {
-        val newSettings = settingsFlow.value.copy(
-            graphPhysics = settingsFlow.value.graphPhysics.copy(
-                options = settingsFlow.value.graphPhysics.options.copy(tolerance = value)
+                config = settingsFlow.value.graphPhysics.config.copy(coolingFactor = value.toDouble())
             )
         )
         onUpdateSettings(newSettings)
@@ -151,18 +122,14 @@ class SettingsViewModel(
     }
 
     fun onNodeBaseRadiusChange(value: Float) {
-        val newOptions = settingsFlow.value.graphPhysics.options.copy(nodeBaseRadius = value)
         val newSettings = settingsFlow.value.copy(
-            graphPhysics = settingsFlow.value.graphPhysics.copy(options = newOptions),
             graphInteraction = settingsFlow.value.graphInteraction.copy(nodeBaseRadius = value)
         )
         onUpdateSettings(newSettings)
     }
 
     fun onNodeRadiusEdgeFactorChange(value: Float) {
-        val newOptions = settingsFlow.value.graphPhysics.options.copy(nodeRadiusEdgeFactor = value)
         val newSettings = settingsFlow.value.copy(
-            graphPhysics = settingsFlow.value.graphPhysics.copy(options = newOptions),
             graphInteraction = settingsFlow.value.graphInteraction.copy(nodeRadiusEdgeFactor = value)
         )
         onUpdateSettings(newSettings)
@@ -170,12 +137,7 @@ class SettingsViewModel(
 
     // --- Data ---
     fun onChangeDefaultDirectory() {
-        // This would trigger navigation via the MainViewModel
-        // For now, we just log it
-        println("Directory change requested")
-        // NOTE: This action is handled by MainViewModel,
-        // so this function can be modified to call a lambda from MainViewModel
-        // if you want to trigger the directory picker.
+        // Handled by MainViewModel logic usually
     }
 
     fun onAutoLoadLastCodexChange(enabled: Boolean) {

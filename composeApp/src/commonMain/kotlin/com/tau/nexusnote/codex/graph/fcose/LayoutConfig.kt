@@ -1,14 +1,17 @@
 package com.tau.nexusnote.codex.graph.fcose
 
+import kotlinx.serialization.Serializable
+
 /**
  * Configuration object for the CoSE layout algorithm.
  * Replaces hardcoded constants to allow runtime tuning.
  */
+@Serializable
 data class LayoutConfig(
     // Physics / Forces
-    var idealEdgeLength: Double = 50.0,
-    var gravityConstant: Double = 0.25,
-    var repulsionConstant: Double = 4500.0,
+    var idealEdgeLength: Double = 75.0,
+    var gravityConstant: Double = 0.1,
+    var repulsionConstant: Double = 7000.0,
 
     // Cooling & Termination
     var coolingFactor: Double = 0.95,

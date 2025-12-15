@@ -10,7 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tau.nexusnote.codex.graph.physics.PhysicsOptions
+import com.tau.nexusnote.codex.graph.fcose.LayoutConfig
 import com.tau.nexusnote.ui.components.CodexDropdown
 import kotlin.math.roundToInt
 
@@ -23,8 +23,8 @@ enum class ConstraintUiType(val label: String) {
 
 @Composable
 fun GraphSettingsView(
-    options: PhysicsOptions,
-    onDetangleClick: () -> Unit, // Kept for legacy compatibility if needed
+    options: LayoutConfig,
+    onDetangleClick: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: GraphViewmodel? = null,
     primarySelectedId: Long? = null,
@@ -33,7 +33,7 @@ fun GraphSettingsView(
     Card(
         modifier = modifier
             .width(320.dp)
-            .heightIn(max = 600.dp), // Limit height on small screens
+            .heightIn(max = 600.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f))
     ) {
@@ -93,16 +93,6 @@ fun GraphSettingsView(
                 ) {
                     Text("Add Constraint")
                 }
-
-                // Helper text for relative constraints
-                if (selectedConstraint == ConstraintUiType.RELATIVE_LR || selectedConstraint == ConstraintUiType.RELATIVE_TB) {
-                    Text(
-                        "Relative requires 2 nodes. First is Left/Top, Second is Right/Bottom.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
             } else {
                 Text(
                     "Select nodes in the graph to add constraints.",
@@ -114,14 +104,30 @@ fun GraphSettingsView(
 
             Spacer(Modifier.height(16.dp))
 
-            // --- Physics Settings (Legacy) ---
-            Text("Physics Settings", style = MaterialTheme.typography.titleMedium)
+            // --- Layout Config (Live Tweaks) ---
+            Text("Layout Config (Read-Only)", style = MaterialTheme.typography.titleMedium)
+            Text("Adjust in Settings > Graph", style = MaterialTheme.typography.bodySmall)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            SettingSlider("Gravity", options.gravity, {}, 0f..2f, false)
-            SettingSlider("Repulsion", options.repulsion, {}, 0f..10000f, false)
-            SettingSlider("Spring", options.spring, {}, 0.01f..1f, false)
+            // Just read-only display here since changing requires ViewModel plumbing back to SettingsViewModel
+            // or we could add direct setters to GraphViewModel if we want transient editing.
+            // For now, we display current values.
+            ConfigRow("Gravity", options.gravityConstant)
+            ConfigRow("Repulsion", options.repulsionConstant)
+            ConfigRow("Ideal Edge", options.idealEdgeLength)
+            ConfigRow("Cooling", options.coolingFactor)
         }
+    }
+}
+
+@Composable
+private fun ConfigRow(label: String, value: Double) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Text(String.format("%.2f", value), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -140,36 +146,5 @@ private fun PipelineRow(label: String, buttonText: String, onClick: () -> Unit) 
         ) {
             Text(buttonText, fontSize = 12.sp)
         }
-    }
-}
-
-@Composable
-private fun SettingSlider(
-    label: String,
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    range: ClosedFloatingPointRange<Float>,
-    enabled: Boolean = true
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(label, fontSize = 12.sp)
-            Text(
-                text = if (value > 100) value.roundToInt().toString() else String.format("%.2f", value),
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = range,
-            modifier = Modifier.fillMaxWidth().height(20.dp),
-            enabled = enabled
-        )
     }
 }

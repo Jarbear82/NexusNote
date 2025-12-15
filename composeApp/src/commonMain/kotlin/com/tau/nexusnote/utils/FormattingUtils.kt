@@ -42,3 +42,40 @@ fun String.toScreamingSnakeCase(): String {
     // 3. Join with underscores and uppercase
     return words.joinToString("_") { it.uppercase() }
 }
+
+/**
+ * Converts a 0-based index to an Alphabetic indicator (A, B, C, ... AA, AB).
+ */
+fun Int.toAlphaIndex(upperCase: Boolean = true): String {
+    val sb = StringBuilder()
+    var n = this
+    while (n >= 0) {
+        sb.append(('A'.code + (n % 26)).toChar())
+        n = (n / 26) - 1
+    }
+    val res = sb.reverse().toString()
+    return if (upperCase) res else res.lowercase()
+}
+
+/**
+ * Converts a 0-based index to a Roman numeral (I, II, III, IV...).
+ * Supports up to 3999 (standard Roman limit). Returns numeric fallback if OOB.
+ */
+fun Int.toRomanIndex(upperCase: Boolean = true): String {
+    val num = this + 1 // Roman numerals start at 1
+    if (num <= 0 || num >= 4000) return num.toString()
+
+    val values = intArrayOf(1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1)
+    val romanLiterals = arrayOf("M", "CM", "D", "CD", "C", "XC", "L", "XL", "X", "IX", "V", "IV", "I")
+
+    val roman = StringBuilder()
+    var temp = num
+    for (i in values.indices) {
+        while (temp >= values[i]) {
+            temp -= values[i]
+            roman.append(romanLiterals[i])
+        }
+    }
+    val res = roman.toString()
+    return if (upperCase) res else res.lowercase()
+}
