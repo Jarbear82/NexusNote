@@ -47,6 +47,7 @@ data class GraphNode(
  * @param sourceId The ID of the source node.
  * @param targetId The ID of the target node.
  * @param label The schema name (e.g., "KNOWS").
+ * @param roleLabel The role this connection represents (e.g. "Source", "Target").
  * @param strength The "springiness" of the edge.
  * @param colorInfo The color for drawing.
  */
@@ -55,6 +56,7 @@ data class GraphEdge(
     val sourceId: Long,
     val targetId: Long,
     val label: String,
+    val roleLabel: String? = null,
     val strength: Float,
     val colorInfo: ColorInfo
 )

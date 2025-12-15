@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ExperimentalGraphicsApi
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -267,11 +268,6 @@ fun GraphView(
                         val total = linkCounts[undirectedPair] ?: 1
                         val index = pairDrawIndex.getOrPut(pair) { 0 }
 
-                        // Note: For Hyperedges (Phase 5), arrow logic is standard:
-                        // ViewModel creates spokes as Hypernode -> Participant.
-                        // drawCurvedEdge puts arrow at 'to' (Participant).
-                        // This matches requirements for N-nary visual representation.
-
                         drawCurvedEdge(
                             from = nodeA,
                             to = nodeB,
@@ -458,6 +454,7 @@ private fun DrawScope.drawSelfLoop(
 
     drawArrowhead(p3, p4, color, arrowSize)
 
+    // Draw regular label
     if (showLabel) {
         val labelPos = (p2 + p3) / 2f
         val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
@@ -467,8 +464,6 @@ private fun DrawScope.drawSelfLoop(
             color = style.color
         )
     }
-
-
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -493,18 +488,68 @@ private fun DrawScope.drawCurvedEdge(
 
     val isStraight = (total == 1)
 
-    // For Hypernodes (Phase 5), we visually start/end at the radius boundary.
-    // However, since Hypernodes don't draw a circle, the radius acts as a text padding boundary.
-    // This logic remains consistent.
+    // Style for the Role Label (smaller, slightly transparent)
+    val roleStyle = style.copy(
+        fontSize = (style.fontSize.value * 0.8).sp,
+        color = style.color.copy(alpha = 0.8f)
+    )
+
+    // Prepare role label logic if needed (measure once)
+    val roleLabel = edge.roleLabel
+    val hasRole = !roleLabel.isNullOrBlank() && showLabel
+
+    val roleResult = if (hasRole) {
+        textMeasurer.measure(AnnotatedString(roleLabel), roleStyle)
+    } else null
+
+    val textWidth = roleResult?.size?.width?.toFloat() ?: 0f
+    val textHeight = roleResult?.size?.height?.toFloat() ?: 0f
+    val gapPadding = 10f
+    val gapSize = if (hasRole) textWidth + gapPadding else 0f
 
     if (isStraight) {
         val startWithRadius = from.pos + delta.normalized() * from.radius
         val endWithRadius = to.pos - delta.normalized() * to.radius
 
-        drawLine(color, startWithRadius, endWithRadius, strokeWidth)
-        drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
+        if (hasRole) {
+            val vec = endWithRadius - startWithRadius
+            val dist = vec.getDistance()
+            val dir = vec.normalized()
+            val mid = startWithRadius + vec / 2f
 
-        if (showLabel) {
+            if (dist > gapSize) {
+                // Draw two segments with a gap
+                val line1End = mid - dir * (gapSize / 2f)
+                val line2Start = mid + dir * (gapSize / 2f)
+                drawLine(color, startWithRadius, line1End, strokeWidth)
+                drawLine(color, line2Start, endWithRadius, strokeWidth)
+            } else {
+                // If text is longer than line, don't draw line underneath
+            }
+
+            drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
+
+            // Draw Text
+            val angleRad = atan2(dir.y, dir.x)
+            var angleDeg = angleRad * (180f / PI.toFloat())
+            if (angleDeg > 90f || angleDeg < -90f) {
+                angleDeg += 180f
+            }
+
+            withTransform({
+                rotate(angleDeg, pivot = mid)
+            }) {
+                val topLeft = mid - Offset(textWidth / 2f, textHeight / 2f)
+                drawText(roleResult!!, topLeft = topLeft)
+            }
+
+        } else {
+            drawLine(color, startWithRadius, endWithRadius, strokeWidth)
+            drawArrowhead(startWithRadius, endWithRadius, color, arrowSize)
+        }
+
+        // Draw standard Edge Label (if any)
+        if (showLabel && edge.label.isNotBlank()) {
             val labelOffset = Offset(0f, -10f)
             val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
             drawText(
@@ -513,6 +558,7 @@ private fun DrawScope.drawCurvedEdge(
                 color = style.color
             )
         }
+
     } else {
         val normal = Offset(-delta.y, delta.x).normalized()
         val baseCurvature = 30f
@@ -527,12 +573,51 @@ private fun DrawScope.drawCurvedEdge(
             moveTo(startWithRadius.x, startWithRadius.y)
             quadraticTo(controlPoint.x, controlPoint.y, endWithRadius.x, endWithRadius.y)
         }
-        drawPath(path, color, style = Stroke(strokeWidth))
+
+        if (hasRole) {
+            val pathMeasure = PathMeasure()
+            pathMeasure.setPath(path, false)
+            val length = pathMeasure.length
+            val midDist = length / 2f
+            val halfGap = gapSize / 2f
+
+            if (midDist - halfGap > 0) {
+                val p1 = Path()
+                pathMeasure.getSegment(0f, midDist - halfGap, p1, true)
+                drawPath(p1, color, style = Stroke(strokeWidth))
+            }
+
+            if (midDist + halfGap < length) {
+                val p2 = Path()
+                pathMeasure.getSegment(midDist + halfGap, length, p2, true)
+                drawPath(p2, color, style = Stroke(strokeWidth))
+            }
+
+            // Text Position & Rotation
+            val pos = pathMeasure.getPosition(midDist)
+            val tan = pathMeasure.getTangent(midDist)
+            val angleRad = atan2(tan.y, tan.x)
+            var angleDeg = angleRad * (180f / PI.toFloat())
+            if (angleDeg > 90f || angleDeg < -90f) {
+                angleDeg += 180f
+            }
+
+            withTransform({
+                rotate(angleDeg, pivot = pos)
+            }) {
+                val topLeft = pos - Offset(textWidth / 2f, textHeight / 2f)
+                drawText(roleResult!!, topLeft = topLeft)
+            }
+
+        } else {
+            drawPath(path, color, style = Stroke(strokeWidth))
+        }
 
         val tangent = (endWithRadius - controlPoint).normalized()
         drawArrowhead(endWithRadius - (tangent * arrowSize * 2f), endWithRadius, color, arrowSize)
 
-        if (showLabel) {
+        // Draw standard Edge Label
+        if (showLabel && edge.label.isNotBlank()) {
             val textLayoutResult = textMeasurer.measure(AnnotatedString(edge.label), style)
             drawText(
                 textLayoutResult = textLayoutResult,
@@ -541,8 +626,6 @@ private fun DrawScope.drawCurvedEdge(
             )
         }
     }
-
-
 }
 
 private fun DrawScope.drawArrowhead(from: Offset, to: Offset, color: Color, size: Float) {

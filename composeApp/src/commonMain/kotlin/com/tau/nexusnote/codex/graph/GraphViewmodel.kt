@@ -196,6 +196,7 @@ class GraphViewmodel(
                         sourceId = sId,
                         targetId = tId,
                         label = "", // Spoke edges usually don't need labels
+                        roleLabel = roleName, // Pass the role name to be rendered
                         strength = 1.0f,
                         colorInfo = labelToColor(edge.label)
                     )
