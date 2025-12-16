@@ -470,11 +470,8 @@ class GraphViewmodel(
         node.y += worldDelta.y
         node.parent?.updateBoundsFromChildren()
 
-        viewModelScope.launch(Dispatchers.Default) {
-            val config = LayoutConfig(maxIterations = 5, initialTemp = 20.0)
-            layoutEngine.runPolishing(_fcGraph, config)
-            pushUiUpdate()
-        }
+        // Just update UI to show movement, do not run physics simulation
+        pushUiUpdate()
     }
 
     fun onDragEnd() {
