@@ -59,6 +59,9 @@ class GraphViewmodel(
     private var size = Size.Zero
     private var uiSyncJob: Job? = null
 
+    // Track the current simulation job to prevent overlap
+    private var simulationJob: Job? = null
+
     init {
         // Observer for settings updates
         viewModelScope.launch {
@@ -361,21 +364,42 @@ class GraphViewmodel(
         }
     }
 
-    fun runPolishing(burst: Boolean = false) {
-        viewModelScope.launch(Dispatchers.Default) {
-            _isDetangling.value = true
+    /**
+     * Runs the polishing phase (force-directed layout).
+     * @param burst If true, runs for a limited number of iterations (e.g. for initial load).
+     * @param blocking If true, shows the "Detangling" overlay which blocks user interaction.
+     * Set to false for interactive simulations (e.g. dragging).
+     */
+    fun runPolishing(burst: Boolean = false, blocking: Boolean = true) {
+        simulationJob?.cancel()
+        simulationJob = viewModelScope.launch(Dispatchers.Default) {
+            if (blocking) _isDetangling.value = true
             startUiSync()
 
-            val config = LayoutConfig()
+            // Map UI Settings to LayoutConfig
+            val options = _physicsOptions.value
+            val config = LayoutConfig().apply {
+                gravityConstant = options.gravity.toDouble()
+                repulsionConstant = options.repulsion.toDouble()
+
+                // Approximate mapping for spring stiffness -> ideal length
+                // Higher stiffness (options.spring) means shorter ideal length in CoSE logic
+                // idealEdgeLength = base / spring.
+                // Using 50.0 as base. 0.1 spring -> 500 length. 1.0 spring -> 50 length.
+                idealEdgeLength = (50.0 / options.spring.coerceAtLeast(0.01f))
+            }
+
             if (burst) {
                 config.maxIterations = 60
                 config.initialTemp = 50.0
             }
 
-            layoutEngine.runPolishing(_fcGraph, config)
-
-            stopUiSync()
-            _isDetangling.value = false
+            try {
+                layoutEngine.runPolishing(_fcGraph, config)
+            } finally {
+                stopUiSync()
+                if (blocking) _isDetangling.value = false
+            }
         }
     }
 
@@ -434,7 +458,7 @@ class GraphViewmodel(
 
     fun onDragStart(screenPos: Offset): Boolean {
         val worldPos = screenToWorld(screenPos)
-        val tappedNode = _fcGraph.nodes.find { node ->
+        val candidates = _fcGraph.nodes.filter { node ->
             val (cx, cy) = node.getCenter()
             if (node.isCompound()) {
                 val halfW = node.width / 2
@@ -451,10 +475,16 @@ class GraphViewmodel(
             }
         }
 
+        val tappedNode = candidates.minByOrNull { it.width * it.height }
+
         return if (tappedNode != null) {
             _draggedNodeId.value = tappedNode.id
             tappedNode.isFixed = true
             pushUiUpdate()
+
+            // Start non-blocking interactive simulation to pull neighbors
+            runPolishing(burst = false, blocking = false)
+
             true
         } else {
             false
@@ -470,7 +500,8 @@ class GraphViewmodel(
         node.y += worldDelta.y
         node.parent?.updateBoundsFromChildren()
 
-        // Just update UI to show movement, do not run physics simulation
+        // Just update UI to show movement.
+        // Physics simulation running in background will pick up new position automatically.
         pushUiUpdate()
     }
 
@@ -481,7 +512,9 @@ class GraphViewmodel(
             node.isFixed = false
         }
         _draggedNodeId.value = null
-        runPolishing(burst = true)
+
+        // Settle the graph
+        runPolishing(burst = true, blocking = false)
     }
 
     fun onTap(screenPos: Offset, onNodeTapped: (Long) -> Unit) {

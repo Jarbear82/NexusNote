@@ -87,8 +87,8 @@ class PhysicsEngine() {
             val nodeB = newNodes[edge.targetId]
 
             if (nodeA != null && nodeB != null) {
-                // Do not apply spring forces if *either* node is fixed
-                if (nodeA.isFixed || nodeB.isFixed) continue
+                // FIXED: We allow spring calculation even if a node is fixed.
+                // This ensures that dragging a node (fixed) still exerts a pull on its neighbor.
 
                 val delta = nodeB.pos - nodeA.pos
                 val dist = delta.getDistance()
