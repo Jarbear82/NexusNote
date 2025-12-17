@@ -58,9 +58,9 @@ This re-uses the PhysicsOptions data class.
 @Serializable
 data class GraphPhysicsSettings(
     val options: PhysicsOptions = PhysicsOptions(
-        gravity = 0.5f,
-        repulsion = 600f,
-        spring = 0.5f,
+        gravity = 0.25f,
+        repulsion = 7000f,
+        spring = 0.1f,
         damping = 0.8f,
         nodeBaseRadius = 15f,
         nodeRadiusEdgeFactor = 1.0f,

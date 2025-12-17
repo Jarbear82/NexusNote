@@ -33,3 +33,10 @@ data class RelativeConstraint(
 interface LayoutPhase {
     suspend fun run(graph: FcGraph, config: LayoutConfig)
 }
+
+enum class ConstraintUiType {
+    ALIGN_VERTICAL,
+    ALIGN_HORIZONTAL,
+    RELATIVE_LR, // Relative Left-to-Right
+    RELATIVE_TB  // Relative Top-to-Bottom
+}

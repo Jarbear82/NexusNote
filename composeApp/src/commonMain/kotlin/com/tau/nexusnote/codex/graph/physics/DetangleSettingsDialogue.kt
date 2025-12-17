@@ -30,6 +30,7 @@ import kotlin.math.roundToInt
  * The descriptions are used in the UI dropdown.
  */
 enum class DetangleAlgorithm(val description: String) {
+    FCOSE("fCoSE - Constraint-Based Pipeline"),
     FRUCHTERMAN_REINGOLD("Fruchterman-Reingold - General Purpose"),
     KAMADA_KAWAI("Kamada-Kawai - High-Quality (Small)"),
     CIRCULAR("Circular - Fastest (Cycles)"),
@@ -43,7 +44,7 @@ fun DetangleSettingsDialog(
     onDetangle: (DetangleAlgorithm, Map<String, Any>) -> Unit
 ) {
     // --- General State ---
-    var selectedAlgorithm by remember { mutableStateOf(DetangleAlgorithm.FRUCHTERMAN_REINGOLD) }
+    var selectedAlgorithm by remember { mutableStateOf(DetangleAlgorithm.FCOSE) }
     var expanded by remember { mutableStateOf(false) }
 
     // --- FR Parameters ---
@@ -91,6 +92,13 @@ fun DetangleSettingsDialog(
 
                 // --- Tunable Parameters ---
                 when (selectedAlgorithm) {
+                    DetangleAlgorithm.FCOSE -> {
+                        Text("Runs the full fCoSE pipeline:", style = MaterialTheme.typography.bodySmall)
+                        Text("Randomize -> Draft -> Transform -> Enforce -> Polish", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Configure specific steps in Graph Settings.", style = MaterialTheme.typography.labelSmall)
+                    }
+
                     DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> {
                         Text("Iterations: ${frIterations.toInt()}")
                         Slider(
@@ -147,12 +155,15 @@ fun DetangleSettingsDialog(
                             "area" to frArea,
                             "gravity" to frGravity
                         )
-                        // Add other algorithm params here
+                        DetangleAlgorithm.KAMADA_KAWAI -> mapOf(
+                            "epsilon" to kkEpsilon,
+                            "springConstant" to kkSpringConstant
+                        )
                         else -> emptyMap()
                     }
                     onDetangle(selectedAlgorithm, params)
                 }
-            ) { Text("Detangle") }
+            ) { Text("Run Detangle") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }

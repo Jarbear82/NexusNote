@@ -90,7 +90,7 @@ fun GraphView(
 
     val renderingSettings by viewModel.renderingSettings.collectAsState()
 
-    val isSimulationRunning by viewModel.simulationRunning.collectAsState()
+    val isSimulationRunning by viewModel.simulationEnabled.collectAsState()
 
     val textMeasurer = rememberTextMeasurer()
     val labelColor = MaterialTheme.colorScheme.onSurface
@@ -100,12 +100,6 @@ fun GraphView(
     val compoundBorderColor = Color.Gray
 
     var isDraggingNode by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isSimulationRunning) {
-        if (isSimulationRunning) {
-            viewModel.runSimulationLoop()
-        }
-    }
 
     DisposableEffect(Unit) {
         onDispose {
