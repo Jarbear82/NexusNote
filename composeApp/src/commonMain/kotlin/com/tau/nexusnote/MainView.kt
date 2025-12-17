@@ -93,7 +93,7 @@ fun MainView(mainViewModel: MainViewModel) {
                 title = {
                     val title = when (selectedScreen) {
                         Screen.NEXUS -> "Nexus"
-                        Screen.CODEX -> "Codex"
+                        Screen.CODEX -> "Codex: ${openedCodexItem?.name}" ?: "Codex"
                         Screen.SETTINGS -> "Settings"
                     }
                     Text(title)
@@ -120,7 +120,7 @@ fun MainView(mainViewModel: MainViewModel) {
                 // Codex Item
                 val isCodexLoaded = codexViewModel != null
                 // Use the opened codex name, or fallback to "Codex"
-                val codexLabel = openedCodexItem?.name ?: "Codex"
+                val codexLabel = "Codex"
 
                 NavigationRailItem(
                     icon = { Icon(Icons.Default.Storage, contentDescription = "Codex") },
