@@ -29,7 +29,6 @@ kotlin {
             implementation(libs.androidx.datastore.preferences)
             implementation(libs.multik.core)
             implementation(libs.multik.default)
-            // implementation(libs.kotlin.time)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

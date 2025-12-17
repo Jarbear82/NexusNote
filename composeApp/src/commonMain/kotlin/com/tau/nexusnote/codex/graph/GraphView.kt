@@ -89,6 +89,7 @@ fun GraphView(
 
     val textMeasurer = rememberTextMeasurer()
     val labelColor = MaterialTheme.colorScheme.onSurface
+    val surfaceColor = MaterialTheme.colorScheme.surface
     val crosshairColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
     val selectionColor = MaterialTheme.colorScheme.primary
     val compoundFillColor = Color.LightGray.copy(alpha = 0.3f)
@@ -192,18 +193,16 @@ fun GraphView(
                     val isSelected = node.id == primarySelectedId || node.id == secondarySelectedId
 
                     if (node.isHyperNode) {
-                        // Draw Diamond for Edges
-                        val halfW = node.width / 2
-                        val halfH = node.height / 2
-                        val path = Path().apply {
-                            moveTo(node.pos.x, node.pos.y - halfH)
-                            lineTo(node.pos.x + halfW, node.pos.y)
-                            lineTo(node.pos.x, node.pos.y + halfH)
-                            lineTo(node.pos.x - halfW, node.pos.y)
-                            close()
-                        }
-                        drawPath(path, node.colorInfo.composeColor)
-                        drawPath(path, if (isSelected) selectionColor else node.colorInfo.composeFontColor, style = Stroke(if (isSelected) 3f else 1f))
+                        // Hypernodes (Edges): Draw Text Only
+                        val textLayoutResult = textMeasurer.measure(
+                            text = AnnotatedString(node.displayProperty),
+                            style = edgeLabelStyle.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, background = surfaceColor.copy(alpha = 0.7f))
+                        )
+                        val topLeft = Offset(
+                            x = node.pos.x - (textLayoutResult.size.width / 2f),
+                            y = node.pos.y - (textLayoutResult.size.height / 2f)
+                        )
+                        drawText(textLayoutResult, topLeft = topLeft)
                     } else {
                         // Draw Circle for standard Nodes
                         drawCircle(node.colorInfo.composeColor, node.radius, node.pos)
@@ -260,18 +259,97 @@ private fun DrawScope.drawSelfLoop(node: GraphNode, edge: GraphEdge, idx: Int, t
 }
 
 private fun DrawScope.drawCurvedEdge(from: GraphNode, to: GraphNode, edge: GraphEdge, idx: Int, total: Int, tm: TextMeasurer, style: TextStyle, show: Boolean) {
+
     val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
+
+    val arrowSize = 15f
+
+    val labelText = edge.roleLabel ?: edge.label
+
+
+
     if(total == 1) {
-        drawLine(color, from.pos, to.pos, strokeWidth = 2f)
-        if(show) drawText(tm, edge.label, (from.pos+to.pos)/2f, style)
+
+        val delta = to.pos - from.pos
+
+        val dist = delta.getDistance()
+
+        val end = if (dist > to.radius) to.pos - (delta / dist) * to.radius else to.pos
+
+        
+
+        drawLine(color, from.pos, end, strokeWidth = 2f)
+
+        drawArrowhead(from.pos, end, color, arrowSize)
+
+        
+
+        if(show) drawText(tm, labelText, (from.pos + to.pos)/2f, style)
+
     } else {
+
         // Simple curve logic
+
         val mid = (from.pos + to.pos) / 2f
+
         val normal = (to.pos - from.pos).let { Offset(-it.y, it.x) }
+
         val curve = normal * (if(idx%2==0) 1f else -1f) * 0.2f * ((idx+1)/2).toFloat() // simplified
+
         val control = mid + curve
-        val path = Path().apply { moveTo(from.pos.x, from.pos.y); quadraticTo(control.x, control.y, to.pos.x, to.pos.y) }
+
+        
+
+        val tangent = to.pos - control
+
+        val tDist = tangent.getDistance()
+
+        val end = if (tDist > to.radius) to.pos - (tangent / tDist) * to.radius else to.pos
+
+
+
+        val path = Path().apply { moveTo(from.pos.x, from.pos.y); quadraticTo(control.x, control.y, end.x, end.y) }
+
         drawPath(path, color, style = Stroke(2f))
-        if(show) drawText(tm, edge.label, control, style)
+
+        drawArrowhead(control, end, color, arrowSize)
+
+        
+
+        if(show) drawText(tm, labelText, control, style)
+
     }
+
+}
+
+
+
+private fun DrawScope.drawArrowhead(from: Offset, to: Offset, color: Color, size: Float) {
+
+    val delta = to - from
+
+    if (delta.getDistance() == 0f) return
+
+    val angle = atan2(delta.y, delta.x)
+
+    val p1 = to - Offset(cos(angle + PI/6).toFloat() * size, sin(angle + PI/6).toFloat() * size)
+
+    val p2 = to - Offset(cos(angle - PI/6).toFloat() * size, sin(angle - PI/6).toFloat() * size)
+
+
+
+    val path = Path().apply {
+
+        moveTo(to.x, to.y)
+
+        lineTo(p1.x, p1.y)
+
+        lineTo(p2.x, p2.y)
+
+        close()
+
+    }
+
+    drawPath(path, color)
+
 }

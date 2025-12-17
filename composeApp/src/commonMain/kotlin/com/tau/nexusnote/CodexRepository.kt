@@ -78,7 +78,8 @@ class CodexRepository(
                             id = role.id,
                             name = role.name,
                             direction = role.direction,
-                            cardinality = role.cardinality
+                            cardinality = role.cardinality,
+                            allowedNodeSchemas = role.allowedNodeSchemas
                         )
                     }
 
@@ -106,9 +107,11 @@ class CodexRepository(
         val graph = loadGraph()
         val displayItems = graph.nodes.map { node ->
             val primarySchema = node.schemas.firstOrNull()
+            // Composite label from all schemas, sorted for deterministic hashing
+            val compositeLabel = node.schemas.map { it.name }.sorted().joinToString(", ")
             NodeDisplayItem(
                 id = node.id,
-                label = primarySchema?.name ?: "Entity",
+                label = if (compositeLabel.isNotBlank()) compositeLabel else "Entity",
                 displayProperty = node.displayProperty,
                 schemaId = primarySchema?.id ?: 0L
             )
@@ -117,42 +120,52 @@ class CodexRepository(
     }
 
     suspend fun refreshEdges() = withContext(Dispatchers.Default) {
-        val graph = loadGraph()
-        val displayItems = graph.edges.map { edge ->
-            val primarySchema = edge.schemas.firstOrNull()
+        try {
+            val entities = dbService.getAllEntities()
+            val schemaData = _schema.value ?: run {
+                refreshSchema()
+                _schema.value ?: return@withContext
+            }
+            val edgeSchemas = schemaData.edgeSchemas.associateBy { it.id }
+            val roleMap = schemaData.edgeSchemas.flatMap { it.roles }.associateBy { it.id }
+            
+            // Map node ID to minimal display info
+            val nodes = entities.filter { !it.isRelation }.associateBy { it.id }
+            fun getNodeDisplay(id: Long): NodeDisplayItem? {
+                val node = nodes[id] ?: return null
+                val schema = _schema.value?.nodeSchemas?.find { s -> node.types.any { it.id == s.id } }
+                val displayProp = node.attributes.entries.firstOrNull()?.value?.toString() ?: "ID:$id" // Simplified
+                return NodeDisplayItem(id, schema?.name ?: "Node", displayProp, schema?.id ?: 0L)
+            }
 
-            // Construct participant list for UI
-            val participants = mutableListOf<EdgeParticipant>()
-
-            // Helper to find ANY entity (Node or Edge) by ID and wrap it as a NodeDisplayItem for UI compatibility
-            fun findParticipant(id: Long): NodeDisplayItem? {
-                graph.nodes.find { it.id == id }?.let {
-                    val pSchema = it.schemas.firstOrNull()
-                    return NodeDisplayItem(it.id, pSchema?.name ?: "Node", it.displayProperty, pSchema?.id ?: 0)
+            val displayItems = entities.filter { it.isRelation }.mapNotNull { edgeEntity ->
+                val primarySchema = edgeSchemas[edgeEntity.types.firstOrNull()?.id] ?: return@mapNotNull null
+                
+                val participants = edgeEntity.outgoingLinks.mapNotNull { link ->
+                    val nodeDisplay = getNodeDisplay(link.playerId) ?: return@mapNotNull null
+                    val roleName = roleMap[link.roleId]?.name ?: "Unknown"
+                    EdgeParticipant(nodeDisplay, roleName)
                 }
-                graph.edges.find { it.id == id }?.let {
-                    val pSchema = it.schemas.firstOrNull()
-                    return NodeDisplayItem(it.id, pSchema?.name ?: "Edge", it.label, pSchema?.id ?: 0)
-                }
-                return null
-            }
 
-            findParticipant(edge.sourceId)?.let {
-                participants.add(EdgeParticipant(node = it, role = "Source"))
-            }
-            findParticipant(edge.targetId)?.let {
-                participants.add(EdgeParticipant(node = it, role = "Target"))
-            }
+                // Map properties
+                val properties = edgeEntity.attributes.mapNotNull { (attrId, value) ->
+                    val propDef = primarySchema.properties.find { it.id == attrId }
+                    if (propDef != null) propDef.name to value.toString() else null
+                }.toMap()
 
-            EdgeDisplayItem(
-                id = edge.id,
-                label = primarySchema?.name ?: "Relation",
-                properties = edge.properties.associate { it.definition.name to it.value.toString() },
-                participatingNodes = participants,
-                schemaId = primarySchema?.id ?: 0L
-            )
+                EdgeDisplayItem(
+                    id = edgeEntity.id,
+                    label = primarySchema.name,
+                    properties = properties,
+                    participatingNodes = participants,
+                    schemaId = primarySchema.id
+                )
+            }
+            _edgeList.value = displayItems
+        } catch (e: Exception) {
+            _errorFlow.value = "Error refreshing edges: ${e.message}"
+            e.printStackTrace()
         }
-        _edgeList.value = displayItems
     }
 
     /**
@@ -217,6 +230,7 @@ class CodexRepository(
                     }
                 } else {
                     // It's a Node
+                    val compositeLabel = entitySchemas.map { it.name }.sorted().joinToString(", ")
                     nodes.add(GraphNode(
                         id = entity.id,
                         schemas = entitySchemas,
@@ -228,7 +242,7 @@ class CodexRepository(
                         width = 40.0f,
                         height = 40.0f,
                         isCompound = false,
-                        colorInfo = labelToColor(entitySchemas.firstOrNull()?.name ?: "Node"),
+                        colorInfo = labelToColor(if (compositeLabel.isNotBlank()) compositeLabel else "Node"),
                         properties = domainProperties
                     ))
                 }
@@ -265,7 +279,7 @@ class CodexRepository(
                 AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name))
             }
             val roles = state.roles.map {
-                RoleDefModel(0, 0, it.name, it.direction, it.cardinality)
+                RoleDefModel(0, 0, it.name, it.direction, it.cardinality, it.allowedNodeSchemas)
             }
 
             // Note: UI models already use RelationCardinality, so simple map is enough.
@@ -369,6 +383,11 @@ class CodexRepository(
                 }
             }
             dbService.updateEntityAttributes(state.id, attributes)
+
+            // Update Entity Types (Schemas)
+            val schemaIds = state.schemas.map { it.id }
+            dbService.updateEntityTypes(state.id, schemaIds)
+
             refreshNodes()
         } catch (e: Exception) {
             _errorFlow.value = "Update failed: ${e.message}"
@@ -410,7 +429,7 @@ class CodexRepository(
                 AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name))
             }
             val roles = state.roles.map {
-                RoleDefModel(it.id, state.originalSchema.id, it.name, it.direction, it.cardinality)
+                RoleDefModel(it.id, state.originalSchema.id, it.name, it.direction, it.cardinality, it.allowedNodeSchemas)
             }
             dbService.updateSchema(state.originalSchema.id, state.currentName, attributes, roles)
             refreshSchema()
@@ -425,7 +444,8 @@ class CodexRepository(
         val node = graph.nodes.find { it.id == id } ?: return null
         val schemas = node.schemas
         val props = node.properties.associate { it.definition.name to it.value.toString() }
-        return NodeEditState(id, schemas, props)
+        val availableSchemas = _schema.value?.nodeSchemas ?: emptyList()
+        return NodeEditState(id, schemas, availableSchemas, props)
     }
 
     suspend fun getEdgeEditState(item: EdgeDisplayItem): EdgeEditState? {

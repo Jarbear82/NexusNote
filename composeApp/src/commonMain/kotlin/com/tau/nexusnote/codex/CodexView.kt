@@ -314,6 +314,7 @@ fun CodexView(viewModel: CodexViewModel) {
 
                             // Edit Instance
                             onNodeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateNodeEditProperty(k, v) },
+                            onNodeEditSchemaToggle = { viewModel.editCreateViewModel.toggleNodeEditSchema(it) },
                             onEdgeEditPropertyChange = { k, v -> viewModel.editCreateViewModel.updateEdgeEditProperty(k, v) },
 
                             // Edit Node Schema

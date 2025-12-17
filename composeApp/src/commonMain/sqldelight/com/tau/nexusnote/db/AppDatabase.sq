@@ -185,6 +185,9 @@ SELECT * FROM EntityType;
 insertEntityType:
 INSERT INTO EntityType(entity_id, schema_id) VALUES (?, ?);
 
+deleteEntityTypes:
+DELETE FROM EntityType WHERE entity_id = ?;
+
 -- Get all types (schemas) for a specific entity
 selectSchemasForEntity:
 SELECT SchemaDef.*

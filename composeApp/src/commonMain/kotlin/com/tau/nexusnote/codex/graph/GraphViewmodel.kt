@@ -164,29 +164,30 @@ class GraphViewmodel(
                         newNode.y = (Math.random() - 0.5) * 200.0
                     }
 
-                    // Create segments for visualization: Source -> EdgeNode -> Target
-                    val sourceP = item.participatingNodes.find { it.role == "Source" }
-                    val targetP = item.participatingNodes.find { it.role == "Target" }
+                    // Create segments for visualization based on Role Direction
+                    item.participatingNodes.forEach { participant ->
+                        val roleName = participant.role ?: "Unknown"
+                        val roleDef = schema?.roles?.find { it.name == roleName }
+                        val isSource = roleDef?.direction == RelationDirection.SOURCE
 
-                    if (sourceP != null) {
+                        // If Source: Participant -> EdgeNode
+                        // If Target: EdgeNode -> Participant
+                        // If Unknown: Treat as Target (Edge -> Participant)
+                        
+                        val sId = if (isSource) participant.node.id else item.id
+                        val tId = if (isSource) item.id else participant.node.id
+                        
+                        // Unique ID for visual segment
+                        val segmentId = -1 * (item.id * 31 + participant.node.id).toLong()
+
                         uiEdges.add(GraphEdge(
-                            id = -item.id, // Virtual ID for segment
+                            id = segmentId, 
                             schemas = emptyList(),
                             properties = emptyList(),
-                            sourceId = sourceP.node.id,
-                            targetId = item.id, // Points TO the edge node
+                            sourceId = sId,
+                            targetId = tId,
                             strength = 1.0f,
-                            colorInfo = labelToColor(item.label)
-                        ))
-                    }
-                    if (targetP != null) {
-                        uiEdges.add(GraphEdge(
-                            id = -item.id - 1000000, // Virtual ID for segment
-                            schemas = emptyList(),
-                            properties = emptyList(),
-                            sourceId = item.id, // Points FROM the edge node
-                            targetId = targetP.node.id,
-                            strength = 1.0f,
+                            roleLabel = roleName,
                             colorInfo = labelToColor(item.label)
                         ))
                     }

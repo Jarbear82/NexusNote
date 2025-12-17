@@ -469,6 +469,24 @@ actual class SqliteDbService {
 
 
 
+    actual fun updateEntityTypes(entityId: Long, schemaIds: List<Long>) {
+
+        database.transaction {
+
+            database.appDatabaseQueries.deleteEntityTypes(entityId)
+
+            schemaIds.forEach { sId ->
+
+                database.appDatabaseQueries.insertEntityType(entityId, sId)
+
+            }
+
+        }
+
+    }
+
+
+
     actual fun deleteEntity(id: Long) {
 
         database.appDatabaseQueries.deleteEntityById(id)

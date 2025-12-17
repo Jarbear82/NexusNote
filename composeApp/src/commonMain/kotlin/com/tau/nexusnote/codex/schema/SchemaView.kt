@@ -140,12 +140,17 @@ fun SchemaView(
                 val filteredEdgeSchemas = schema.edgeSchemas.filter {
                     it.name.contains(edgeSchemaSearchText, ignoreCase = true)
                 }
+                val nodeSchemaMap = schema.nodeSchemas.associateBy { it.id }
+
                 items(filteredEdgeSchemas, key = { it.id }) { table ->
                     val isSelected = primarySelectedItem == table
 
                     // Constructing Roles text
                     val rolesText = table.roles.joinToString("\n") { role ->
-                        "  - ${role.name} (${role.cardinality}): ${role.allowedNodeSchemas.joinToString(", ").ifEmpty { "Any" }}"
+                        val allowedNames = role.allowedNodeSchemas.joinToString(", ") { id ->
+                            nodeSchemaMap[id]?.name ?: "ID:$id"
+                        }
+                        "  - ${role.name} (${role.cardinality}): ${allowedNames.ifEmpty { "Any" }}"
                     }
 
                     CodexListItem(

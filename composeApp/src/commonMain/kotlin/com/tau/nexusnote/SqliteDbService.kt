@@ -31,6 +31,7 @@ expect class SqliteDbService() {
         links: List<LinkModel> = emptyList() // Only for Relations
     ): Long
     fun updateEntityAttributes(entityId: Long, newAttributes: Map<Long, Any?>)
+    fun updateEntityTypes(entityId: Long, schemaIds: List<Long>)
     fun deleteEntity(id: Long)
 
     // --- Layout Constraints ---

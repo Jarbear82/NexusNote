@@ -49,6 +49,7 @@ data class EdgeSchemaCreationState(
 data class NodeEditState(
     val id: Long,
     val schemas: List<SchemaDefinition>,
+    val availableSchemas: List<SchemaDefinition> = emptyList(),
     val properties: Map<String, String>
 )
 

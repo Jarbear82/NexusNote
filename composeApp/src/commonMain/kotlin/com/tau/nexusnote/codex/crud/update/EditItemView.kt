@@ -46,6 +46,7 @@ fun EditItemView(
 
     // Node Edit Handlers
     onNodeEditPropertyChange: (String, String) -> Unit,
+    onNodeEditSchemaToggle: (SchemaDefinition) -> Unit,
 
     // Edge Edit Handlers
     onEdgeEditPropertyChange: (String, String) -> Unit,
@@ -115,6 +116,7 @@ fun EditItemView(
         is EditScreenState.EditNode -> {
             EditNodeView(
                 state = editScreenState.state,
+                onSchemaToggle = onNodeEditSchemaToggle,
                 onPropertyChange = onNodeEditPropertyChange,
                 onSave = onSaveClick,
                 onCancel = onCancelClick

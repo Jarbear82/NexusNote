@@ -106,6 +106,23 @@ class EditCreateViewModel(
         }
     }
 
+    fun toggleNodeEditSchema(schemaNode: SchemaDefinition) {
+        _editScreenState.update { current ->
+            if (current !is EditScreenState.EditNode) return@update current
+            val currentSelected = current.state.schemas
+            val newSelected = if (currentSelected.any { it.id == schemaNode.id }) {
+                currentSelected.filter { it.id != schemaNode.id }
+            } else {
+                currentSelected + schemaNode
+            }
+            // Retain properties for schemas that are still selected
+            // Properties for removed schemas will be implicitly ignored on save if we rebuild the property map,
+            // but the current implementation of `updateNode` in Repo looks at `state.properties` and matches them to `state.schemas`.
+            // So we just update the schema list.
+            current.copy(state = current.state.copy(schemas = newSelected))
+        }
+    }
+
     fun updateNodeCreationProperty(key: String, value: String) {
         _editScreenState.update { current ->
             if (current !is EditScreenState.CreateNode) return@update current
