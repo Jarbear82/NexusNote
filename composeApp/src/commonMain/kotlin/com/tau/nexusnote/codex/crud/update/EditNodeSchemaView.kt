@@ -32,7 +32,6 @@ fun EditNodeSchemaView(
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
-    // --- Local state for the "Add Property" UI ---
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
     var newIsDisplay by remember { mutableStateOf(false) }
@@ -40,17 +39,11 @@ fun EditNodeSchemaView(
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Edit Node Schema")
 
-        // Scrollable Content
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // Table Name
+        Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             OutlinedTextField(
                 value = state.currentName,
                 onValueChange = { onLabelChange(it.toPascalCase()) },
-                label = { Text("Table Name") },
+                label = { Text("Schema Name") },
                 modifier = Modifier.fillMaxWidth(),
                 isError = state.currentNameError != null,
                 supportingText = { state.currentNameError?.let { Text(it) } },
@@ -58,131 +51,35 @@ fun EditNodeSchemaView(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // --- Add Property Input Row (Unified UI) ---
             Text("Properties", style = MaterialTheme.typography.titleMedium)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Property Name
-                OutlinedTextField(
-                    value = newPropName,
-                    onValueChange = { newPropName = it.toCamelCase() },
-                    label = { Text("Name") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = newPropName, onValueChange = { newPropName = it.toCamelCase() }, label = { Text("Name") }, modifier = Modifier.weight(1f), singleLine = true)
                 Spacer(modifier = Modifier.width(8.dp))
-
-                // Property Type
                 Box(modifier = Modifier.weight(1f)) {
-                    CodexDropdown(
-                        label = "Type",
-                        options = CodexPropertyDataTypes.entries,
-                        selectedOption = newPropType,
-                        onOptionSelected = { newPropType = it },
-                        displayTransform = { it.displayName }
-                    )
+                    CodexDropdown("Type", CodexPropertyDataTypes.entries, newPropType, { newPropType = it }, { it.displayName })
                 }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Display Checkbox
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Display", style = MaterialTheme.typography.labelSmall)
-                    Checkbox(
-                        checked = newIsDisplay,
-                        onCheckedChange = { newIsDisplay = it }
-                    )
-                }
-
-                // Add Button
-                IconButton(
-                    onClick = {
-                        onAddProperty(
-                            SchemaProperty(
-                                name = newPropName,
-                                type = newPropType,
-                                isDisplayProperty = newIsDisplay
-                            )
-                        )
-                        newPropName = ""
-                        newPropType = CodexPropertyDataTypes.TEXT
-                        newIsDisplay = false
-                    },
-                    enabled = newPropName.isNotBlank()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Property")
+                IconButton(onClick = { onAddProperty(SchemaProperty(name = newPropName, type = newPropType, isDisplayProperty = newIsDisplay)); newPropName = "" }, enabled = newPropName.isNotBlank()) {
+                    Icon(Icons.Default.Add, "Add")
                 }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // --- Existing Properties List ---
-            Column(
-                modifier = Modifier
-                    .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small)
-                    .fillMaxWidth()
-            ) {
-                state.properties.forEachIndexed { index, property ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = property.name,
-                            onValueChange = {
-                                onPropertyChange(index, property.copy(name = it.toCamelCase()))
-                            },
-                            label = { Text("Name") },
-                            modifier = Modifier.weight(1f),
-                            isError = state.propertyErrors.containsKey(index) || property.name.isBlank(),
-                            supportingText = { state.propertyErrors[index]?.let { Text(it) } },
-                            singleLine = true
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(modifier = Modifier.weight(1f)) {
-                            CodexDropdown(
-                                label = "Type",
-                                options = CodexPropertyDataTypes.entries,
-                                selectedOption = property.type,
-                                onOptionSelected = { onPropertyChange(index, property.copy(type = it)) },
-                                displayTransform = { it.displayName }
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Checkbox(
-                                checked = property.isDisplayProperty,
-                                onCheckedChange = {
-                                    onPropertyChange(index, property.copy(isDisplayProperty = it))
-                                }
-                            )
-                        }
-                        IconButton(onClick = { onRemoveProperty(index) }) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete Property",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
+            state.properties.forEachIndexed { index, property ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                    // ID-based edit ensures backend performs UPDATE instead of DELETE/INSERT
+                    OutlinedTextField(value = property.name, onValueChange = { onPropertyChange(index, property.copy(name = it.toCamelCase())) }, label = { Text("Name") }, modifier = Modifier.weight(1f), singleLine = true)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(modifier = Modifier.width(120.dp)) {
+                        CodexDropdown("Type", CodexPropertyDataTypes.entries, property.type, { onPropertyChange(index, property.copy(type = it)) }, { it.displayName })
                     }
-                    if (index < state.properties.lastIndex) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    }
+                    Checkbox(checked = property.isDisplayProperty, onCheckedChange = { onPropertyChange(index, property.copy(isDisplayProperty = it)) })
+                    IconButton(onClick = { onRemoveProperty(index) }) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        // Fixed Buttons
-        FormActionRow(
-            primaryLabel = "Save",
-            onPrimaryClick = onSave,
-            primaryEnabled = state.currentName.isNotBlank() && state.currentNameError == null && state.propertyErrors.isEmpty(),
-            onSecondaryClick = onCancel
-        )
+        FormActionRow("Save", onSave, state.currentName.isNotBlank() && state.currentNameError == null, onCancel)
     }
 }

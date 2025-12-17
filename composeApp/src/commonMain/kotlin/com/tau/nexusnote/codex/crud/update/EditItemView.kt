@@ -9,7 +9,7 @@ import com.tau.nexusnote.codex.crud.create.CreateNodeView
 import com.tau.nexusnote.datamodels.EditScreenState
 import com.tau.nexusnote.datamodels.NodeDisplayItem
 import com.tau.nexusnote.datamodels.RoleDefinition
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
+import com.tau.nexusnote.datamodels.SchemaDefinition
 import com.tau.nexusnote.datamodels.SchemaProperty
 
 @Composable
@@ -19,11 +19,11 @@ fun EditItemView(
     onCancelClick: () -> Unit,
 
     // Node Creation Handlers
-    onNodeCreationSchemaSelected: (SchemaDefinitionItem) -> Unit,
+    onNodeCreationSchemaToggle: (SchemaDefinition) -> Unit,
     onNodeCreationPropertyChanged: (String, String) -> Unit,
 
     // Edge Creation Handlers
-    onEdgeCreationSchemaSelected: (SchemaDefinitionItem) -> Unit,
+    onEdgeCreationSchemaSelected: (SchemaDefinition) -> Unit,
     onEdgeCreationAddParticipant: (role: String) -> Unit,
     onEdgeCreationRemoveParticipant: (index: Int) -> Unit,
     onEdgeCreationParticipantSelected: (index: Int, node: NodeDisplayItem) -> Unit,
@@ -69,7 +69,7 @@ fun EditItemView(
         is EditScreenState.CreateNode -> {
             CreateNodeView(
                 nodeCreationState = editScreenState.state,
-                onSchemaSelected = onNodeCreationSchemaSelected,
+                onSchemaToggle = onNodeCreationSchemaToggle,
                 onPropertyChanged = onNodeCreationPropertyChanged,
                 onCreateClick = onSaveClick,
                 onCancelClick = onCancelClick

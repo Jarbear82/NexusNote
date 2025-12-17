@@ -16,9 +16,9 @@ import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.EdgeCreationState
 import com.tau.nexusnote.datamodels.NodeDisplayItem
 import com.tau.nexusnote.datamodels.ParticipantSelection
-import com.tau.nexusnote.datamodels.RoleCardinality
+import com.tau.nexusnote.datamodels.RelationCardinality
 import com.tau.nexusnote.datamodels.RoleDefinition
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
+import com.tau.nexusnote.datamodels.SchemaDefinition
 import com.tau.nexusnote.ui.components.CodexDropdown
 import com.tau.nexusnote.ui.components.CodexPropertyInput
 import com.tau.nexusnote.ui.components.CodexSectionHeader
@@ -27,7 +27,7 @@ import com.tau.nexusnote.ui.components.FormActionRow
 @Composable
 fun CreateEdgeView(
     edgeCreationState: EdgeCreationState,
-    onSchemaSelected: (SchemaDefinitionItem) -> Unit,
+    onSchemaSelected: (SchemaDefinition) -> Unit,
 
     // Updated callbacks for dynamic role filling
     onAddParticipant: (role: String) -> Unit,
@@ -60,7 +60,7 @@ fun CreateEdgeView(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // --- Dynamic Role Inputs ---
-                schema.roleDefinitions?.forEach { role ->
+                schema.roles.forEach { role ->
                     RoleInputSection(
                         role = role,
                         allParticipants = edgeCreationState.participants,
@@ -125,7 +125,7 @@ fun RoleInputSection(
     val filteredNodes = if (role.allowedNodeSchemas.isEmpty()) {
         availableNodes
     } else {
-        availableNodes.filter { it.label in role.allowedNodeSchemas }
+        availableNodes.filter { it.schemaId in role.allowedNodeSchemas }
     }
 
     Column(
@@ -163,23 +163,44 @@ fun RoleInputSection(
                     )
                 }
 
-                // Allow removing if cardinality is Many,
-                // OR if it's One but we want to allow clearing (though typically One is fixed)
-                if (role.cardinality is RoleCardinality.Many) {
-                    IconButton(onClick = { onRemove(globalIndex) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
+                                // Allow removing if cardinality is Many,
 
-        // Show Add button only for Many
-        if (role.cardinality is RoleCardinality.Many) {
-            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Add ${role.name}")
-            }
-        }
-    }
-}
+                                // OR if it's One but we want to allow clearing (though typically One is fixed)
+
+                                if (role.cardinality == RelationCardinality.MANY) {
+
+                                    IconButton(onClick = { onRemove(globalIndex) }) {
+
+                                        Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                
+
+                        // Show Add button only for Many
+
+                        if (role.cardinality == RelationCardinality.MANY) {
+
+                            OutlinedButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+
+                                Spacer(Modifier.width(8.dp))
+
+                                Text("Add ${role.name}")
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+                

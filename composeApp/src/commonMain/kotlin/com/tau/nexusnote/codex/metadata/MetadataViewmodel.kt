@@ -177,7 +177,7 @@ class MetadataViewModel(
                 _primarySelectedItem.value = item
                 _secondarySelectedItem.value = null
             }
-            else -> { // Includes SchemaDefinitionItem
+            else -> { // Includes SchemaDefinition
                 _primarySelectedItem.value = item
                 _secondarySelectedItem.value = null
             }

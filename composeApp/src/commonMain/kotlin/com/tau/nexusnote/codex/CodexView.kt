@@ -287,7 +287,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             onCancelClick = onCancel,
 
                             // Node Creation
-                            onNodeCreationSchemaSelected = { viewModel.editCreateViewModel.updateNodeCreationSchema(it) },
+                            onNodeCreationSchemaToggle = { viewModel.editCreateViewModel.toggleNodeCreationSchema(it) },
                             onNodeCreationPropertyChanged = { k, v -> viewModel.editCreateViewModel.updateNodeCreationProperty(k, v) },
 
                             // Edge Creation

@@ -5,11 +5,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
+import com.tau.nexusnote.datamodels.SchemaDefinition
 
 @Composable
 fun DeleteSchemaConfirmationDialog(
-    item: SchemaDefinitionItem,
+    item: SchemaDefinition,
     dependencyCount: Long,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit

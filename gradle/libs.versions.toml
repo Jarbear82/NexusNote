@@ -28,7 +28,6 @@ androidx-datastore-preferences = { module = "androidx.datastore:datastore-prefer
 multik-core = { module = "org.jetbrains.kotlinx:multik-core", version.ref = "multik"}
 multik-default = {module = "org.jetbrains.kotlinx:multik-default", version.ref = "multik"}
 
-
 [plugins]
 composeHotReload = { id = "org.jetbrains.compose.hot-reload", version.ref = "composeHotReload" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }

@@ -31,7 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.ui.components.SearchableListHeader
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
+import com.tau.nexusnote.datamodels.SchemaDefinition
 import com.tau.nexusnote.utils.labelToColor
 
 @Composable
@@ -39,22 +39,22 @@ fun SchemaView(
     schema: SchemaData?,
     primarySelectedItem: Any?,
     secondarySelectedItem: Any?,
-    onNodeClick: (SchemaDefinitionItem) -> Unit,
-    onEdgeClick: (SchemaDefinitionItem) -> Unit,
-    onEditNodeClick: (SchemaDefinitionItem) -> Unit,
-    onEditEdgeClick: (SchemaDefinitionItem) -> Unit,
-    onDeleteNodeClick: (SchemaDefinitionItem) -> Unit,
-    onDeleteEdgeClick: (SchemaDefinitionItem) -> Unit,
+    onNodeClick: (SchemaDefinition) -> Unit,
+    onEdgeClick: (SchemaDefinition) -> Unit,
+    onEditNodeClick: (SchemaDefinition) -> Unit,
+    onEditEdgeClick: (SchemaDefinition) -> Unit,
+    onDeleteNodeClick: (SchemaDefinition) -> Unit,
+    onDeleteEdgeClick: (SchemaDefinition) -> Unit,
     onAddNodeSchemaClick: () -> Unit,
     onAddEdgeSchemaClick: () -> Unit,
-    onAddNodeClick: (SchemaDefinitionItem) -> Unit,
-    onAddEdgeClick: (SchemaDefinitionItem) -> Unit,
+    onAddNodeClick: (SchemaDefinition) -> Unit,
+    onAddEdgeClick: (SchemaDefinition) -> Unit,
     nodeSchemaSearchText: String,
     onNodeSchemaSearchChange: (String) -> Unit,
     edgeSchemaSearchText: String,
     onEdgeSchemaSearchChange: (String) -> Unit,
-    schemaVisibility: Map<Long, Boolean>,
-    onToggleSchemaVisibility: (Long) -> Unit
+    schemaVisibility: Map<String, Boolean>,
+    onToggleSchemaVisibility: (String) -> Unit
 ) {
     if (schema == null) {
         Text("Schema not loaded.")
@@ -143,7 +143,7 @@ fun SchemaView(
                     val isSelected = primarySelectedItem == table
 
                     // Constructing Roles text
-                    val rolesText = (table.roleDefinitions ?: emptyList()).joinToString("\n") { role ->
+                    val rolesText = table.roles.joinToString("\n") { role ->
                         "  - ${role.name} (${role.cardinality}): ${role.allowedNodeSchemas.joinToString(", ").ifEmpty { "Any" }}"
                     }
 
@@ -223,13 +223,13 @@ private fun CodexListItem(
 
 @Composable
 private fun NodeSchemaActions(
-    table: SchemaDefinitionItem,
+    table: SchemaDefinition,
     fontColor: Color,
-    schemaVisibility: Map<Long, Boolean>,
-    onToggleSchemaVisibility: (Long) -> Unit,
-    onAddNodeClick: (SchemaDefinitionItem) -> Unit,
-    onEditNodeClick: (SchemaDefinitionItem) -> Unit,
-    onDeleteNodeClick: (SchemaDefinitionItem) -> Unit
+    schemaVisibility: Map<String, Boolean>,
+    onToggleSchemaVisibility: (String) -> Unit,
+    onAddNodeClick: (SchemaDefinition) -> Unit,
+    onEditNodeClick: (SchemaDefinition) -> Unit,
+    onDeleteNodeClick: (SchemaDefinition) -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -269,13 +269,13 @@ private fun NodeSchemaActions(
 
 @Composable
 private fun EdgeSchemaActions(
-    table: SchemaDefinitionItem,
+    table: SchemaDefinition,
     fontColor: Color,
-    schemaVisibility: Map<Long, Boolean>,
-    onToggleSchemaVisibility: (Long) -> Unit,
-    onEditEdgeClick: (SchemaDefinitionItem) -> Unit,
-    onDeleteEdgeClick: (SchemaDefinitionItem) -> Unit,
-    onAddEdgeClick: (SchemaDefinitionItem) -> Unit
+    schemaVisibility: Map<String, Boolean>,
+    onToggleSchemaVisibility: (String) -> Unit,
+    onEditEdgeClick: (SchemaDefinition) -> Unit,
+    onDeleteEdgeClick: (SchemaDefinition) -> Unit,
+    onAddEdgeClick: (SchemaDefinition) -> Unit
 ) {
     FlowRow(
         modifier = Modifier.fillMaxWidth(),

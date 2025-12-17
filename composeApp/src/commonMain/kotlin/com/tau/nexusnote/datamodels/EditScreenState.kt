@@ -1,7 +1,7 @@
 package com.tau.nexusnote.datamodels
 
 /**
- * Represents the entire state of the "Edit" tab.
+ * Refactored State classes to use the new SchemaDefinition instead of Item.
  */
 sealed interface EditScreenState {
     data object None : EditScreenState
@@ -15,73 +15,52 @@ sealed interface EditScreenState {
     data class EditEdgeSchema(val state: EdgeSchemaEditState) : EditScreenState
 }
 
-// --- Data class for Node Creation UI State ---
 data class NodeCreationState(
-    val schemas: List<SchemaDefinitionItem>, // All available NODE schemas
-    val selectedSchema: SchemaDefinitionItem? = null,
-    val properties: Map<String, String> = emptyMap() // UI state for text fields
+    val availableSchemas: List<SchemaDefinition>,
+    val selectedSchemas: List<SchemaDefinition> = emptyList(),
+    val properties: Map<String, String> = emptyMap()
 )
 
-// --- Helper for Dynamic Edge Participants ---
-data class ParticipantSelection(
-    val id: String, // Unique ID for UI keys (e.g. UUID or timestamp)
-    val role: String, // Matches RoleDefinition.name
-    val node: NodeDisplayItem? = null
-)
-
-// --- Data class for Edge Creation UI State ---
 data class EdgeCreationState(
-    val schemas: List<SchemaDefinitionItem>, // All available EDGE schemas
+    val schemas: List<SchemaDefinition>,
     val availableNodes: List<NodeDisplayItem>,
-    val selectedSchema: SchemaDefinitionItem? = null,
-
-    // Tracks selections for each role.
-    // Logic:
-    // - For "One" cardinality roles: 1 ParticipantSelection in list (can be null node)
-    // - For "Many" cardinality roles: 0..N ParticipantSelection items in list
+    val selectedSchema: SchemaDefinition? = null,
     val participants: List<ParticipantSelection> = emptyList(),
     val properties: Map<String, String> = emptyMap()
 )
 
-// --- Data class for Node Schema Creation UI State ---
 data class NodeSchemaCreationState(
     val tableName: String = "",
-    val properties: List<SchemaProperty> = listOf(SchemaProperty("name",
-        CodexPropertyDataTypes.TEXT, isDisplayProperty = true)),
+    val properties: List<SchemaProperty> = listOf(SchemaProperty(0, "name", CodexPropertyDataTypes.TEXT, true)),
     val tableNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap()
 )
 
-// --- Data class for Edge Schema Creation UI State ---
 data class EdgeSchemaCreationState(
     val tableName: String = "",
     val roles: List<RoleDefinition> = emptyList(),
     val properties: List<SchemaProperty> = emptyList(),
-    val allNodeSchemas: List<SchemaDefinitionItem> = emptyList(), // All NODE schemas
+    val allNodeSchemas: List<SchemaDefinition> = emptyList(),
     val tableNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap(),
     val roleErrors: Map<Int, String?> = emptyMap()
 )
 
-// --- Data classes for Editing Instances ---
-
 data class NodeEditState(
     val id: Long,
-    val schema: SchemaDefinitionItem,
-    val properties: Map<String, String> // Current values from DB, as strings for UI
+    val schemas: List<SchemaDefinition>,
+    val properties: Map<String, String>
 )
 
 data class EdgeEditState(
     val id: Long,
-    val schema: SchemaDefinitionItem,
-    val participants: List<ParticipantSelection>, // Read-only for now or editable if implemented
+    val schema: SchemaDefinition,
+    val participants: List<ParticipantSelection>,
     val properties: Map<String, String>
 )
 
-// --- Data classes for Editing Schemas ---
-
 data class NodeSchemaEditState(
-    val originalSchema: SchemaDefinitionItem,
+    val originalSchema: SchemaDefinition,
     val currentName: String,
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
@@ -89,12 +68,19 @@ data class NodeSchemaEditState(
 )
 
 data class EdgeSchemaEditState(
-    val originalSchema: SchemaDefinitionItem,
+    val originalSchema: SchemaDefinition,
     val currentName: String,
     val roles: List<RoleDefinition>,
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
     val propertyErrors: Map<Int, String?> = emptyMap(),
     val roleErrors: Map<Int, String?> = emptyMap(),
-    val allNodeSchemas: List<SchemaDefinitionItem> = emptyList()
+    val allNodeSchemas: List<SchemaDefinition> = emptyList()
+)
+
+// Helper remains same
+data class ParticipantSelection(
+    val id: String,
+    val role: String,
+    val node: NodeDisplayItem? = null
 )

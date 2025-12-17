@@ -1,166 +1,224 @@
--- AppDatabase.sq
-import com.tau.nexusnote.datamodels.SchemaProperty;
-import com.tau.nexusnote.datamodels.RoleDefinition;
 import kotlin.collections.List;
-import kotlin.Boolean;
+import kotlin.collections.Map;
 
-CREATE TABLE SchemaDefinition (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-type TEXT NOT NULL CHECK (type IN ('NODE', 'EDGE')),
-name TEXT NOT NULL UNIQUE,
-properties_json TEXT AS List<SchemaProperty> NOT NULL,
-roles_json TEXT AS List<RoleDefinition> NOT NULL
+-- METADATA: Type System Definitions --
+
+CREATE TABLE SchemaDef (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('ENTITY', 'RELATION'))
 );
 
-CREATE TABLE Node (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-schema_id INTEGER NOT NULL,
-display_label TEXT NOT NULL,
-properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
-parent_id INTEGER DEFAULT NULL,
-is_collapsed INTEGER AS Boolean NOT NULL DEFAULT 0,
-FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE,
-FOREIGN KEY(parent_id) REFERENCES Node(id) ON DELETE SET NULL
+CREATE TABLE AttributeDef (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    schema_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    data_type TEXT NOT NULL CHECK (data_type IN ('TEXT', 'INTEGER', 'REAL', 'BOOLEAN')),
+    FOREIGN KEY(schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE,
+    UNIQUE(schema_id, name)
 );
 
--- 1. The Edge table now represents the "Hypernode" itself (Phase 1 Update)
-CREATE TABLE Edge (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-schema_id INTEGER NOT NULL,
-properties_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL,
-FOREIGN KEY(schema_id) REFERENCES SchemaDefinition(id) ON DELETE CASCADE
+CREATE TABLE RoleDef (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    schema_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('SOURCE', 'TARGET')),
+    cardinality TEXT NOT NULL CHECK (cardinality IN ('ONE', 'MANY')),
+    FOREIGN KEY(schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE,
+    UNIQUE(schema_id, name)
 );
 
--- 2. New Join Table: Links Nodes to Edges (Phase 1 Update)
-CREATE TABLE EdgeLink (
-edge_id INTEGER NOT NULL,
-node_id INTEGER NOT NULL,
-role TEXT, -- "source", "target", etc.
-PRIMARY KEY(edge_id, node_id, role), -- Updated PK to allow same node in different roles
-FOREIGN KEY(edge_id) REFERENCES Edge(id) ON DELETE CASCADE,
-FOREIGN KEY(node_id) REFERENCES Node(id) ON DELETE CASCADE
+-- DATA: Graph Instances --
+
+-- Base table for both Nodes and Edges (Relations)
+CREATE TABLE Entity (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL
 );
 
+-- Defines which schemas an entity belongs to.
+-- Supports Composite Nodes (One entity can have multiple rows here).
+CREATE TABLE EntityType (
+    entity_id INTEGER NOT NULL,
+    schema_id INTEGER NOT NULL,
+    PRIMARY KEY(entity_id, schema_id),
+    FOREIGN KEY(entity_id) REFERENCES Entity(id) ON DELETE CASCADE,
+    FOREIGN KEY(schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE
+);
+
+-- Stores values for attributes.
+-- Strict typing: Only ONE of the val_ columns should be populated based on AttributeDef.data_type.
+CREATE TABLE AttributeValue (
+    entity_id INTEGER NOT NULL,
+    attribute_def_id INTEGER NOT NULL,
+    val_text TEXT,
+    val_int INTEGER,
+    val_real REAL,
+    val_bool INTEGER, -- 0 for False, 1 for True
+    PRIMARY KEY(entity_id, attribute_def_id),
+    FOREIGN KEY(entity_id) REFERENCES Entity(id) ON DELETE CASCADE,
+    FOREIGN KEY(attribute_def_id) REFERENCES AttributeDef(id) ON DELETE CASCADE
+);
+
+-- Defines the connections in the graph.
+-- Links a 'Relation' Entity to a 'Player' Entity (Node or another Relation) via a specific Role.
+CREATE TABLE RelationLink (
+    relation_entity_id INTEGER NOT NULL,
+    player_entity_id INTEGER NOT NULL,
+    role_def_id INTEGER NOT NULL,
+    PRIMARY KEY(relation_entity_id, player_entity_id, role_def_id),
+    FOREIGN KEY(relation_entity_id) REFERENCES Entity(id) ON DELETE CASCADE,
+    FOREIGN KEY(player_entity_id) REFERENCES Entity(id) ON DELETE CASCADE,
+    FOREIGN KEY(role_def_id) REFERENCES RoleDef(id) ON DELETE CASCADE
+);
+
+-- VISUALS: Layout Constraints --
 CREATE TABLE LayoutConstraint (
-id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-type TEXT NOT NULL,
-node_ids_json TEXT AS List<kotlin.Long> NOT NULL,
-params_json TEXT AS kotlin.collections.Map<kotlin.String, kotlin.String> NOT NULL
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    entity_ids_json TEXT AS List<kotlin.Long> NOT NULL,
+    params_json TEXT AS Map<kotlin.String, kotlin.String> NOT NULL
 );
 
---- SchemaDefinition Queries ---
+--- QUERIES ---
 
+-- SchemaDef Queries --
 selectAllSchemas:
-SELECT * FROM SchemaDefinition;
+SELECT * FROM SchemaDef;
 
 selectSchemaById:
-SELECT * FROM SchemaDefinition WHERE id = ?;
+SELECT * FROM SchemaDef WHERE id = ?;
 
 insertSchema:
-INSERT INTO SchemaDefinition(type, name, properties_json, roles_json)
-VALUES (?, ?, ?, ?);
+INSERT INTO SchemaDef(name, kind) VALUES (?, ?);
 
-updateSchema:
-UPDATE SchemaDefinition
-SET name = ?, properties_json = ?, roles_json = ?
-WHERE id = ?;
+updateSchemaName:
+UPDATE SchemaDef SET name = ? WHERE id = ?;
 
 deleteSchemaById:
-DELETE FROM SchemaDefinition WHERE id = ?;
+DELETE FROM SchemaDef WHERE id = ?;
 
---- Node Queries ---
-
-selectAllNodes:
-SELECT * FROM Node;
-
-selectNodeById:
-SELECT * FROM Node WHERE id = ?;
-
-countNodesForSchema:
-SELECT COUNT(*) FROM Node WHERE schema_id = ?;
-
-insertNode:
-INSERT INTO Node(schema_id, display_label, properties_json, parent_id, is_collapsed)
-VALUES (?, ?, ?, ?, ?);
-
-updateNodeProperties:
-UPDATE Node
-SET display_label = ?, properties_json = ?
-WHERE id = ?;
-
-updateNodeParent:
-UPDATE Node
-SET parent_id = ?
-WHERE id = ?;
-
-updateNodeCollapsed:
-UPDATE Node
-SET is_collapsed = ?
-WHERE id = ?;
-
-deleteNodeById:
-DELETE FROM Node WHERE id = ?;
-
-getNodesPaginated:
-SELECT * FROM Node LIMIT ? OFFSET ?;
-
-countAllNodes:
-SELECT COUNT(*) FROM Node;
-
-getLastInsertId:
+lastInsertRowId:
 SELECT last_insert_rowid();
 
---- Edge Queries ---
+-- AttributeDef Queries --
+selectAllAttributeDefs:
+SELECT * FROM AttributeDef;
 
-selectAllEdges:
-SELECT * FROM Edge;
+selectAttributesBySchemaId:
+SELECT * FROM AttributeDef WHERE schema_id = ?;
 
-selectEdgeById:
-SELECT * FROM Edge WHERE id = ?;
+insertAttributeDef:
+INSERT INTO AttributeDef(schema_id, name, data_type) VALUES (?, ?, ?);
 
-countEdgesForSchema:
-SELECT COUNT(*) FROM Edge WHERE schema_id = ?;
+updateAttributeDefName:
+UPDATE AttributeDef SET name = ? WHERE id = ?;
 
--- Updated Insert (No longer takes node IDs directly)
-insertEdge:
-INSERT INTO Edge(schema_id, properties_json)
-VALUES (?, ?);
+deleteAttributeDef:
+DELETE FROM AttributeDef WHERE id = ?;
 
-updateEdgeProperties:
-UPDATE Edge
-SET properties_json = ?
-WHERE id = ?;
+-- RoleDef Queries --
+selectAllRoleDefs:
+SELECT * FROM RoleDef;
 
-deleteEdgeById:
-DELETE FROM Edge WHERE id = ?;
+selectRolesBySchemaId:
+SELECT * FROM RoleDef WHERE schema_id = ?;
 
-getEdgesPaginated:
-SELECT * FROM Edge LIMIT ? OFFSET ?;
+insertRoleDef:
+INSERT INTO RoleDef(schema_id, name, direction, cardinality) VALUES (?, ?, ?, ?);
 
-countAllEdges:
-SELECT COUNT(*) FROM Edge;
+updateRoleDefName:
+UPDATE RoleDef SET name = ? WHERE id = ?;
 
---- EdgeLink Queries (New) ---
+deleteRoleDef:
+DELETE FROM RoleDef WHERE id = ?;
 
-insertEdgeLink:
-INSERT INTO EdgeLink(edge_id, node_id, role) VALUES (?, ?, ?);
+-- Entity Queries --
+selectAllEntities:
+SELECT * FROM Entity;
 
-selectEdgeLinks:
-SELECT * FROM EdgeLink WHERE edge_id = ?;
+insertEntity:
+INSERT INTO Entity(created_at) VALUES (?);
 
-selectAllEdgeLinks:
-SELECT * FROM EdgeLink;
+selectEntityById:
+SELECT * FROM Entity WHERE id = ?;
 
-selectLinksForEdgeIds:
-SELECT * FROM EdgeLink WHERE edge_id IN ?;
+deleteEntityById:
+DELETE FROM Entity WHERE id = ?;
 
---- LayoutConstraint Queries ---
+countEntities:
+SELECT COUNT(*) FROM Entity;
 
+-- EntityType Queries --
+selectAllEntityTypes:
+SELECT * FROM EntityType;
+
+insertEntityType:
+INSERT INTO EntityType(entity_id, schema_id) VALUES (?, ?);
+
+-- Get all types (schemas) for a specific entity
+selectSchemasForEntity:
+SELECT SchemaDef.*
+FROM SchemaDef
+JOIN EntityType ON SchemaDef.id = EntityType.schema_id
+WHERE EntityType.entity_id = ?;
+
+-- Get all entities that implement a specific schema
+selectEntitiesBySchema:
+SELECT Entity.*
+FROM Entity
+JOIN EntityType ON Entity.id = EntityType.entity_id
+WHERE EntityType.schema_id = ?;
+
+-- AttributeValue Queries --
+selectAllAttributeValues:
+SELECT * FROM AttributeValue;
+
+insertAttributeValue:
+INSERT INTO AttributeValue(entity_id, attribute_def_id, val_text, val_int, val_real, val_bool)
+VALUES (?, ?, ?, ?, ?, ?);
+
+updateAttributeValue:
+UPDATE AttributeValue
+SET val_text = ?, val_int = ?, val_real = ?, val_bool = ?
+WHERE entity_id = ? AND attribute_def_id = ?;
+
+-- Fetch all attributes for an entity, joining with definition to get names/types
+selectAttributeValuesForEntity:
+SELECT AttributeValue.*, AttributeDef.name AS def_name, AttributeDef.data_type AS def_type
+FROM AttributeValue
+JOIN AttributeDef ON AttributeValue.attribute_def_id = AttributeDef.id
+WHERE AttributeValue.entity_id = ?;
+
+-- RelationLink Queries --
+selectAllRelationLinks:
+SELECT * FROM RelationLink;
+
+insertRelationLink:
+INSERT INTO RelationLink(relation_entity_id, player_entity_id, role_def_id)
+VALUES (?, ?, ?);
+
+-- Get all connections for a specific Relation (Edge)
+-- e.g., For "Marriage" (ID 5), get "Bob" (Husband) and "Alice" (Wife)
+selectLinksForRelation:
+SELECT RelationLink.*, RoleDef.name AS role_name, RoleDef.direction, RoleDef.cardinality
+FROM RelationLink
+JOIN RoleDef ON RelationLink.role_def_id = RoleDef.id
+WHERE RelationLink.relation_entity_id = ?;
+
+-- Get all Relations where a specific Entity is a player
+-- e.g., Find all "Marriages" or "Employments" that "Bob" is involved in
+selectRelationsForPlayer:
+SELECT RelationLink.*
+FROM RelationLink
+WHERE RelationLink.player_entity_id = ?;
+
+-- LayoutConstraint Queries --
 selectAllConstraints:
 SELECT * FROM LayoutConstraint;
 
 insertConstraint:
-INSERT INTO LayoutConstraint(type, node_ids_json, params_json)
+INSERT INTO LayoutConstraint(type, entity_ids_json, params_json)
 VALUES (?, ?, ?);
 
 deleteConstraintById:

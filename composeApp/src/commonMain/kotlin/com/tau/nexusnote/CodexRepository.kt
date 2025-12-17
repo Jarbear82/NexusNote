@@ -1,39 +1,26 @@
 package com.tau.nexusnote
 
-import com.tau.nexusnote.datamodels.EdgeCreationState
-import com.tau.nexusnote.datamodels.EdgeDisplayItem
-import com.tau.nexusnote.datamodels.EdgeEditState
-import com.tau.nexusnote.datamodels.EdgeParticipant
-import com.tau.nexusnote.datamodels.EdgeSchemaCreationState
-import com.tau.nexusnote.datamodels.EdgeSchemaEditState
-import com.tau.nexusnote.datamodels.LayoutConstraintItem
-import com.tau.nexusnote.datamodels.NodeCreationState
-import com.tau.nexusnote.datamodels.NodeDisplayItem
-import com.tau.nexusnote.datamodels.NodeEditState
-import com.tau.nexusnote.datamodels.NodeSchemaCreationState
-import com.tau.nexusnote.datamodels.NodeSchemaEditState
-import com.tau.nexusnote.datamodels.ParticipantSelection
-import com.tau.nexusnote.datamodels.SchemaDefinitionItem
-import com.tau.nexusnote.codex.schema.SchemaData
+import androidx.compose.ui.geometry.Offset
+import com.tau.nexusnote.datamodels.*
+import com.tau.nexusnote.utils.labelToColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.uuid.ExperimentalUuidApi
-import kotlin.uuid.Uuid
 
 /**
- * Centralizes all database logic and state for an open Codex.
+ * Repository for managing the Codex Graph data.
+ * Implements Phase 3: Repository & Data Access Layer
+ * - Step 3.1: Create Logic
+ * - Step 3.2: Read Logic
  */
 class CodexRepository(
     private val dbService: SqliteDbService,
-    private val repositoryScope: CoroutineScope
+    private val coroutineScope: CoroutineScope
 ) {
 
-    // --- Central State Flows ---
+    // --- State Flows ---
     private val _schema = MutableStateFlow<SchemaData?>(null)
     val schema = _schema.asStateFlow()
 
@@ -46,534 +33,420 @@ class CodexRepository(
     private val _constraints = MutableStateFlow<List<LayoutConstraintItem>>(emptyList())
     val constraints = _constraints.asStateFlow()
 
-    // --- Error State Flow ---
     private val _errorFlow = MutableStateFlow<String?>(null)
     val errorFlow = _errorFlow.asStateFlow()
 
-    // --- Public API ---
+    fun clearError() { _errorFlow.value = null }
 
-    fun clearError() {
-        _errorFlow.value = null
-    }
+    // ============================================================================================
+    // STEP 3.2: READ LOGIC (Graph Loader)
+    // ============================================================================================
 
     suspend fun refreshAll() {
         refreshSchema()
         refreshNodes()
         refreshEdges()
-        refreshConstraints()
     }
 
-    suspend fun refreshSchema() = withContext(Dispatchers.IO) {
+    suspend fun refreshSchema() = withContext(Dispatchers.Default) {
         try {
-            val dbSchemas = dbService.database.appDatabaseQueries.selectAllSchemas().executeAsList()
-            val nodeSchemas = mutableListOf<SchemaDefinitionItem>()
-            val edgeSchemas = mutableListOf<SchemaDefinitionItem>()
+            val allSchemaDefs = dbService.getAllSchemas()
+            val allAttrDefs = dbService.getAllAttributeDefs()
+            val allRoleDefs = dbService.getAllRoleDefs()
 
-            dbSchemas.forEach { dbSchema ->
-                val properties = dbSchema.properties_json
-
-                if (dbSchema.type == "NODE") {
-                    nodeSchemas.add(
-                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, null)
-                    )
-                } else if (dbSchema.type == "EDGE") {
-                    val roles = dbSchema.roles_json
-                    edgeSchemas.add(
-                        SchemaDefinitionItem(dbSchema.id, dbSchema.type, dbSchema.name, properties, roles)
-                    )
-                }
-            }
-            _schema.value = SchemaData(nodeSchemas, edgeSchemas)
-        } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing schema: ${e.message}"
-            _schema.value = SchemaData(emptyList(), emptyList())
-        }
-    }
-
-    suspend fun refreshNodes() = withContext(Dispatchers.IO) {
-        val schemaMap = _schema.value?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
-
-        if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing nodes: Schema was not loaded first."
-            _nodeList.value = emptyList()
-            return@withContext
-        }
-
-        try {
-            val dbNodes = dbService.database.appDatabaseQueries.selectAllNodes().executeAsList()
-            _nodeList.value = dbNodes.mapNotNull { dbNode ->
-                val nodeSchema = schemaMap[dbNode.schema_id]
-                if (nodeSchema == null) {
-                    println("Warning: Found node with unknown schema ID ${dbNode.schema_id}")
-                    null
-                } else {
-                    NodeDisplayItem(
-                        id = dbNode.id,
-                        label = nodeSchema.name,
-                        displayProperty = dbNode.display_label,
-                        schemaId = nodeSchema.id,
-                        parentId = dbNode.parent_id,
-                        isCollapsed = dbNode.is_collapsed
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing nodes: ${e.message}"
-            _nodeList.value = emptyList()
-        }
-    }
-
-    suspend fun refreshEdges() = withContext(Dispatchers.IO) {
-        val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
-        val nodeMap = _nodeList.value.associateBy { it.id }
-
-        if (_schema.value == null) {
-            _errorFlow.value = "Error refreshing edges: Schema was not loaded first."
-            _edgeList.value = emptyList()
-            return@withContext
-        }
-
-        try {
-            // 1. Fetch All Edges
-            val dbEdges = dbService.database.appDatabaseQueries.selectAllEdges().executeAsList()
-
-            // 2. Fetch All Links (Efficient Bulk Fetch)
-            val dbLinks = dbService.database.appDatabaseQueries.selectAllEdgeLinks().executeAsList()
-            val linksByEdge = dbLinks.groupBy { it.edge_id }
-
-            // 3. Reconstruct N-nary Display Items
-            _edgeList.value = dbEdges.mapNotNull { dbEdge ->
-                val schema = schemaMap[dbEdge.schema_id]
-                val links = linksByEdge[dbEdge.id]
-
-                if (schema == null || links == null) return@mapNotNull null
-
-                // Gather all participating nodes with their roles
-                val participants = links.mapNotNull { link ->
-                    val node = nodeMap[link.node_id]
-                    if (node != null) {
-                        EdgeParticipant(node, link.role)
-                    } else null
-                }
-
-                EdgeDisplayItem(
-                    id = dbEdge.id,
-                    label = schema.name,
-                    properties = dbEdge.properties_json,
-                    participatingNodes = participants,
-                    schemaId = schema.id
-                )
-            }
-        } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing edges: ${e.message}"
-            _edgeList.value = emptyList()
-        }
-    }
-
-    suspend fun refreshConstraints() = withContext(Dispatchers.IO) {
-        try {
-            val dbConstraints = dbService.database.appDatabaseQueries.selectAllConstraints().executeAsList()
-            _constraints.value = dbConstraints.map { dbItem ->
-                LayoutConstraintItem(
-                    id = dbItem.id,
-                    type = dbItem.type,
-                    nodeIds = dbItem.node_ids_json,
-                    params = dbItem.params_json
-                )
-            }
-        } catch (e: Exception) {
-            _errorFlow.value = "Error refreshing constraints: ${e.message}"
-            _constraints.value = emptyList()
-        }
-    }
-
-    // --- Compound Nodes ---
-
-    fun createCompoundNode(label: String, childrenIds: List<Long>) {
-        repositoryScope.launch {
-            try {
-                val schema = _schema.value?.nodeSchemas?.find {
-                    it.name.equals("Group", ignoreCase = true) || it.name.equals("Compound", ignoreCase = true)
-                } ?: _schema.value?.nodeSchemas?.firstOrNull()
-
-                if (schema == null) {
-                    _errorFlow.value = "No node schemas available to create compound node."
-                    return@launch
-                }
-
-                dbService.database.appDatabaseQueries.insertNode(
-                    schema_id = schema.id,
-                    display_label = label,
-                    properties_json = mapOf("name" to label),
-                    parent_id = null,
-                    is_collapsed = false
-                )
-
-                val parentId = dbService.database.appDatabaseQueries.getLastInsertId().executeAsOne()
-
-                childrenIds.forEach { childId ->
-                    dbService.database.appDatabaseQueries.updateNodeParent(parentId, childId)
-                }
-
-                refreshNodes()
-
-            } catch (e: Exception) {
-                _errorFlow.value = "Error creating compound node: ${e.message}"
-            }
-        }
-    }
-
-    fun setNodeCollapsed(id: Long, collapsed: Boolean) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.updateNodeCollapsed(collapsed, id)
-                refreshNodes()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error updating node collapse state: ${e.message}"
-            }
-        }
-    }
-
-    // --- Layout Constraints ---
-
-    fun addConstraint(type: String, nodes: List<Long>, params: Map<String, Any>) {
-        repositoryScope.launch {
-            try {
-                val paramsStringMap = params.mapValues { it.value.toString() }
-
-                dbService.database.appDatabaseQueries.insertConstraint(
-                    type = type,
-                    node_ids_json = nodes,
-                    params_json = paramsStringMap
-                )
-                refreshConstraints()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error adding constraint: ${e.message}"
-            }
-        }
-    }
-
-    fun deleteConstraint(id: Long) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.deleteConstraintById(id)
-                refreshConstraints()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error deleting constraint: ${e.message}"
-            }
-        }
-    }
-
-    // --- Pagination ---
-
-    suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> = withContext(Dispatchers.IO) {
-        val schemaMap = _schema.value?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
-        if (_schema.value == null) return@withContext emptyList()
-
-        return@withContext try {
-            val dbNodes = dbService.database.appDatabaseQueries.getNodesPaginated(limit, offset).executeAsList()
-            dbNodes.mapNotNull { dbNode ->
-                val nodeSchema = schemaMap[dbNode.schema_id]
-                if (nodeSchema != null) {
-                    NodeDisplayItem(
-                        id = dbNode.id,
-                        label = nodeSchema.name,
-                        displayProperty = dbNode.display_label,
-                        schemaId = nodeSchema.id,
-                        parentId = dbNode.parent_id,
-                        isCollapsed = dbNode.is_collapsed
-                    )
-                } else null
-            }
-        } catch (e: Exception) {
-            _errorFlow.value = "Error fetching paginated nodes: ${e.message}"
-            emptyList()
-        }
-    }
-
-    suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> = withContext(Dispatchers.IO) {
-        val schemaMap = _schema.value?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
-        val nodeMap = _nodeList.value.associateBy { it.id }
-
-        if (_schema.value == null) return@withContext emptyList()
-
-        return@withContext try {
-            val dbEdges = dbService.database.appDatabaseQueries.getEdgesPaginated(limit, offset).executeAsList()
-            if (dbEdges.isEmpty()) return@withContext emptyList()
-
-            val edgeIds = dbEdges.map { it.id }
-            val dbLinks = dbService.database.appDatabaseQueries.selectLinksForEdgeIds(edgeIds).executeAsList()
-            val linksByEdge = dbLinks.groupBy { it.edge_id }
-
-            dbEdges.mapNotNull { dbEdge ->
-                val schema = schemaMap[dbEdge.schema_id]
-                val links = linksByEdge[dbEdge.id]
-
-                if (schema == null || links == null) return@mapNotNull null
-
-                val participants = links.mapNotNull { link ->
-                    val node = nodeMap[link.node_id]
-                    if (node != null) EdgeParticipant(node, link.role) else null
-                }
-
-                EdgeDisplayItem(
-                    id = dbEdge.id,
-                    label = schema.name,
-                    properties = dbEdge.properties_json,
-                    participatingNodes = participants,
-                    schemaId = schema.id
-                )
-            }
-        } catch (e: Exception) {
-            _errorFlow.value = "Error fetching paginated edges: ${e.message}"
-            emptyList()
-        }
-    }
-
-    // --- CRUD Operations (Nodes/Edges/Schemas) ---
-
-    fun getSchemaDependencyCount(schemaId: Long): Long {
-        return try {
-            val nodeCount = dbService.database.appDatabaseQueries.countNodesForSchema(schemaId).executeAsOne()
-            val edgeCount = dbService.database.appDatabaseQueries.countEdgesForSchema(schemaId).executeAsOne()
-            nodeCount + edgeCount
-        } catch (e: Exception) {
-            _errorFlow.value = "Error checking schema dependencies: ${e.message}"
-            -1L
-        }
-    }
-
-    fun deleteSchema(schemaId: Long) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.deleteSchemaById(schemaId)
-                refreshAll()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error deleting schema: ${e.message}"
-            }
-        }
-    }
-
-    fun createNodeSchema(state: NodeSchemaCreationState) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.insertSchema(
-                    type = "NODE",
-                    name = state.tableName,
-                    properties_json = state.properties,
-                    roles_json = emptyList()
-                )
-                refreshSchema()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error creating node schema: ${e.message}"
-            }
-        }
-    }
-
-    fun createEdgeSchema(state: EdgeSchemaCreationState) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.insertSchema(
-                    type = "EDGE",
-                    name = state.tableName,
-                    properties_json = state.properties,
-                    roles_json = state.roles
-                )
-                refreshSchema()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error creating edge schema: ${e.message}"
-            }
-        }
-    }
-
-    fun updateNodeSchema(state: NodeSchemaEditState) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.updateSchema(
-                    id = state.originalSchema.id,
-                    name = state.currentName,
-                    properties_json = state.properties,
-                    roles_json = emptyList()
-                )
-                refreshSchema()
-                refreshNodes()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error updating node schema: ${e.message}"
-            }
-        }
-    }
-
-    fun updateEdgeSchema(state: EdgeSchemaEditState) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.updateSchema(
-                    id = state.originalSchema.id,
-                    name = state.currentName,
-                    properties_json = state.properties,
-                    roles_json = state.roles
-                )
-                refreshSchema()
-                refreshEdges()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error updating edge schema: ${e.message}"
-            }
-        }
-    }
-
-    fun createNode(state: NodeCreationState) {
-        repositoryScope.launch {
-            if (state.selectedSchema == null) return@launch
-            try {
-                val displayKey = state.selectedSchema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node"
-
-                dbService.database.appDatabaseQueries.insertNode(
-                    schema_id = state.selectedSchema.id,
-                    display_label = displayLabel,
-                    properties_json = state.properties,
-                    parent_id = null,
-                    is_collapsed = false
-                )
-                refreshNodes()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error creating node: ${e.message}"
-            }
-        }
-    }
-
-    fun createEdge(state: EdgeCreationState) {
-        repositoryScope.launch {
-            if (state.selectedSchema == null || state.participants.isEmpty()) return@launch
-
-            // Filter out any participants that haven't been selected yet
-            val validParticipants = state.participants.filter { it.node != null }
-            // Basic validation: ensure at least 2 participants (unless schema allows self-loops with 1 role?)
-            // New Flow Requirement: "edge must have at least 2 nodes"
-            if (validParticipants.size < 2) {
-                _errorFlow.value = "Edge must have at least 2 participants."
-                return@launch
-            }
-
-            try {
-                dbService.database.transaction {
-                    // 1. Insert the Edge (Entity)
-                    dbService.database.appDatabaseQueries.insertEdge(
-                        schema_id = state.selectedSchema.id,
-                        properties_json = state.properties
-                    )
-                    // 2. Get the new ID
-                    val edgeId = dbService.database.appDatabaseQueries.getLastInsertId().executeAsOne()
-
-                    // 3. Insert the Links dynamically (Participant -> Edge)
-                    validParticipants.forEach { selection ->
-                        dbService.database.appDatabaseQueries.insertEdgeLink(
-                            edge_id = edgeId,
-                            node_id = selection.node!!.id,
-                            role = selection.role
+            val schemaDefinitions = allSchemaDefs.map { sDef ->
+                val props = allAttrDefs
+                    .filter { it.schemaId == sDef.id }
+                    .map {
+                        SchemaProperty(
+                            id = it.id,
+                            name = it.name,
+                            type = try {
+                                CodexPropertyDataTypes.valueOf(it.dataType.name)
+                            } catch (e: Exception) {
+                                CodexPropertyDataTypes.TEXT
+                            },
+                            // In a real app, this flag would be in DB. We default first property to true.
+                            isDisplayProperty = false
                         )
                     }
-                }
-                refreshEdges()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error creating edge: ${e.message}"
+                    .mapIndexed { index, prop -> if (index == 0) prop.copy(isDisplayProperty = true) else prop }
+
+                val roles = allRoleDefs
+                    .filter { it.schemaId == sDef.id }
+                    .map {
+                        RoleDefinition(
+                            id = it.id,
+                            name = it.name,
+                            direction = it.direction,
+                            cardinality = it.cardinality
+                        )
+                    }
+
+                SchemaDefinition(
+                    id = sDef.id,
+                    name = sDef.name,
+                    isRelation = sDef.kind == SchemaKind.RELATION,
+                    properties = props,
+                    roles = roles
+                )
             }
+
+            _schema.value = SchemaData(
+                nodeSchemas = schemaDefinitions.filter { !it.isRelation },
+                edgeSchemas = schemaDefinitions.filter { it.isRelation }
+            )
+        } catch (e: Exception) {
+            _errorFlow.value = "Error loading schema: ${e.message}"
+            e.printStackTrace()
         }
     }
 
-    fun getNodeEditState(itemId: Long): NodeEditState? {
-        val dbNode = dbService.database.appDatabaseQueries.selectNodeById(itemId).executeAsOneOrNull() ?: return null
-        val schema = _schema.value?.nodeSchemas?.firstOrNull { it.id == dbNode.schema_id } ?: return null
-        return NodeEditState(id = dbNode.id, schema = schema, properties = dbNode.properties_json)
-    }
-
-    @OptIn(ExperimentalUuidApi::class)
-    fun getEdgeEditState(item: EdgeDisplayItem): EdgeEditState? {
-        val dbEdge = dbService.database.appDatabaseQueries.selectEdgeById(item.id).executeAsOneOrNull() ?: return null
-        val schema = _schema.value?.edgeSchemas?.firstOrNull { it.id == dbEdge.schema_id } ?: return null
-
-        // Reconstruct participant selections from the display item
-        val participants = item.participatingNodes.map { part ->
-            ParticipantSelection(
-                id = Uuid.random().toString(), // Generate new UI ID
-                role = part.role ?: "",
-                node = part.node
+    suspend fun refreshNodes() = withContext(Dispatchers.Default) {
+        // We use the full graph loader to ensure consistency
+        val graph = loadGraph()
+        val displayItems = graph.nodes.map { node ->
+            val primarySchema = node.schemas.firstOrNull()
+            NodeDisplayItem(
+                id = node.id,
+                label = primarySchema?.name ?: "Entity",
+                displayProperty = node.displayProperty,
+                schemaId = primarySchema?.id ?: 0L
             )
         }
-
-        return EdgeEditState(
-            id = dbEdge.id,
-            schema = schema,
-            participants = participants,
-            properties = dbEdge.properties_json
-        )
+        _nodeList.value = displayItems
     }
 
-    fun updateNode(state: NodeEditState) {
-        repositoryScope.launch {
-            try {
-                val displayKey = state.schema.properties.firstOrNull { it.isDisplayProperty }?.name
-                val displayLabel = state.properties[displayKey] ?: "Node ${state.id}"
+    suspend fun refreshEdges() = withContext(Dispatchers.Default) {
+        val graph = loadGraph()
+        val displayItems = graph.edges.map { edge ->
+            val primarySchema = edge.schemas.firstOrNull()
 
-                dbService.database.appDatabaseQueries.updateNodeProperties(
-                    id = state.id,
-                    display_label = displayLabel,
-                    properties_json = state.properties
-                )
-                val currentItem = _nodeList.value.find { it.id == state.id }
-                val updatedItem = NodeDisplayItem(
-                    id = state.id,
-                    label = state.schema.name,
-                    displayProperty = displayLabel,
-                    schemaId = state.schema.id,
-                    parentId = currentItem?.parentId,
-                    isCollapsed = currentItem?.isCollapsed ?: false
-                )
+            // Construct participant list for UI
+            val participants = mutableListOf<EdgeParticipant>()
 
-                _nodeList.update { currentList ->
-                    currentList.map { node -> if (node.id == updatedItem.id) updatedItem else node }
+            // Helper to find ANY entity (Node or Edge) by ID and wrap it as a NodeDisplayItem for UI compatibility
+            fun findParticipant(id: Long): NodeDisplayItem? {
+                graph.nodes.find { it.id == id }?.let {
+                    val pSchema = it.schemas.firstOrNull()
+                    return NodeDisplayItem(it.id, pSchema?.name ?: "Node", it.displayProperty, pSchema?.id ?: 0)
                 }
-            } catch (e: Exception) {
-                _errorFlow.value = "Error updating node: ${e.message}"
+                graph.edges.find { it.id == id }?.let {
+                    val pSchema = it.schemas.firstOrNull()
+                    return NodeDisplayItem(it.id, pSchema?.name ?: "Edge", it.label, pSchema?.id ?: 0)
+                }
+                return null
             }
+
+            findParticipant(edge.sourceId)?.let {
+                participants.add(EdgeParticipant(node = it, role = "Source"))
+            }
+            findParticipant(edge.targetId)?.let {
+                participants.add(EdgeParticipant(node = it, role = "Target"))
+            }
+
+            EdgeDisplayItem(
+                id = edge.id,
+                label = primarySchema?.name ?: "Relation",
+                properties = edge.properties.associate { it.definition.name to it.value.toString() },
+                participatingNodes = participants,
+                schemaId = primarySchema?.id ?: 0L
+            )
+        }
+        _edgeList.value = displayItems
+    }
+
+    /**
+     * Core function for Step 3.2.
+     * Fetches all entities, hydrations, and constructs the Graph model.
+     */
+    suspend fun loadGraph(): Graph = withContext(Dispatchers.Default) {
+        try {
+            // 1. Fetch All Entities (Hydrated)
+            val entities = dbService.getAllEntities()
+            val schemaData = _schema.value ?: return@withContext Graph(emptyList(), emptyList())
+            val allSchemas = schemaData.nodeSchemas + schemaData.edgeSchemas
+            val schemaMap = allSchemas.associateBy { it.id }
+
+            val nodes = mutableListOf<GraphNode>()
+            val edges = mutableListOf<GraphEdge>()
+
+            entities.forEach { entity ->
+                // Map DB Attributes back to Domain Schema Properties
+                // Note: Entity types in DB only have schema ID. We match them to loaded schemas.
+                val entitySchemas = entity.types.mapNotNull { schemaMap[it.id.toString()] }
+
+                val domainProperties = entity.attributes.mapNotNull { (attrId, value) ->
+                    // Find the definition across all schemas this entity implements
+                    val propDef = entitySchemas.flatMap { it.properties }.find { it.id == attrId }
+                    if (propDef != null) CodexProperty(propDef, value) else null
+                }
+
+                // Determine display text
+                val displayProp = domainProperties.find { it.definition.isDisplayProperty }?.value?.toString()
+                    ?: domainProperties.firstOrNull()?.value?.toString()
+                    ?: "ID:${entity.id}"
+
+                // Check if it's an Edge (Relation)
+                // In this system, an entity is an Edge if it has any outgoing links (meaning it acts as a relation)
+                // OR if its type is strictly defined as RELATION in Schema.
+                val isRelation = entity.isRelation
+
+                if (isRelation) {
+                    // It's an Edge
+                    // We need to determine Source and Target.
+                    // Simplified: We assume binary roles for now or pick first two links.
+                    // Step 3.1 says: "If it's a Relation, iterate through roles...".
+                    // The loaded `entity.outgoingLinks` contains LinkModel(relationId, playerId, roleId).
+
+                    val outgoing = entity.outgoingLinks
+                    if (outgoing.size >= 2) {
+                        // Very basic binary edge assumption for visualization
+                        // A more robust graph view would support Hyperedges (N-nary)
+                        val sourceLink = outgoing[0]
+                        val targetLink = outgoing[1]
+
+                        edges.add(GraphEdge(
+                            id = entity.id,
+                            schemas = entitySchemas,
+                            properties = domainProperties,
+                            sourceId = sourceLink.playerId,
+                            targetId = targetLink.playerId,
+                            strength = 1.0f,
+                            colorInfo = labelToColor(entitySchemas.firstOrNull()?.name ?: "Edge")
+                        ))
+                    }
+                } else {
+                    // It's a Node
+                    nodes.add(GraphNode(
+                        id = entity.id,
+                        schemas = entitySchemas,
+                        displayProperty = displayProp,
+                        pos = Offset.Zero, // Layout engine handles this
+                        vel = Offset.Zero,
+                        mass = 1.0f,
+                        radius = 20.0f,
+                        width = 40.0f,
+                        height = 40.0f,
+                        isCompound = false,
+                        colorInfo = labelToColor(entitySchemas.firstOrNull()?.name ?: "Node"),
+                        properties = domainProperties
+                    ))
+                }
+            }
+            return@withContext Graph(nodes, edges)
+
+        } catch (e: Exception) {
+            _errorFlow.value = "Error loading graph: ${e.message}"
+            e.printStackTrace()
+            return@withContext Graph(emptyList(), emptyList())
         }
     }
 
-    fun updateEdge(state: EdgeEditState) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.updateEdgeProperties(
-                    id = state.id,
-                    properties_json = state.properties
-                )
-                // Note: Participant editing is complex (requires deleting/re-inserting links).
-                // Skipping implementation for now as per prompt scope focusing on properties.
-                refreshEdges()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error updating edge: ${e.message}"
+    // ============================================================================================
+    // STEP 3.1: CREATE LOGIC
+    // ============================================================================================
+
+    suspend fun createNodeSchema(state: NodeSchemaCreationState) = withContext(Dispatchers.Default) {
+        try {
+            // Map UI State to DB Models
+            val attributes = state.properties.map {
+                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name))
             }
+            dbService.createSchema(state.tableName, SchemaKind.ENTITY, attributes)
+            refreshSchema()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to create Node Schema: ${e.message}"
         }
     }
 
-    fun deleteNode(itemId: Long) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.deleteNodeById(itemId)
-                _nodeList.update { it.filterNot { node -> node.id == itemId } }
-                refreshEdges()
-            } catch (e: Exception) {
-                _errorFlow.value = "Error deleting node: ${e.message}"
+    suspend fun createEdgeSchema(state: EdgeSchemaCreationState) = withContext(Dispatchers.Default) {
+        try {
+            val attributes = state.properties.map {
+                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name))
             }
+            val roles = state.roles.map {
+                RoleDefModel(0, 0, it.name, it.direction, it.cardinality)
+            }
+
+            // Note: UI models already use RelationCardinality, so simple map is enough.
+            dbService.createSchema(state.tableName, SchemaKind.RELATION, attributes, roles)
+            refreshSchema()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to create Edge Schema: ${e.message}"
         }
     }
 
-    fun deleteEdge(itemId: Long) {
-        repositoryScope.launch {
-            try {
-                dbService.database.appDatabaseQueries.deleteEdgeById(itemId)
-                _edgeList.update { it.filterNot { edge -> edge.id == itemId } }
-            } catch (e: Exception) {
-                _errorFlow.value = "Error deleting edge: ${e.message}"
+    suspend fun createNode(state: NodeCreationState) = withContext(Dispatchers.Default) {
+        try {
+            if (state.selectedSchemas.isEmpty()) throw Exception("No Schema Selected")
+            val schemaIds = state.selectedSchemas.map { it.id }
+
+            // Map string inputs to typed values based on definition
+            val attributes = mutableMapOf<Long, Any?>()
+            state.properties.forEach { (propName, propValue) ->
+                // Find the definition across all selected schemas
+                val def = state.selectedSchemas.flatMap { it.properties }.find { it.name == propName }
+                if (def != null) {
+                    val typedValue = parseValue(propValue, def.type)
+                    attributes[def.id] = typedValue
+                }
             }
+
+            dbService.createEntity(schemaIds, attributes)
+            refreshNodes()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to create Node: ${e.message}"
         }
+    }
+
+    suspend fun createEdge(state: EdgeCreationState) = withContext(Dispatchers.Default) {
+        try {
+            val schemaDef = state.selectedSchema ?: throw Exception("No Schema Selected")
+            val schemaId = schemaDef.id
+
+            // 1. Attributes
+            val attributes = mutableMapOf<Long, Any?>()
+            state.properties.forEach { (propName, propValue) ->
+                val def = schemaDef.properties.find { it.name == propName }
+                if (def != null) {
+                    val typedValue = parseValue(propValue, def.type)
+                    attributes[def.id] = typedValue
+                }
+            }
+
+            // 2. Links (Participants)
+            val links = mutableListOf<LinkModel>()
+            state.participants.forEach { part ->
+                // Find the RoleDefinition ID for this participant's role name
+                val roleDef = schemaDef.roles.find { it.name == part.role }
+                if (roleDef != null && part.node != null) {
+                    links.add(LinkModel(
+                        relationId = 0, // Will be set by DB upon insertion of parent entity
+                        playerId = part.node.id,
+                        roleId = roleDef.id
+                    ))
+                }
+            }
+
+            if (links.size < 2) throw Exception("Edges require at least 2 participants.")
+
+            dbService.createEntity(listOf(schemaId), attributes, links)
+            refreshEdges()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to create Edge: ${e.message}"
+        }
+    }
+
+    // --- Update / Delete Stubs (Basic implementation) ---
+
+    suspend fun deleteSchema(id: Long) = withContext(Dispatchers.Default) {
+        try {
+            dbService.deleteSchema(id)
+            refreshAll()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to delete schema: ${e.message}"
+        }
+    }
+
+    suspend fun deleteNode(id: Long) = withContext(Dispatchers.Default) {
+        dbService.deleteEntity(id)
+        refreshNodes()
+        refreshEdges() // Edges might be deleted cascade
+    }
+
+    suspend fun deleteEdge(id: Long) = withContext(Dispatchers.Default) {
+        dbService.deleteEntity(id)
+        refreshEdges()
+    }
+
+    suspend fun updateNode(state: NodeEditState) = withContext(Dispatchers.Default) {
+        try {
+            val attributes = mutableMapOf<Long, Any?>()
+            state.properties.forEach { (propName, propValue) ->
+                val def = state.schemas.flatMap { it.properties }.find { it.name == propName }
+                if (def != null) {
+                    attributes[def.id] = parseValue(propValue, def.type)
+                }
+            }
+            dbService.updateEntityAttributes(state.id, attributes)
+            refreshNodes()
+        } catch (e: Exception) {
+            _errorFlow.value = "Update failed: ${e.message}"
+        }
+    }
+
+    suspend fun updateEdge(state: EdgeEditState) = withContext(Dispatchers.Default) {
+        try {
+            val attributes = mutableMapOf<Long, Any?>()
+            state.properties.forEach { (propName, propValue) ->
+                val def = state.schema.properties.find { it.name == propName }
+                if (def != null) {
+                    attributes[def.id] = parseValue(propValue, def.type)
+                }
+            }
+            dbService.updateEntityAttributes(state.id, attributes)
+            refreshEdges()
+        } catch (e: Exception) {
+            _errorFlow.value = "Update failed: ${e.message}"
+        }
+    }
+
+    // Stub implementations for Schema Updates (Phase 3.1 focused on Create)
+    suspend fun updateNodeSchema(state: NodeSchemaEditState) { /* Requires Alter Table logic */ }
+    suspend fun updateEdgeSchema(state: EdgeSchemaEditState) { /* Requires Alter Table logic */ }
+    suspend fun getNodeEditState(id: Long): NodeEditState? {
+        // Hydrate node for editing
+        val graph = loadGraph()
+        val node = graph.nodes.find { it.id == id } ?: return null
+        val schemas = node.schemas
+        val props = node.properties.associate { it.definition.name to it.value.toString() }
+        return NodeEditState(id, schemas, props)
+    }
+
+    suspend fun getEdgeEditState(item: EdgeDisplayItem): EdgeEditState? {
+        val graph = loadGraph()
+        val edge = graph.edges.find { it.id == item.id } ?: return null
+        val schema = edge.schemas.firstOrNull() ?: return null
+        val props = edge.properties.associate { it.definition.name to it.value.toString() }
+
+        // Reconstruct participants
+        val participants = item.participatingNodes.map {
+            ParticipantSelection(id=it.node.id.toString(), role=it.role ?: "", node=it.node)
+        }
+
+        return EdgeEditState(item.id, schema, participants, props)
+    }
+
+    suspend fun setNodeCollapsed(id: Long, collapsed: Boolean) {} // Visual state only
+
+    suspend fun getSchemaDependencyCount(id: Long): Long {
+        // Query entity types for this schema
+        return 0L // TODO: Implement countEntitiesBySchema in DbService
+    }
+
+    suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> {
+        val all = _nodeList.value
+        if (offset >= all.size) return emptyList()
+        val end = (offset + limit).toInt().coerceAtMost(all.size)
+        return all.subList(offset.toInt(), end)
+    }
+
+    suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> {
+        val all = _edgeList.value
+        if (offset >= all.size) return emptyList()
+        val end = (offset + limit).toInt().coerceAtMost(all.size)
+        return all.subList(offset.toInt(), end)
+    }
+
+    // --- Helpers ---
+    private fun parseValue(value: String, type: CodexPropertyDataTypes): Any? {
+        return try {
+            when (type) {
+                CodexPropertyDataTypes.NUMBER -> value.toDouble()
+                CodexPropertyDataTypes.DATE -> value.toLongOrNull() ?: 0L
+                else -> value
+            }
+        } catch (e: Exception) { null }
     }
 }

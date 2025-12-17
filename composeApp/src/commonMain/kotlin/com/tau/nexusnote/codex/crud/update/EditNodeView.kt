@@ -21,7 +21,8 @@ fun EditNodeView(
     onCancel: () -> Unit
 ) {
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
-        CodexSectionHeader("Edit Node: ${state.schema.name}")
+        val schemaNames = state.schemas.joinToString(", ") { it.name }
+        CodexSectionHeader("Edit Node: $schemaNames")
 
         Text("Properties", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(vertical = 8.dp))
 
@@ -31,8 +32,9 @@ fun EditNodeView(
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Iterate over schema properties
-            state.schema.properties.forEach { schemaProperty ->
+            // Iterate over ALL schema properties
+            val allProperties = state.schemas.flatMap { it.properties }.distinctBy { it.name }
+            allProperties.forEach { schemaProperty ->
                 CodexPropertyInput(
                     property = schemaProperty,
                     currentValue = state.properties[schemaProperty.name] ?: "",
