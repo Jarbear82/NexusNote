@@ -105,21 +105,19 @@ actual class SqliteDbService {
 
 
     actual fun getAllRoleDefs(): List<RoleDefModel> {
+        val roles = database.appDatabaseQueries.selectAllRoleDefs().executeAsList()
+        val allAllowed = database.appDatabaseQueries.selectAllRoleAllowedSchemas().executeAsList()
+        val allowedMap = allAllowed.groupBy { it.role_id }
 
-        return database.appDatabaseQueries.selectAllRoleDefs().executeAsList().map { role ->
-
+        return roles.map { role ->
+            val allowedSchemas = allowedMap[role.id]?.map { it.allowed_schema_id } ?: emptyList()
             RoleDefModel(
-
                 role.id, role.schema_id, role.name,
-
                 RelationDirection.valueOf(role.direction),
-
-                RelationCardinality.valueOf(role.cardinality)
-
+                RelationCardinality.valueOf(role.cardinality),
+                allowedSchemas
             )
-
         }
-
     }
 
 
@@ -145,13 +143,13 @@ actual class SqliteDbService {
 
 
             if (kind == SchemaKind.RELATION) {
-
                 roles.forEach { role ->
-
                     database.appDatabaseQueries.insertRoleDef(schemaId, role.name, role.direction.name, role.cardinality.name)
-
+                    val roleId = database.appDatabaseQueries.lastInsertRowId().executeAsOne()
+                    role.allowedNodeSchemas.forEach { allowedId ->
+                        database.appDatabaseQueries.insertRoleAllowedSchema(roleId, allowedId)
+                    }
                 }
-
             }
 
         }
@@ -212,31 +210,21 @@ actual class SqliteDbService {
 
 
 
-                        roles.forEach { role ->
+            roles.forEach { role ->
+                val roleId: Long
+                if (role.id == 0L) {
+                    database.appDatabaseQueries.insertRoleDef(id, role.name, role.direction.name, role.cardinality.name)
+                    roleId = database.appDatabaseQueries.lastInsertRowId().executeAsOne()
+                } else {
+                    database.appDatabaseQueries.updateRoleDef(role.name, role.direction.name, role.cardinality.name, role.id)
+                    roleId = role.id
+                }
 
-
-
-                            if (role.id == 0L) {
-
-
-
-                                database.appDatabaseQueries.insertRoleDef(id, role.name, role.direction.name, role.cardinality.name)
-
-
-
-                            } else {
-
-
-
-                                database.appDatabaseQueries.updateRoleDef(role.name, role.direction.name, role.cardinality.name, role.id)
-
-
-
-                            }
-
-
-
-                        }
+                database.appDatabaseQueries.deleteAllowedSchemasForRole(roleId)
+                role.allowedNodeSchemas.forEach { allowedId ->
+                    database.appDatabaseQueries.insertRoleAllowedSchema(roleId, allowedId)
+                }
+            }
 
 
 

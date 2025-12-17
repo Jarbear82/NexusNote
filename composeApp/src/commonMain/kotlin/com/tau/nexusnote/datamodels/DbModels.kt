@@ -58,7 +58,8 @@ data class RoleDefModel(
     val schemaId: Long,
     val name: String,
     val direction: RelationDirection,
-    val cardinality: RelationCardinality
+    val cardinality: RelationCardinality,
+    val allowedNodeSchemas: List<Long> = emptyList()
 )
 
 /**

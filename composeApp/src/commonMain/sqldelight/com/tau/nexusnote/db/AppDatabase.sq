@@ -28,6 +28,16 @@ CREATE TABLE RoleDef (
     UNIQUE(schema_id, name)
 );
 
+-- Defines allowed Node Schemas for a specific Role.
+-- If no rows exist for a role_id, any Node Schema is allowed (logic handled in app).
+CREATE TABLE RoleAllowedSchema (
+    role_id INTEGER NOT NULL,
+    allowed_schema_id INTEGER NOT NULL,
+    PRIMARY KEY(role_id, allowed_schema_id),
+    FOREIGN KEY(role_id) REFERENCES RoleDef(id) ON DELETE CASCADE,
+    FOREIGN KEY(allowed_schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE
+);
+
 -- DATA: Graph Instances --
 
 -- Base table for both Nodes and Edges (Relations)
@@ -138,6 +148,19 @@ UPDATE RoleDef SET name = ? WHERE id = ?;
 
 deleteRoleDef:
 DELETE FROM RoleDef WHERE id = ?;
+
+-- RoleAllowedSchema Queries --
+selectAllRoleAllowedSchemas:
+SELECT * FROM RoleAllowedSchema;
+
+selectAllowedSchemasForRole:
+SELECT allowed_schema_id FROM RoleAllowedSchema WHERE role_id = ?;
+
+insertRoleAllowedSchema:
+INSERT INTO RoleAllowedSchema(role_id, allowed_schema_id) VALUES (?, ?);
+
+deleteAllowedSchemasForRole:
+DELETE FROM RoleAllowedSchema WHERE role_id = ?;
 
 -- Entity Queries --
 selectAllEntities:
