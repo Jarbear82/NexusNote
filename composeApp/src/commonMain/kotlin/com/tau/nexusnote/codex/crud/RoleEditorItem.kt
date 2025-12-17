@@ -22,10 +22,12 @@ import com.tau.nexusnote.utils.toCamelCase
  * A dedicated editor component for a single Relation Role.
  * Allows setting Name, Direction (Source/Target), Cardinality, and Node Schema linkage.
  */
+import com.tau.nexusnote.datamodels.SchemaDefinition
+
 @Composable
 fun RoleEditorItem(
     role: RoleDefinition,
-    allNodeSchemas: List<String>,
+    allNodeSchemas: List<SchemaDefinition>,
     onUpdate: (RoleDefinition) -> Unit,
     onDelete: () -> Unit,
     error: String? = null
@@ -59,7 +61,7 @@ fun RoleEditorItem(
 
                 Spacer(Modifier.width(8.dp))
 
-                // Direction Toggle (Source vs Target)
+                // Direction Toggle
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Direction", style = MaterialTheme.typography.labelSmall)
                     Row(
@@ -72,7 +74,7 @@ fun RoleEditorItem(
                             FilterChip(
                                 selected = selected,
                                 onClick = { onUpdate(role.copy(direction = direction)) },
-                                label = { Text(direction.name, style = MaterialTheme.typography.labelSmall) },
+                                label = { Text(direction.name.take(1), style = MaterialTheme.typography.labelSmall) },
                                 modifier = Modifier.padding(horizontal = 2.dp)
                             )
                         }
@@ -90,30 +92,47 @@ fun RoleEditorItem(
 
             Spacer(Modifier.height(12.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Node Schema Linkage
-                Box(modifier = Modifier.weight(1.5f)) {
-                    CodexDropdown(
-                        label = "Links to Node Type",
-                        options = allNodeSchemas,
-                        selectedOption = role.targetSchemaName ?: "",
-                        onOptionSelected = { onUpdate(role.copy(targetSchemaName = it)) },
-                        optionToString = { it.ifBlank { "Select Node Type..." } }
+            // Node Schema Linkage (Multi-select)
+            Text("Allowed Node Types:", style = MaterialTheme.typography.labelSmall)
+            
+            // Chips for selected
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                role.allowedNodeSchemas.forEach { schemaId ->
+                    val schemaName = allNodeSchemas.find { it.id == schemaId }?.name ?: "Unknown($schemaId)"
+                    InputChip(
+                        selected = true,
+                        onClick = { onUpdate(role.copy(allowedNodeSchemas = role.allowedNodeSchemas - schemaId)) },
+                        label = { Text(schemaName) },
+                        trailingIcon = { Icon(Icons.Default.Delete, null, modifier = Modifier.size(14.dp)) }
                     )
                 }
+            }
 
-                Spacer(Modifier.width(8.dp))
-
-                // Cardinality Selection
-                Box(modifier = Modifier.weight(1f)) {
+            // Dropdown to add
+            val availableSchemas = allNodeSchemas.filter { !role.allowedNodeSchemas.contains(it.id) }
+            if (availableSchemas.isNotEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth()) {
                     CodexDropdown(
-                        label = "Cardinality",
-                        options = RelationCardinality.entries,
-                        selectedOption = role.cardinality,
-                        onOptionSelected = { onUpdate(role.copy(cardinality = it)) },
-                        optionToString = { it.name.lowercase().replaceFirstChar { c -> c.uppercase() } }
+                        label = "Add Allowed Type",
+                        options = availableSchemas,
+                        selectedOption = null,
+                        onOptionSelected = { onUpdate(role.copy(allowedNodeSchemas = role.allowedNodeSchemas + it.id)) },
+                        displayTransform = { it.name }
                     )
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Cardinality
+            Box(modifier = Modifier.fillMaxWidth()) {
+                CodexDropdown(
+                    label = "Cardinality",
+                    options = RelationCardinality.entries,
+                    selectedOption = role.cardinality,
+                    onOptionSelected = { onUpdate(role.copy(cardinality = it)) },
+                    displayTransform = { it.name.lowercase().replaceFirstChar { c -> c.uppercase() } }
+                )
             }
 
             if (error != null) {

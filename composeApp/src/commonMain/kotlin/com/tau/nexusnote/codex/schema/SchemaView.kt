@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.tau.nexusnote.datamodels.SchemaData
 import com.tau.nexusnote.ui.components.SearchableListHeader
 import com.tau.nexusnote.datamodels.SchemaDefinition
 import com.tau.nexusnote.utils.labelToColor
@@ -53,8 +54,8 @@ fun SchemaView(
     onNodeSchemaSearchChange: (String) -> Unit,
     edgeSchemaSearchText: String,
     onEdgeSchemaSearchChange: (String) -> Unit,
-    schemaVisibility: Map<String, Boolean>,
-    onToggleSchemaVisibility: (String) -> Unit
+    schemaVisibility: Map<Long, Boolean>,
+    onToggleSchemaVisibility: (Long) -> Unit
 ) {
     if (schema == null) {
         Text("Schema not loaded.")
@@ -225,8 +226,8 @@ private fun CodexListItem(
 private fun NodeSchemaActions(
     table: SchemaDefinition,
     fontColor: Color,
-    schemaVisibility: Map<String, Boolean>,
-    onToggleSchemaVisibility: (String) -> Unit,
+    schemaVisibility: Map<Long, Boolean>,
+    onToggleSchemaVisibility: (Long) -> Unit,
     onAddNodeClick: (SchemaDefinition) -> Unit,
     onEditNodeClick: (SchemaDefinition) -> Unit,
     onDeleteNodeClick: (SchemaDefinition) -> Unit
@@ -271,8 +272,8 @@ private fun NodeSchemaActions(
 private fun EdgeSchemaActions(
     table: SchemaDefinition,
     fontColor: Color,
-    schemaVisibility: Map<String, Boolean>,
-    onToggleSchemaVisibility: (String) -> Unit,
+    schemaVisibility: Map<Long, Boolean>,
+    onToggleSchemaVisibility: (Long) -> Unit,
     onEditEdgeClick: (SchemaDefinition) -> Unit,
     onDeleteEdgeClick: (SchemaDefinition) -> Unit,
     onAddEdgeClick: (SchemaDefinition) -> Unit

@@ -118,8 +118,8 @@ class GraphViewmodel(
                 // In a real app, we'd look them up from repository.schema.
                 // Here we create placeholders or fetch properly.
                 val currentSchemaData = repository.schema.value
-                val nodeSchemaMap = currentSchemaData?.nodeSchemas?.associateBy { it.id.toLongOrNull() ?: -1L } ?: emptyMap()
-                val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id.toLongOrNull() ?: -1L } ?: emptyMap()
+                val nodeSchemaMap = currentSchemaData?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
+                val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
 
                 val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
                 val activeIds = mutableSetOf<String>()

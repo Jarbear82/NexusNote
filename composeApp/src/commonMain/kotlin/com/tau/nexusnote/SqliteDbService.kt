@@ -8,7 +8,7 @@ import com.tau.nexusnote.datamodels.SchemaDefModel
 import com.tau.nexusnote.datamodels.SchemaKind
 import com.tau.nexusnote.db.AppDatabase
 
-expect class SqliteDbService {
+expect class SqliteDbService() {
     // We don't expose the database directly to common code to enforce the abstraction
     // constructor(db: AppDatabase)
 
@@ -20,6 +20,7 @@ expect class SqliteDbService {
     fun getAllAttributeDefs(): List<AttributeDefModel>
     fun getAllRoleDefs(): List<RoleDefModel>
     fun createSchema(name: String, kind: SchemaKind, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList()): Long
+    fun updateSchema(id: Long, name: String, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList())
     fun deleteSchema(id: Long)
 
     // --- Entities (Nodes & Edges) ---

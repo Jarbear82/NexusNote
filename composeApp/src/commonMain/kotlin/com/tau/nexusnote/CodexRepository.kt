@@ -57,16 +57,15 @@ class CodexRepository(
             val schemaDefinitions = allSchemaDefs.map { sDef ->
                 val props = allAttrDefs
                     .filter { it.schemaId == sDef.id }
-                    .map {
+                    .map { attr ->
                         SchemaProperty(
-                            id = it.id,
-                            name = it.name,
+                            id = attr.id,
+                            name = attr.name,
                             type = try {
-                                CodexPropertyDataTypes.valueOf(it.dataType.name)
+                                CodexPropertyDataTypes.valueOf(attr.dataType.name)
                             } catch (e: Exception) {
                                 CodexPropertyDataTypes.TEXT
                             },
-                            // In a real app, this flag would be in DB. We default first property to true.
                             isDisplayProperty = false
                         )
                     }
@@ -74,12 +73,12 @@ class CodexRepository(
 
                 val roles = allRoleDefs
                     .filter { it.schemaId == sDef.id }
-                    .map {
+                    .map { role ->
                         RoleDefinition(
-                            id = it.id,
-                            name = it.name,
-                            direction = it.direction,
-                            cardinality = it.cardinality
+                            id = role.id,
+                            name = role.name,
+                            direction = role.direction,
+                            cardinality = role.cardinality
                         )
                     }
 
@@ -174,7 +173,7 @@ class CodexRepository(
             entities.forEach { entity ->
                 // Map DB Attributes back to Domain Schema Properties
                 // Note: Entity types in DB only have schema ID. We match them to loaded schemas.
-                val entitySchemas = entity.types.mapNotNull { schemaMap[it.id.toString()] }
+                val entitySchemas = entity.types.mapNotNull { schemaMap[it.id] }
 
                 val domainProperties = entity.attributes.mapNotNull { (attrId, value) ->
                     // Find the definition across all schemas this entity implements
@@ -392,9 +391,34 @@ class CodexRepository(
         }
     }
 
-    // Stub implementations for Schema Updates (Phase 3.1 focused on Create)
-    suspend fun updateNodeSchema(state: NodeSchemaEditState) { /* Requires Alter Table logic */ }
-    suspend fun updateEdgeSchema(state: EdgeSchemaEditState) { /* Requires Alter Table logic */ }
+    suspend fun updateNodeSchema(state: NodeSchemaEditState) = withContext(Dispatchers.Default) {
+        try {
+            val attributes = state.properties.map {
+                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name))
+            }
+            dbService.updateSchema(state.originalSchema.id, state.currentName, attributes)
+            refreshSchema()
+            refreshNodes()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to update Node Schema: ${e.message}"
+        }
+    }
+
+    suspend fun updateEdgeSchema(state: EdgeSchemaEditState) = withContext(Dispatchers.Default) {
+        try {
+            val attributes = state.properties.map {
+                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name))
+            }
+            val roles = state.roles.map {
+                RoleDefModel(it.id, state.originalSchema.id, it.name, it.direction, it.cardinality)
+            }
+            dbService.updateSchema(state.originalSchema.id, state.currentName, attributes, roles)
+            refreshSchema()
+            refreshEdges()
+        } catch (e: Exception) {
+            _errorFlow.value = "Failed to update Edge Schema: ${e.message}"
+        }
+    }
     suspend fun getNodeEditState(id: Long): NodeEditState? {
         // Hydrate node for editing
         val graph = loadGraph()

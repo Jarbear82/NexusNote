@@ -130,5 +130,3 @@ This is the heaviest coding phase. You need to rewrite the logic that talks to S
 * **Verify:** Open a Node that uses that schema. The input label should instantly update to the new name, with the value preserved, because the underlying link used IDs, not the string name.
 
 End Implementation plan.
-
-Prompt: This codebase is partially refactored. Your job is to finish refactoring according to the implementation plan

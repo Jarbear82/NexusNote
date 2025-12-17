@@ -111,6 +111,9 @@ SELECT * FROM AttributeDef WHERE schema_id = ?;
 insertAttributeDef:
 INSERT INTO AttributeDef(schema_id, name, data_type) VALUES (?, ?, ?);
 
+updateAttributeDef:
+UPDATE AttributeDef SET name = ?, data_type = ? WHERE id = ?;
+
 updateAttributeDefName:
 UPDATE AttributeDef SET name = ? WHERE id = ?;
 
@@ -126,6 +129,9 @@ SELECT * FROM RoleDef WHERE schema_id = ?;
 
 insertRoleDef:
 INSERT INTO RoleDef(schema_id, name, direction, cardinality) VALUES (?, ?, ?, ?);
+
+updateRoleDef:
+UPDATE RoleDef SET name = ?, direction = ?, cardinality = ? WHERE id = ?;
 
 updateRoleDefName:
 UPDATE RoleDef SET name = ? WHERE id = ?;

@@ -54,3 +54,19 @@ data class CodexProperty(
     val definition: SchemaProperty,
     val value: Any?
 )
+
+/**
+ * Represents an on-disk codex database.
+ */
+data class CodexItem(
+    val name: String,
+    val path: String
+)
+
+/**
+ * Wrapper for schema grouping.
+ */
+data class SchemaData(
+    val nodeSchemas: List<SchemaDefinition>,
+    val edgeSchemas: List<SchemaDefinition>
+)

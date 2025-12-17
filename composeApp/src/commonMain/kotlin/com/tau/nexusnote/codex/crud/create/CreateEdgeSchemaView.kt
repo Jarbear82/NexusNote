@@ -36,10 +36,8 @@ fun CreateEdgeSchemaView(
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
 
-    // Validation: Require at least one Source and one Target
-    val hasSource = state.roles.any { it.direction == RelationDirection.SOURCE }
-    val hasTarget = state.roles.any { it.direction == RelationDirection.TARGET }
-    val isValid = state.tableName.isNotBlank() && state.roles.size >= 2 && hasSource && hasTarget && state.tableNameError == null
+    // Validation: Require at least 2 participants (Roles)
+    val isValid = state.tableName.isNotBlank() && state.roles.size >= 2 && state.tableNameError == null
 
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
         CodexSectionHeader("Create Relation Schema")
@@ -57,13 +55,13 @@ fun CreateEdgeSchemaView(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Roles", style = MaterialTheme.typography.titleMedium)
-            Text("Every relation must have at least one 'Source' and one 'Target' role.", style = MaterialTheme.typography.bodySmall)
+            Text("Every relation must have at least 2 participants (Roles).", style = MaterialTheme.typography.bodySmall)
             Spacer(modifier = Modifier.height(8.dp))
 
             state.roles.forEachIndexed { index, role ->
                 RoleEditorItem(
                     role = role,
-                    allNodeSchemas = state.allNodeSchemas.map { it.name },
+                    allNodeSchemas = state.allNodeSchemas,
                     onUpdate = { onRoleChange(index, it) },
                     onDelete = { onRemoveRole(index) },
                     error = state.roleErrors[index]

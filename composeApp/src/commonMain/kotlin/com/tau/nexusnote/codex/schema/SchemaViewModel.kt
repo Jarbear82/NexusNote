@@ -2,17 +2,10 @@ package com.tau.nexusnote.codex.schema
 
 import com.tau.nexusnote.CodexRepository
 import com.tau.nexusnote.datamodels.SchemaDefinition
+import com.tau.nexusnote.datamodels.SchemaData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-
-/**
- * UI-specific wrapper for schema grouping.
- */
-data class SchemaData(
-    val nodeSchemas: List<SchemaDefinition>,
-    val relationSchemas: List<SchemaDefinition>
-)
 
 /**
  * Manages the state for the Schema visualization and management screens.
@@ -26,7 +19,7 @@ class SchemaViewModel(
         data?.let {
             SchemaData(
                 nodeSchemas = it.nodeSchemas,
-                relationSchemas = it.edgeSchemas // Relation schemas
+                edgeSchemas = it.edgeSchemas // Relation schemas
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)

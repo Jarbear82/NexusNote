@@ -185,13 +185,15 @@ class MetadataViewModel(
     }
 
     fun deleteDisplayItem(item: Any) {
-        // Delegate to repository
-        when (item) {
-            is NodeDisplayItem -> repository.deleteNode(item.id)
-            is EdgeDisplayItem -> repository.deleteEdge(item.id)
+        viewModelScope.launch {
+            // Delegate to repository
+            when (item) {
+                is NodeDisplayItem -> repository.deleteNode(item.id)
+                is EdgeDisplayItem -> repository.deleteEdge(item.id)
+            }
+            // Deletion will cause a mismatch, refresh the lists
+            refreshPaginatedLists()
         }
-        // Deletion will cause a mismatch, refresh the lists
-        refreshPaginatedLists()
     }
 
     fun clearSelectedItem() {
