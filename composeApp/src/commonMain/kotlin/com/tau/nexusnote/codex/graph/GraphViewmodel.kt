@@ -285,74 +285,95 @@ class GraphViewmodel(
     private fun updateGraphConstraints(constraints: List<LayoutConstraintItem>) { /* ... */ }
 
     private fun pushUiUpdate() {
-        // Reconstruct GraphNode from FcNode + Data
+        println("GraphViewModel: Pushing UI Update. FcGraph Nodes: ${_fcGraph.nodes.size}")
+        
+        val currentNodes = _graphNodes.value
+        // Reconstruct GraphNode from FcNode + Data, reusing existing instances to preserve State
         val newMap = _fcGraph.nodes.associate { fcNode ->
             val id = fcNode.id.toLongOrNull() ?: 0L
+            val existingNode = currentNodes[id]
+            val (cx, cy) = fcNode.getCenter()
 
-            val uiNode = when (val data = fcNode.data) {
-                is NodeDisplayItem -> {
-                    val label = data.label
-                    val dummySchema = SchemaDefinition(id = data.schemaId, name = label, isRelation = false, properties = emptyList())
-                    GraphNode(
-                        id = id,
-                        schemas = listOf(dummySchema),
-                        displayProperty = data.displayProperty,
-                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
-                        vel = Offset.Zero,
-                        mass = 1.0f,
-                        radius = (fcNode.width / 2.0).toFloat(),
+            val finalNode = if (existingNode != null) {
+                // Update MutableState
+                existingNode.pos = Offset(cx.toFloat(), cy.toFloat())
+                existingNode.isFixed = fcNode.isFixed
+                
+                // Handle immutable properties via copy if changed
+                if (existingNode.width != fcNode.width.toFloat() || existingNode.height != fcNode.height.toFloat()) {
+                    existingNode.copy(
                         width = fcNode.width.toFloat(),
-                        height = fcNode.height.toFloat(),
-                        isCompound = fcNode.isCompound(),
-                        isHyperNode = false,
-                        colorInfo = labelToColor(label),
-                        isFixed = fcNode.isFixed,
-                        properties = emptyList()
+                        height = fcNode.height.toFloat()
                     )
+                } else {
+                    existingNode
                 }
-                is EdgeDisplayItem -> {
-                    val label = data.label
-                    val dummySchema = SchemaDefinition(id = data.schemaId, name = label, isRelation = true, properties = emptyList())
-                    GraphNode(
-                        id = id,
-                        schemas = listOf(dummySchema),
-                        displayProperty = label,
-                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
-                        vel = Offset.Zero,
-                        mass = 1.0f,
-                        radius = (fcNode.width / 3.0).toFloat(),
-                        width = (fcNode.width * 0.8f).toFloat(),
-                        height = (fcNode.height * 0.8f).toFloat(),
-                        isCompound = false,
-                        isHyperNode = true,
-                        colorInfo = labelToColor(label),
-                        isFixed = fcNode.isFixed,
-                        properties = emptyList()
-                    )
-                }
-                else -> {
-                    // Fallback for unknown types
-                    val label = "Unknown"
-                    val dummySchema = SchemaDefinition(id = 0L, name = label, isRelation = false, properties = emptyList())
-                    GraphNode(
-                        id = id,
-                        schemas = listOf(dummySchema),
-                        displayProperty = label,
-                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
-                        vel = Offset.Zero,
-                        mass = 1.0f,
-                        radius = (fcNode.width / 2.0).toFloat(),
-                        width = fcNode.width.toFloat(),
-                        height = fcNode.height.toFloat(),
-                        isCompound = fcNode.isCompound(),
-                        isHyperNode = false,
-                        colorInfo = labelToColor(label),
-                        isFixed = fcNode.isFixed,
-                        properties = emptyList()
-                    )
+            } else {
+                when (val data = fcNode.data) {
+                    is NodeDisplayItem -> {
+                        val label = data.label
+                        val dummySchema = SchemaDefinition(id = data.schemaId, name = label, isRelation = false, properties = emptyList())
+                        GraphNode(
+                            id = id,
+                            schemas = listOf(dummySchema),
+                            displayProperty = data.displayProperty,
+                            initialPos = Offset(cx.toFloat(), cy.toFloat()),
+                            vel = Offset.Zero,
+                            mass = 1.0f,
+                            radius = (fcNode.width / 2.0).toFloat(),
+                            width = fcNode.width.toFloat(),
+                            height = fcNode.height.toFloat(),
+                            isCompound = fcNode.isCompound(),
+                            isHyperNode = false,
+                            colorInfo = labelToColor(label),
+                            isFixed = fcNode.isFixed,
+                            properties = emptyList()
+                        )
+                    }
+                    is EdgeDisplayItem -> {
+                        val label = data.label
+                        val dummySchema = SchemaDefinition(id = data.schemaId, name = label, isRelation = true, properties = emptyList())
+                        GraphNode(
+                            id = id,
+                            schemas = listOf(dummySchema),
+                            displayProperty = label,
+                            initialPos = Offset(cx.toFloat(), cy.toFloat()),
+                            vel = Offset.Zero,
+                            mass = 1.0f,
+                            radius = (fcNode.width / 3.0).toFloat(),
+                            width = (fcNode.width * 0.8f).toFloat(),
+                            height = (fcNode.height * 0.8f).toFloat(),
+                            isCompound = false,
+                            isHyperNode = true,
+                            colorInfo = labelToColor(label),
+                            isFixed = fcNode.isFixed,
+                            properties = emptyList()
+                        )
+                    }
+                    else -> {
+                        // Fallback for unknown types
+                        val label = "Unknown"
+                        val dummySchema = SchemaDefinition(id = 0L, name = label, isRelation = false, properties = emptyList())
+                        GraphNode(
+                            id = id,
+                            schemas = listOf(dummySchema),
+                            displayProperty = label,
+                            initialPos = Offset(cx.toFloat(), cy.toFloat()),
+                            vel = Offset.Zero,
+                            mass = 1.0f,
+                            radius = (fcNode.width / 2.0).toFloat(),
+                            width = fcNode.width.toFloat(),
+                            height = fcNode.height.toFloat(),
+                            isCompound = fcNode.isCompound(),
+                            isHyperNode = false,
+                            colorInfo = labelToColor(label),
+                            isFixed = fcNode.isFixed,
+                            properties = emptyList()
+                        )
+                    }
                 }
             }
-            id to uiNode
+            id to finalNode
         }
         _graphNodes.value = newMap
     }
@@ -365,16 +386,141 @@ class GraphViewmodel(
         }
     }
 
-    // ... (runDetangle, gesture handlers, etc. - no structural changes needed here)
-    fun runDetangle(algorithm: DetangleAlgorithm, params: Map<String, Any>) { /* ... */ }
-    fun runFullFcosePipeline() { /* ... */ }
-    fun runRandomize() { /* ... */ }
-    fun runDraft() { /* ... */ }
-    fun runTransform() { /* ... */ }
-    fun runEnforce() { /* ... */ }
-    fun runPolishing() { /* ... */ }
-    fun addConstraint(type: ConstraintUiType, nodeIds: List<Long>) { /* ... */ }
-    fun groupSelectedNodes(nodeIds: List<Long>) { /* ... */ }
+    // --- Detangle & Pipeline Implementation ---
+
+    fun runDetangle(algorithm: DetangleAlgorithm, params: Map<String, Any>) {
+        if (_isDetangling.value) return
+        
+        viewModelScope.launch {
+            _isDetangling.value = true
+            _selectedDetangler.value = algorithm
+            
+            try {
+                when (algorithm) {
+                    DetangleAlgorithm.FCOSE -> {
+                         runFullFcosePipelineInternal() 
+                    }
+                    DetangleAlgorithm.FRUCHTERMAN_REINGOLD -> {
+                        DetangleEngine.runFRLayout(_graphNodes.value, _graphEdges.value, params)
+                            .collect { updatedNodes ->
+                                graphMutex.withLock {
+                                    syncFcGraphFromUi(updatedNodes)
+                                    _graphNodes.value = updatedNodes
+                                }
+                            }
+                    }
+                    DetangleAlgorithm.KAMADA_KAWAI -> {
+                         DetangleEngine.runKKLayout(_graphNodes.value, _graphEdges.value, params)
+                            .collect { updatedNodes ->
+                                graphMutex.withLock {
+                                    syncFcGraphFromUi(updatedNodes)
+                                    _graphNodes.value = updatedNodes
+                                }
+                            }
+                    }
+                    else -> { /* No op */ }
+                }
+            } finally {
+                _isDetangling.value = false
+                // Enable continuous physics for settling after detangle
+                startSimulation()
+            }
+        }
+    }
+
+    fun runFullFcosePipeline() {
+        viewModelScope.launch {
+            if (_isDetangling.value) return@launch
+            _isDetangling.value = true
+            try {
+                runFullFcosePipelineInternal()
+            } finally {
+                _isDetangling.value = false
+                startSimulation()
+            }
+        }
+    }
+
+    private suspend fun runFullFcosePipelineInternal() {
+        // 1. Randomize
+        graphMutex.withLock {
+            layoutEngine.randomize(_fcGraph)
+            pushUiUpdate()
+        }
+        delay(50)
+
+        // 2. Draft (Spectral)
+        graphMutex.withLock {
+            layoutEngine.runDraft(_fcGraph, _layoutConfig.value)
+            pushUiUpdate()
+        }
+        
+        // 3. Transform (Geometric)
+        layoutEngine.runTransform(_fcGraph)
+        graphMutex.withLock { pushUiUpdate() }
+        
+        // 4. Enforce (Constraints)
+        layoutEngine.runEnforce(_fcGraph)
+        graphMutex.withLock { pushUiUpdate() }
+        
+        // 5. Polish (Force-Directed)
+        graphMutex.withLock {
+            layoutEngine.runPolishing(_fcGraph, _layoutConfig.value)
+            pushUiUpdate()
+        }
+    }
+
+    fun runRandomize() { 
+        viewModelScope.launch { 
+            graphMutex.withLock { 
+                layoutEngine.randomize(_fcGraph)
+                pushUiUpdate()
+            } 
+        } 
+    }
+    
+    fun runDraft() { 
+        viewModelScope.launch { 
+            graphMutex.withLock { 
+                layoutEngine.runDraft(_fcGraph, _layoutConfig.value)
+                pushUiUpdate()
+            } 
+        } 
+    }
+    
+    fun runTransform() { 
+        viewModelScope.launch { 
+            layoutEngine.runTransform(_fcGraph)
+            graphMutex.withLock { pushUiUpdate() }
+        } 
+    }
+    
+    fun runEnforce() { 
+        viewModelScope.launch { 
+            layoutEngine.runEnforce(_fcGraph)
+            graphMutex.withLock { pushUiUpdate() }
+        } 
+    }
+    
+    fun runPolishing() { 
+        viewModelScope.launch { 
+            graphMutex.withLock { 
+                layoutEngine.runPolishing(_fcGraph, _layoutConfig.value)
+                pushUiUpdate() 
+            }
+            startSimulation() // Usually users want to settle after polish
+        } 
+    }
+    
+    fun addConstraint(type: ConstraintUiType, nodeIds: List<Long>) { 
+        // TODO: Implement constraint persistence via repository
+        println("Add constraint: $type for $nodeIds") 
+    }
+    
+    fun groupSelectedNodes(nodeIds: List<Long>) { 
+        // TODO: Implement grouping logic
+         println("Group nodes: $nodeIds")
+    }
     fun updateLayoutConfig(config: LayoutConfig) { _layoutConfig.value = config }
     fun updatePhysicsOptions(options: PhysicsOptions) { _physicsOptions.value = options; wakeSimulation() }
     fun updateRenderingSettings(settings: GraphRenderingSettings) { 
