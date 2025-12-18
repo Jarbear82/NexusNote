@@ -97,8 +97,7 @@ class GraphViewmodel(
                         _isSimulationPaused.value = true
                     }
 
-                    // Trigger UI update with a shallow copy of the map
-                    _graphNodes.value = nodes.toMap()
+                    // Map is no longer re-emitted; GraphNode.pos is MutableState
                     
                     if (graphMutex.tryLock()) {
                         try { syncFcGraphFromUi(nodes) } finally { graphMutex.unlock() }
@@ -118,162 +117,164 @@ class GraphViewmodel(
     // Ideally, we should pull full GraphNodes from repository, but sticking to existing flow:
     fun updateGraphData(nodeList: List<NodeDisplayItem>, edgeList: List<EdgeDisplayItem>) {
         viewModelScope.launch {
-            graphMutex.withLock {
-                // We need schema definitions to build GraphNode/Edge.
-                val currentSchemaData = repository.schema.value
-                val nodeSchemaMap = currentSchemaData?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
-                val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
+            withContext(Dispatchers.Default) {
+                graphMutex.withLock {
+                    // We need schema definitions to build GraphNode/Edge.
+                    val currentSchemaData = repository.schema.value
+                    val nodeSchemaMap = currentSchemaData?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
+                    val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
 
-                val showAttributes = _renderingSettings.value.showAttributesAsNodes
+                    val showAttributes = _renderingSettings.value.showAttributesAsNodes
 
-                // --- Generate Virtual Elements ---
-                val effectiveNodes = nodeList.toMutableList()
-                val virtualEdges = mutableListOf<EdgeDisplayItem>() // Reuse DisplayItem for ease
-                
-                if (showAttributes) {
-                    nodeList.forEach { item ->
-                        val schema = nodeSchemaMap[item.schemaId]
-                        if (schema != null) {
-                            item.properties.forEach { (key, value) ->
-                                val propDef = schema.properties.find { it.name == key }
-                                if (propDef != null) {
-                                    if (propDef.type == CodexPropertyDataTypes.REFERENCE) {
-                                        // REFERENCE: Edge to existing Node
-                                        val targetId = value.toLongOrNull()
-                                        if (targetId != null) {
-                                            // Check if target is in the current graph (optional, but safe)
-                                            // We assume targetId refers to a valid node.
-                                            
-                                            // Create a virtual Edge Item
-                                            // ID must be unique. Using negative hash.
-                                            val vEdgeId = -1L * (item.id.hashCode() + key.hashCode() + targetId).toLong()
-                                            // We need a participant list
-                                            val parts = listOf(
-                                                EdgeParticipant(item, "Source"),
-                                                EdgeParticipant(NodeDisplayItem(targetId, "Node", "Target", 0L), "Property") // Target
+                    // --- Generate Virtual Elements ---
+                    val effectiveNodes = nodeList.toMutableList()
+                    val virtualEdges = mutableListOf<EdgeDisplayItem>() // Reuse DisplayItem for ease
+                    
+                    if (showAttributes) {
+                        nodeList.forEach { item ->
+                            val schema = nodeSchemaMap[item.schemaId]
+                            if (schema != null) {
+                                item.properties.forEach { (key, value) ->
+                                    val propDef = schema.properties.find { it.name == key }
+                                    if (propDef != null) {
+                                        if (propDef.type == CodexPropertyDataTypes.REFERENCE) {
+                                            // REFERENCE: Edge to existing Node
+                                            val targetId = value.toLongOrNull()
+                                            if (targetId != null) {
+                                                // Check if target is in the current graph (optional, but safe)
+                                                // We assume targetId refers to a valid node.
+                                                
+                                                // Create a virtual Edge Item
+                                                // ID must be unique. Using negative hash.
+                                                val vEdgeId = -1L * (item.id.hashCode() + key.hashCode() + targetId).toLong()
+                                                // We need a participant list
+                                                val parts = listOf(
+                                                    EdgeParticipant(item, "Source"),
+                                                    EdgeParticipant(NodeDisplayItem(targetId, "Node", "Target", 0L), "Property") // Target
+                                                )
+                                                virtualEdges.add(EdgeDisplayItem(
+                                                    id = vEdgeId,
+                                                    label = key, // Label is the property name
+                                                    properties = emptyMap(),
+                                                    participatingNodes = parts,
+                                                    schemaId = 0L // Dummy schema
+                                                ))
+                                            }
+                                        } else {
+                                            // PRIMITIVE: New Node + Edge
+                                            // Virtual Node ID
+                                            val vNodeId = -1L * (item.id.hashCode() + key.hashCode() + value.hashCode()).toLong()
+                                            val vNode = NodeDisplayItem(
+                                                id = vNodeId,
+                                                label = key, // Schema/Type label
+                                                displayProperty = value,
+                                                schemaId = 0L
                                             )
+                                            effectiveNodes.add(vNode)
+
+                                            // Edge Source -> vNode
+                                            val vEdgeId = -1L * (item.id.hashCode() + vNodeId).toLong()
+                                             val parts = listOf(
+                                                    EdgeParticipant(item, "Source"),
+                                                    EdgeParticipant(vNode, "Property")
+                                                )
                                             virtualEdges.add(EdgeDisplayItem(
                                                 id = vEdgeId,
-                                                label = key, // Label is the property name
+                                                label = key,
                                                 properties = emptyMap(),
                                                 participatingNodes = parts,
-                                                schemaId = 0L // Dummy schema
+                                                schemaId = 0L
                                             ))
                                         }
-                                    } else {
-                                        // PRIMITIVE: New Node + Edge
-                                        // Virtual Node ID
-                                        val vNodeId = -1L * (item.id.hashCode() + key.hashCode() + value.hashCode()).toLong()
-                                        val vNode = NodeDisplayItem(
-                                            id = vNodeId,
-                                            label = key, // Schema/Type label
-                                            displayProperty = value,
-                                            schemaId = 0L
-                                        )
-                                        effectiveNodes.add(vNode)
-
-                                        // Edge Source -> vNode
-                                        val vEdgeId = -1L * (item.id.hashCode() + vNodeId).toLong()
-                                         val parts = listOf(
-                                                EdgeParticipant(item, "Source"),
-                                                EdgeParticipant(vNode, "Property")
-                                            )
-                                        virtualEdges.add(EdgeDisplayItem(
-                                            id = vEdgeId,
-                                            label = key,
-                                            properties = emptyMap(),
-                                            participatingNodes = parts,
-                                            schemaId = 0L
-                                        ))
                                     }
                                 }
                             }
                         }
                     }
-                }
 
-                val effectiveEdges = edgeList + virtualEdges
+                    val effectiveEdges = edgeList + virtualEdges
 
-                val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
-                val activeIds = mutableSetOf<String>()
+                    val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
+                    val activeIds = mutableSetOf<String>()
 
-                // 1. Nodes
-                effectiveNodes.forEach { item ->
-                    val idStr = item.id.toString()
-                    activeIds.add(idStr)
-                    val existing = currentFcNodes[idStr]
+                    // 1. Nodes
+                    effectiveNodes.forEach { item ->
+                        val idStr = item.id.toString()
+                        activeIds.add(idStr)
+                        val existing = currentFcNodes[idStr]
 
-                    val schema = nodeSchemaMap[item.schemaId]
+                        val schema = nodeSchemaMap[item.schemaId]
 
-                    if (existing != null) {
-                        existing.data = item // Update payload
-                    } else {
-                        val newNode = _fcGraph.addNode(id = idStr)
-                        newNode.data = item
-                        newNode.x = (Math.random() - 0.5) * 200.0
-                        newNode.y = (Math.random() - 0.5) * 200.0
-                    }
-                }
-
-                // 2. Edges
-                val uiEdges = mutableListOf<GraphEdge>()
-                effectiveEdges.forEach { item ->
-                    // Every edge is ALSO a node in the layout (Diamond/HyperNode)
-                    val idStr = item.id.toString()
-                    activeIds.add(idStr)
-                    val existing = currentFcNodes[idStr]
-
-                    val schema = edgeSchemaMap[item.schemaId]
-
-                    if (existing != null) {
-                        existing.data = item
-                    } else {
-                        val newNode = _fcGraph.addNode(id = idStr)
-                        newNode.data = item
-                        newNode.x = (Math.random() - 0.5) * 200.0
-                        newNode.y = (Math.random() - 0.5) * 200.0
+                        if (existing != null) {
+                            existing.data = item // Update payload
+                        } else {
+                            val newNode = _fcGraph.addNode(id = idStr)
+                            newNode.data = item
+                            newNode.x = (Math.random() - 0.5) * 200.0
+                            newNode.y = (Math.random() - 0.5) * 200.0
+                        }
                     }
 
-                    // Create segments for visualization based on Role Direction
-                    item.participatingNodes.forEach { participant ->
-                        val roleName = participant.role ?: "Unknown"
-                        val roleDef = schema?.roles?.find { it.name == roleName }
-                        val isSource = roleDef?.direction == RelationDirection.SOURCE || roleName == "Source"
+                    // 2. Edges
+                    val uiEdges = mutableListOf<GraphEdge>()
+                    effectiveEdges.forEach { item ->
+                        // Every edge is ALSO a node in the layout (Diamond/HyperNode)
+                        val idStr = item.id.toString()
+                        activeIds.add(idStr)
+                        val existing = currentFcNodes[idStr]
 
-                        // If Source: Participant -> EdgeNode
-                        // If Target: EdgeNode -> Participant
-                        
-                        val sId = if (isSource) participant.node.id else item.id
-                        val tId = if (isSource) item.id else participant.node.id
-                        
-                        // Unique ID for visual segment
-                        val segmentId = -1 * (item.id * 31 + participant.node.id).toLong()
+                        val schema = edgeSchemaMap[item.schemaId]
 
-                        uiEdges.add(GraphEdge(
-                            id = segmentId, 
-                            schemas = emptyList(),
-                            properties = emptyList(),
-                            sourceId = sId,
-                            targetId = tId,
-                            strength = 1.0f,
-                            roleLabel = roleName,
-                            colorInfo = labelToColor(item.label)
-                        ))
+                        if (existing != null) {
+                            existing.data = item
+                        } else {
+                            val newNode = _fcGraph.addNode(id = idStr)
+                            newNode.data = item
+                            newNode.x = (Math.random() - 0.5) * 200.0
+                            newNode.y = (Math.random() - 0.5) * 200.0
+                        }
+
+                        // Create segments for visualization based on Role Direction
+                        item.participatingNodes.forEach { participant ->
+                            val roleName = participant.role ?: "Unknown"
+                            val roleDef = schema?.roles?.find { it.name == roleName }
+                            val isSource = roleDef?.direction == RelationDirection.SOURCE || roleName == "Source"
+
+                            // If Source: Participant -> EdgeNode
+                            // If Target: EdgeNode -> Participant
+                            
+                            val sId = if (isSource) participant.node.id else item.id
+                            val tId = if (isSource) item.id else participant.node.id
+                            
+                            // Unique ID for visual segment
+                            val segmentId = -1 * (item.id * 31 + participant.node.id).toLong()
+
+                            uiEdges.add(GraphEdge(
+                                id = segmentId, 
+                                schemas = emptyList(),
+                                properties = emptyList(),
+                                sourceId = sId,
+                                targetId = tId,
+                                strength = 1.0f,
+                                roleLabel = roleName,
+                                colorInfo = labelToColor(item.label)
+                            ))
+                        }
                     }
+                    _graphEdges.value = uiEdges
+
+                    // Cleanup stale nodes
+                    val nodesToRemove = _fcGraph.nodes.filter { it.id !in activeIds }
+                    nodesToRemove.forEach { _fcGraph.removeNode(it) }
+
+                    // Sync Topology in FcGraph
+                    _fcGraph.edges.clear()
+                    uiEdges.forEach { edge ->
+                        _fcGraph.addEdge(edge.sourceId.toString(), edge.targetId.toString())
+                    }
+
+                    pushUiUpdate()
                 }
-                _graphEdges.value = uiEdges
-
-                // Cleanup stale nodes
-                val nodesToRemove = _fcGraph.nodes.filter { it.id !in activeIds }
-                nodesToRemove.forEach { _fcGraph.removeNode(it) }
-
-                // Sync Topology in FcGraph
-                _fcGraph.edges.clear()
-                uiEdges.forEach { edge ->
-                    _fcGraph.addEdge(edge.sourceId.toString(), edge.targetId.toString())
-                }
-
-                pushUiUpdate()
             }
             if (_graphNodes.value.isNotEmpty()) runDetangle(DetangleAlgorithm.FCOSE, emptyMap())
         }
@@ -296,7 +297,7 @@ class GraphViewmodel(
                         id = id,
                         schemas = listOf(dummySchema),
                         displayProperty = data.displayProperty,
-                        pos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
+                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
                         vel = Offset.Zero,
                         mass = 1.0f,
                         radius = (fcNode.width / 2.0).toFloat(),
@@ -316,7 +317,7 @@ class GraphViewmodel(
                         id = id,
                         schemas = listOf(dummySchema),
                         displayProperty = label,
-                        pos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
+                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
                         vel = Offset.Zero,
                         mass = 1.0f,
                         radius = (fcNode.width / 3.0).toFloat(),
@@ -337,7 +338,7 @@ class GraphViewmodel(
                         id = id,
                         schemas = listOf(dummySchema),
                         displayProperty = label,
-                        pos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
+                        initialPos = Offset(fcNode.getCenter().first.toFloat(), fcNode.getCenter().second.toFloat()),
                         vel = Offset.Zero,
                         mass = 1.0f,
                         radius = (fcNode.width / 2.0).toFloat(),
@@ -398,12 +399,77 @@ class GraphViewmodel(
         // Or `GraphViewModel` exposes a "RefreshNeeded" event?
     }
     fun screenToWorld(screenPos: Offset): Offset { return (screenPos - Offset(size.width/2f, size.height/2f) - _transform.value.pan * _transform.value.zoom) / _transform.value.zoom }
-    fun onPan(delta: Offset) { _transform.value = _transform.value.copy(pan = _transform.value.pan + (delta / _transform.value.zoom)); wakeSimulation() }
-    fun onZoom(zoomFactor: Float, zoomCenter: Offset) { /* ... */ }
-    fun onDragStart(pos: Offset): Boolean { /* ... */ return false }
-    fun onDrag(delta: Offset) { /* ... */ }
-    fun onDragEnd() { /* ... */ }
-    fun onTap(pos: Offset, cb: (Long)->Unit) { /* ... */ }
+    
+    fun onPan(delta: Offset) { 
+        _transform.value = _transform.value.copy(pan = _transform.value.pan + (delta / _transform.value.zoom))
+        wakeSimulation() 
+    }
+
+    fun onZoom(zoomFactor: Float, zoomCenter: Offset) {
+        val currentZoom = _transform.value.zoom
+        val newZoom = (currentZoom * zoomFactor).coerceIn(0.1f, 5.0f)
+        
+        // Calculate world position of the zoom center before zoom
+        val worldCenter = screenToWorld(zoomCenter)
+        
+        // We want worldCenter to map to the same screen position after zoom
+        // screenPos = (worldPos * zoom) + center + (pan * zoom)
+        // pan = (screenPos - center)/zoom - worldPos
+        
+        val screenCenter = Offset(size.width/2f, size.height/2f)
+        // New Pan to keep worldCenter under zoomCenter
+        val newPan = ((zoomCenter - screenCenter) / newZoom) - worldCenter
+
+        _transform.value = TransformState(pan = newPan, zoom = newZoom)
+        wakeSimulation()
+    }
+
+    fun onDragStart(pos: Offset): Boolean {
+        val worldPos = screenToWorld(pos)
+        val node = _graphNodes.value.values.find { (it.pos - worldPos).getDistance() <= it.radius + 10f } // +10 touch slop
+        if (node != null) {
+            _draggedNodeId.value = node.id
+            node.isFixed = true
+            wakeSimulation()
+            return true
+        }
+        return false
+    }
+
+    fun onDrag(delta: Offset) {
+        val id = _draggedNodeId.value
+        if (id != null) {
+            val node = _graphNodes.value[id]
+            if (node != null) {
+                // Delta is in screen pixels. Convert to world delta.
+                val worldDelta = delta / _transform.value.zoom
+                node.pos += worldDelta
+                wakeSimulation()
+            }
+        }
+    }
+
+    fun onDragEnd() {
+        val id = _draggedNodeId.value
+        if (id != null) {
+            val node = _graphNodes.value[id]
+            if (node != null) {
+                node.isFixed = false // Release physics lock
+                node.vel = Offset.Zero // Reset velocity to stop flinging
+            }
+            _draggedNodeId.value = null
+            wakeSimulation()
+        }
+    }
+
+    fun onTap(pos: Offset, cb: (Long)->Unit) {
+        val worldPos = screenToWorld(pos)
+        // Check exact radius for tap
+        val node = _graphNodes.value.values.sortedByDescending { it.id }.find { (it.pos - worldPos).getDistance() <= it.radius }
+        if (node != null) {
+            cb(node.id)
+        }
+    }
     fun onResize(s: androidx.compose.ui.unit.IntSize) { size = Size(s.width.toFloat(), s.height.toFloat()) }
     fun onFabClick() { _showFabMenu.value = !_showFabMenu.value }
     fun toggleSettings() { _showSettings.value = !_showSettings.value }

@@ -238,7 +238,7 @@ class CodexRepository(
                         id = entity.id,
                         schemas = entitySchemas,
                         displayProperty = displayProp,
-                        pos = Offset.Zero, // Layout engine handles this
+                        initialPos = Offset.Zero, // Layout engine handles this
                         vel = Offset.Zero,
                         mass = 1.0f,
                         radius = 20.0f,
