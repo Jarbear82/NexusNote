@@ -13,7 +13,7 @@ CREATE TABLE AttributeDef (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     schema_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    data_type TEXT NOT NULL CHECK (data_type IN ('TEXT', 'INTEGER', 'REAL', 'BOOLEAN')),
+    data_type TEXT NOT NULL CHECK (data_type IN ('TEXT', 'INTEGER', 'REAL', 'BOOLEAN', 'LONG_TEXT', 'NUMBER', 'DATE', 'IMAGE', 'AUDIO')),
     FOREIGN KEY(schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE,
     UNIQUE(schema_id, name)
 );

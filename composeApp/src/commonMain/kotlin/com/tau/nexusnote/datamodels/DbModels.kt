@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class DbValueType {
-    TEXT, INTEGER, REAL, BOOLEAN
+    TEXT, INTEGER, REAL, BOOLEAN, LONG_TEXT, NUMBER, DATE, IMAGE, AUDIO
 }
 
 /**
