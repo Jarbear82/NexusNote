@@ -75,8 +75,9 @@ class CodexViewModel(
                 metadataViewModel.nodeList,
                 metadataViewModel.edgeList,
                 metadataViewModel.nodeVisibility,
-                metadataViewModel.edgeVisibility
-            ) { nodes, edges, nodeViz, edgeViz ->
+                metadataViewModel.edgeVisibility,
+                graphViewModel.renderingSettings
+            ) { nodes, edges, nodeViz, edgeViz, _ ->
                 val visibleNodes = nodes.filter { nodeViz[it.id] ?: true }
                 val visibleNodeIds = visibleNodes.map { it.id }.toSet()
 

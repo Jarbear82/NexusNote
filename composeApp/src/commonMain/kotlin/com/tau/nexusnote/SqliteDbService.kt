@@ -19,8 +19,8 @@ expect class SqliteDbService() {
     fun getAllSchemas(): List<SchemaDefModel>
     fun getAllAttributeDefs(): List<AttributeDefModel>
     fun getAllRoleDefs(): List<RoleDefModel>
-    fun createSchema(name: String, kind: SchemaKind, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList()): Long
-    fun updateSchema(id: Long, name: String, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList())
+    fun createSchema(name: String, kind: SchemaKind, canBePropertyType: Boolean, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList()): Long
+    fun updateSchema(id: Long, name: String, canBePropertyType: Boolean, attributes: List<AttributeDefModel>, roles: List<RoleDefModel> = emptyList())
     fun deleteSchema(id: Long)
 
     // --- Entities (Nodes & Edges) ---

@@ -88,9 +88,10 @@ class EditCreateViewModel(
     // --- Node Creation ---
     fun initiateNodeCreation(schema: SchemaDefinition? = null) {
         val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
+        val allNodes = metadataViewModel.nodeList.value
         metadataViewModel.clearSelectedItem()
         val selected = if (schema != null) listOf(schema) else emptyList()
-        _editScreenState.value = EditScreenState.CreateNode(NodeCreationState(availableSchemas = nodeSchemas, selectedSchemas = selected))
+        _editScreenState.value = EditScreenState.CreateNode(NodeCreationState(availableSchemas = nodeSchemas, selectedSchemas = selected, availableNodes = allNodes))
     }
 
     fun toggleNodeCreationSchema(schemaNode: SchemaDefinition) {
@@ -196,7 +197,20 @@ class EditCreateViewModel(
 
     // --- Node Schema Creation ---
     fun initiateNodeSchemaCreation() {
-        _editScreenState.value = EditScreenState.CreateNodeSchema(NodeSchemaCreationState())
+        val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
+        _editScreenState.value = EditScreenState.CreateNodeSchema(NodeSchemaCreationState(allNodeSchemas = nodeSchemas))
+    }
+
+    fun onNodeSchemaCanBePropertyTypeChange(enabled: Boolean) {
+        _editScreenState.update { current ->
+            if (current is EditScreenState.CreateNodeSchema) {
+                current.copy(state = current.state.copy(canBePropertyType = enabled))
+            } else if (current is EditScreenState.EditNodeSchema) {
+                current.copy(state = current.state.copy(canBePropertyType = enabled))
+            } else {
+                current
+            }
+        }
     }
 
     fun onNodeSchemaTableNameChange(name: String) {
@@ -296,7 +310,8 @@ class EditCreateViewModel(
     fun initiateNodeEdit(item: NodeDisplayItem) {
         viewModelScope.launch {
             val editState = repository.getNodeEditState(item.id)
-            if (editState != null) _editScreenState.value = EditScreenState.EditNode(editState)
+            val allNodes = metadataViewModel.nodeList.value
+            if (editState != null) _editScreenState.value = EditScreenState.EditNode(editState.copy(availableNodes = allNodes))
         }
     }
 
@@ -326,7 +341,8 @@ class EditCreateViewModel(
 
     // --- Schema Editing Stubs (simplified for Phase 2) ---
     fun initiateNodeSchemaEdit(schema: SchemaDefinition) {
-        _editScreenState.value = EditScreenState.EditNodeSchema(NodeSchemaEditState(originalSchema = schema, currentName = schema.name, properties = schema.properties))
+        val nodeSchemas = schemaViewModel.schema.value?.nodeSchemas ?: emptyList()
+        _editScreenState.value = EditScreenState.EditNodeSchema(NodeSchemaEditState(originalSchema = schema, currentName = schema.name, canBePropertyType = schema.canBePropertyType, properties = schema.properties, allNodeSchemas = nodeSchemas))
     }
 
     fun updateNodeSchemaEditLabel(label: String) {

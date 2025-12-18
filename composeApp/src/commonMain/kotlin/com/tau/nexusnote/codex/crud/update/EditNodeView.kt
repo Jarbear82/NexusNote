@@ -90,7 +90,8 @@ fun EditNodeView(
                     CodexPropertyInput(
                         property = schemaProperty,
                         currentValue = state.properties[schemaProperty.name] ?: "",
-                        onValueChange = { value -> onPropertyChange(schemaProperty.name, value) }
+                        onValueChange = { value -> onPropertyChange(schemaProperty.name, value) },
+                        allNodes = state.availableNodes
                     )
                 }
             }

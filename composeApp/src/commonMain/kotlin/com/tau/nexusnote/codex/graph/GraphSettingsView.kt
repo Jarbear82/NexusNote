@@ -39,6 +39,7 @@ fun GraphSettingsView(
     val layoutConfig by viewModel.layoutConfig.collectAsState()
     val simulationEnabled by viewModel.simulationEnabled.collectAsState()
     val isSimulationPaused by viewModel.isSimulationPaused.collectAsState()
+    val renderingSettings by viewModel.renderingSettings.collectAsState()
     val scope = rememberCoroutineScope()
 
     // --- Local UI State ---
@@ -63,6 +64,20 @@ fun GraphSettingsView(
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            // =================================================================
+            // 0. VISUAL SETTINGS
+            // =================================================================
+            CodexSectionHeader("Visuals")
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Show Attributes as Nodes", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = renderingSettings.showAttributesAsNodes,
+                    onCheckedChange = { viewModel.updateRenderingSettings(renderingSettings.copy(showAttributesAsNodes = it)) }
+                )
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
             // =================================================================
             // 1. HEADER & SELECTION
             // =================================================================

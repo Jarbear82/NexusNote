@@ -18,7 +18,8 @@ sealed interface EditScreenState {
 data class NodeCreationState(
     val availableSchemas: List<SchemaDefinition>,
     val selectedSchemas: List<SchemaDefinition> = emptyList(),
-    val properties: Map<String, String> = emptyMap()
+    val properties: Map<String, String> = emptyMap(),
+    val availableNodes: List<NodeDisplayItem> = emptyList()
 )
 
 data class EdgeCreationState(
@@ -31,9 +32,11 @@ data class EdgeCreationState(
 
 data class NodeSchemaCreationState(
     val tableName: String = "",
-    val properties: List<SchemaProperty> = listOf(SchemaProperty(0, "name", CodexPropertyDataTypes.TEXT, true)),
+    val canBePropertyType: Boolean = true,
+    val properties: List<SchemaProperty> = listOf(SchemaProperty(0, "name", CodexPropertyDataTypes.TEXT, null, true)),
     val tableNameError: String? = null,
-    val propertyErrors: Map<Int, String?> = emptyMap()
+    val propertyErrors: Map<Int, String?> = emptyMap(),
+    val allNodeSchemas: List<SchemaDefinition> = emptyList()
 )
 
 data class EdgeSchemaCreationState(
@@ -50,7 +53,8 @@ data class NodeEditState(
     val id: Long,
     val schemas: List<SchemaDefinition>,
     val availableSchemas: List<SchemaDefinition> = emptyList(),
-    val properties: Map<String, String>
+    val properties: Map<String, String>,
+    val availableNodes: List<NodeDisplayItem> = emptyList()
 )
 
 data class EdgeEditState(
@@ -63,9 +67,11 @@ data class EdgeEditState(
 data class NodeSchemaEditState(
     val originalSchema: SchemaDefinition,
     val currentName: String,
+    val canBePropertyType: Boolean,
     val properties: List<SchemaProperty>,
     val currentNameError: String? = null,
-    val propertyErrors: Map<Int, String?> = emptyMap()
+    val propertyErrors: Map<Int, String?> = emptyMap(),
+    val allNodeSchemas: List<SchemaDefinition> = emptyList()
 )
 
 data class EdgeSchemaEditState(

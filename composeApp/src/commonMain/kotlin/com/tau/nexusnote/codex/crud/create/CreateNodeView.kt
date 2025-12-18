@@ -88,7 +88,8 @@ fun CreateNodeView(
                     CodexPropertyInput(
                         property = property,
                         currentValue = nodeCreationState.properties[property.name] ?: "",
-                        onValueChange = { onPropertyChanged(property.name, it) }
+                        onValueChange = { onPropertyChanged(property.name, it) },
+                        allNodes = nodeCreationState.availableNodes
                     )
                 }
             }

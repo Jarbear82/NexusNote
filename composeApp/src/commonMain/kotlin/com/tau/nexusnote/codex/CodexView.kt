@@ -302,6 +302,7 @@ fun CodexView(viewModel: CodexViewModel) {
                             onNodeSchemaPropertyChange = { i, p -> viewModel.editCreateViewModel.onNodeSchemaPropertyChange(i, p) },
                             onAddNodeSchemaProperty = { viewModel.editCreateViewModel.onAddNodeSchemaProperty(it) },
                             onRemoveNodeSchemaProperty = { viewModel.editCreateViewModel.onRemoveNodeSchemaProperty(it) },
+                            onNodeSchemaCanBePropertyTypeChange = { viewModel.editCreateViewModel.onNodeSchemaCanBePropertyTypeChange(it) },
 
                             // Edge Schema Creation
                             onEdgeSchemaTableNameChange = { viewModel.editCreateViewModel.onEdgeSchemaTableNameChange(it) },

@@ -43,13 +43,13 @@ actual class SqliteDbService {
 
     actual fun getAllSchemas(): List<SchemaDefModel> {
         return database.appDatabaseQueries.selectAllSchemas().executeAsList().map { schema ->
-            SchemaDefModel(schema.id, schema.name, SchemaKind.valueOf(schema.kind))
+            SchemaDefModel(schema.id, schema.name, SchemaKind.valueOf(schema.kind), schema.can_be_property_type == 1L)
         }
     }
 
     actual fun getAllAttributeDefs(): List<AttributeDefModel> {
         return database.appDatabaseQueries.selectAllAttributeDefs().executeAsList().map { attr ->
-            AttributeDefModel(attr.id, attr.schema_id, attr.name, DbValueType.valueOf(attr.data_type))
+            AttributeDefModel(attr.id, attr.schema_id, attr.name, DbValueType.valueOf(attr.data_type), attr.reference_schema_id)
         }
     }
 
@@ -69,14 +69,14 @@ actual class SqliteDbService {
         }
     }
 
-    actual fun createSchema(name: String, kind: SchemaKind, attributes: List<AttributeDefModel>, roles: List<RoleDefModel>): Long {
+    actual fun createSchema(name: String, kind: SchemaKind, canBePropertyType: Boolean, attributes: List<AttributeDefModel>, roles: List<RoleDefModel>): Long {
         var schemaId: Long = -1
         database.transaction {
-            database.appDatabaseQueries.insertSchema(name, kind.name)
+            database.appDatabaseQueries.insertSchema(name, kind.name, if (canBePropertyType) 1L else 0L)
             schemaId = database.appDatabaseQueries.lastInsertRowId().executeAsOne()
 
             attributes.forEach { attr ->
-                database.appDatabaseQueries.insertAttributeDef(schemaId, attr.name, attr.dataType.name)
+                database.appDatabaseQueries.insertAttributeDef(schemaId, attr.name, attr.dataType.name, attr.referenceSchemaId)
             }
 
             if (kind == SchemaKind.RELATION) {
@@ -95,16 +95,18 @@ actual class SqliteDbService {
     actual fun updateSchema(
         id: Long,
         name: String,
+        canBePropertyType: Boolean,
         attributes: List<AttributeDefModel>,
         roles: List<RoleDefModel>
     ) {
         database.transaction {
             database.appDatabaseQueries.updateSchemaName(name, id)
+            database.appDatabaseQueries.updateSchemaPropertyToggle(if (canBePropertyType) 1L else 0L, id)
             attributes.forEach { attr ->
                 if (attr.id == 0L) {
-                    database.appDatabaseQueries.insertAttributeDef(id, attr.name, attr.dataType.name)
+                    database.appDatabaseQueries.insertAttributeDef(id, attr.name, attr.dataType.name, attr.referenceSchemaId)
                 } else {
-                    database.appDatabaseQueries.updateAttributeDef(attr.name, attr.dataType.name, attr.id)
+                    database.appDatabaseQueries.updateAttributeDef(attr.name, attr.dataType.name, attr.referenceSchemaId, attr.id)
                 }
             }
 

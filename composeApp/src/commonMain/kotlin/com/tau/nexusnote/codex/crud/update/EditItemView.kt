@@ -34,6 +34,7 @@ fun EditItemView(
     onNodeSchemaPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddNodeSchemaProperty: (SchemaProperty) -> Unit,
     onRemoveNodeSchemaProperty: (Int) -> Unit,
+    onNodeSchemaCanBePropertyTypeChange: (Boolean) -> Unit,
 
     // Edge Schema Creation Handlers
     onEdgeSchemaTableNameChange: (String) -> Unit,
@@ -95,6 +96,7 @@ fun EditItemView(
                 onPropertyChange = onNodeSchemaPropertyChange,
                 onAddProperty = onAddNodeSchemaProperty,
                 onRemoveProperty = onRemoveNodeSchemaProperty,
+                onCanBePropertyTypeChange = onNodeSchemaCanBePropertyTypeChange,
                 onCreate = { onSaveClick() },
                 onCancel = onCancelClick
             )
@@ -137,6 +139,7 @@ fun EditItemView(
                 onPropertyChange = onNodeSchemaEditPropertyChange,
                 onAddProperty = onNodeSchemaEditAddProperty,
                 onRemoveProperty = onNodeSchemaEditRemoveProperty,
+                onCanBePropertyTypeChange = onNodeSchemaCanBePropertyTypeChange,
                 onSave = onSaveClick,
                 onCancel = onCancelClick
             )

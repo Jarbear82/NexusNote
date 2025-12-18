@@ -6,15 +6,18 @@ import kotlin.collections.Map;
 CREATE TABLE SchemaDef (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    kind TEXT NOT NULL CHECK (kind IN ('ENTITY', 'RELATION'))
+    kind TEXT NOT NULL CHECK (kind IN ('ENTITY', 'RELATION')),
+    can_be_property_type INTEGER NOT NULL DEFAULT 1 -- 0 for False, 1 for True
 );
 
 CREATE TABLE AttributeDef (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     schema_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    data_type TEXT NOT NULL CHECK (data_type IN ('TEXT', 'INTEGER', 'REAL', 'BOOLEAN', 'LONG_TEXT', 'NUMBER', 'DATE', 'IMAGE', 'AUDIO')),
+    data_type TEXT NOT NULL CHECK (data_type IN ('TEXT', 'INTEGER', 'REAL', 'BOOLEAN', 'LONG_TEXT', 'NUMBER', 'DATE', 'IMAGE', 'AUDIO', 'REFERENCE')),
+    reference_schema_id INTEGER, -- Only used if data_type is REFERENCE
     FOREIGN KEY(schema_id) REFERENCES SchemaDef(id) ON DELETE CASCADE,
+    FOREIGN KEY(reference_schema_id) REFERENCES SchemaDef(id) ON DELETE SET NULL,
     UNIQUE(schema_id, name)
 );
 
@@ -100,10 +103,13 @@ selectSchemaById:
 SELECT * FROM SchemaDef WHERE id = ?;
 
 insertSchema:
-INSERT INTO SchemaDef(name, kind) VALUES (?, ?);
+INSERT INTO SchemaDef(name, kind, can_be_property_type) VALUES (?, ?, ?);
 
 updateSchemaName:
 UPDATE SchemaDef SET name = ? WHERE id = ?;
+
+updateSchemaPropertyToggle:
+UPDATE SchemaDef SET can_be_property_type = ? WHERE id = ?;
 
 deleteSchemaById:
 DELETE FROM SchemaDef WHERE id = ?;
@@ -119,10 +125,10 @@ selectAttributesBySchemaId:
 SELECT * FROM AttributeDef WHERE schema_id = ?;
 
 insertAttributeDef:
-INSERT INTO AttributeDef(schema_id, name, data_type) VALUES (?, ?, ?);
+INSERT INTO AttributeDef(schema_id, name, data_type, reference_schema_id) VALUES (?, ?, ?, ?);
 
 updateAttributeDef:
-UPDATE AttributeDef SET name = ?, data_type = ? WHERE id = ?;
+UPDATE AttributeDef SET name = ?, data_type = ?, reference_schema_id = ? WHERE id = ?;
 
 updateAttributeDefName:
 UPDATE AttributeDef SET name = ? WHERE id = ?;

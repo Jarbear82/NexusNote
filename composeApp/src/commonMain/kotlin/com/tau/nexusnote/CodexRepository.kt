@@ -66,6 +66,7 @@ class CodexRepository(
                             } catch (e: Exception) {
                                 CodexPropertyDataTypes.TEXT
                             },
+                            referenceSchemaId = attr.referenceSchemaId,
                             isDisplayProperty = false
                         )
                     }
@@ -87,6 +88,7 @@ class CodexRepository(
                     id = sDef.id,
                     name = sDef.name,
                     isRelation = sDef.kind == SchemaKind.RELATION,
+                    canBePropertyType = sDef.canBePropertyType,
                     properties = props,
                     roles = roles
                 )
@@ -113,7 +115,8 @@ class CodexRepository(
                 id = node.id,
                 label = if (compositeLabel.isNotBlank()) compositeLabel else "Entity",
                 displayProperty = node.displayProperty,
-                schemaId = primarySchema?.id ?: 0L
+                schemaId = primarySchema?.id ?: 0L,
+                properties = node.properties.associate { it.definition.name to it.value.toString() }
             )
         }
         _nodeList.value = displayItems
@@ -264,9 +267,9 @@ class CodexRepository(
         try {
             // Map UI State to DB Models
             val attributes = state.properties.map {
-                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name))
+                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name), it.referenceSchemaId)
             }
-            dbService.createSchema(state.tableName, SchemaKind.ENTITY, attributes)
+            dbService.createSchema(state.tableName, SchemaKind.ENTITY, state.canBePropertyType, attributes)
             refreshSchema()
         } catch (e: Exception) {
             _errorFlow.value = "Failed to create Node Schema: ${e.message}"
@@ -276,14 +279,14 @@ class CodexRepository(
     suspend fun createEdgeSchema(state: EdgeSchemaCreationState) = withContext(Dispatchers.Default) {
         try {
             val attributes = state.properties.map {
-                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name))
+                AttributeDefModel(0, 0, it.name, DbValueType.valueOf(it.type.name), it.referenceSchemaId)
             }
             val roles = state.roles.map {
                 RoleDefModel(0, 0, it.name, it.direction, it.cardinality, it.allowedNodeSchemas)
             }
 
             // Note: UI models already use RelationCardinality, so simple map is enough.
-            dbService.createSchema(state.tableName, SchemaKind.RELATION, attributes, roles)
+            dbService.createSchema(state.tableName, SchemaKind.RELATION, true, attributes, roles)
             refreshSchema()
         } catch (e: Exception) {
             _errorFlow.value = "Failed to create Edge Schema: ${e.message}"
@@ -413,9 +416,9 @@ class CodexRepository(
     suspend fun updateNodeSchema(state: NodeSchemaEditState) = withContext(Dispatchers.Default) {
         try {
             val attributes = state.properties.map {
-                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name))
+                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name), it.referenceSchemaId)
             }
-            dbService.updateSchema(state.originalSchema.id, state.currentName, attributes)
+            dbService.updateSchema(state.originalSchema.id, state.currentName, state.canBePropertyType, attributes)
             refreshSchema()
             refreshNodes()
         } catch (e: Exception) {
@@ -426,12 +429,12 @@ class CodexRepository(
     suspend fun updateEdgeSchema(state: EdgeSchemaEditState) = withContext(Dispatchers.Default) {
         try {
             val attributes = state.properties.map {
-                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name))
+                AttributeDefModel(it.id, state.originalSchema.id, it.name, DbValueType.valueOf(it.type.name), it.referenceSchemaId)
             }
             val roles = state.roles.map {
                 RoleDefModel(it.id, state.originalSchema.id, it.name, it.direction, it.cardinality, it.allowedNodeSchemas)
             }
-            dbService.updateSchema(state.originalSchema.id, state.currentName, attributes, roles)
+            dbService.updateSchema(state.originalSchema.id, state.currentName, state.originalSchema.canBePropertyType, attributes, roles)
             refreshSchema()
             refreshEdges()
         } catch (e: Exception) {
@@ -472,6 +475,13 @@ class CodexRepository(
     suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> = withContext(Dispatchers.Default) {
         try {
             val entities = dbService.getEntitiesByKindPaginated(SchemaKind.ENTITY, limit, offset)
+            val schemaData = _schema.value ?: run {
+                refreshSchema()
+                _schema.value ?: return@withContext emptyList()
+            }
+            // Create a lookup for property definitions
+            val allPropDefs = schemaData.nodeSchemas.flatMap { it.properties }.associateBy { it.id }
+
             entities.map { entity ->
                 val entitySchemas = entity.types
                 val primarySchema = entitySchemas.firstOrNull()
@@ -480,11 +490,18 @@ class CodexRepository(
                 // Determine display text (reusing logic from loadGraph if possible, or keeping it simple)
                 val displayProp = entity.attributes.entries.firstOrNull()?.value?.toString() ?: "ID:${entity.id}"
 
+                // Map attributes to names
+                val properties = entity.attributes.mapNotNull { (id, value) ->
+                    val def = allPropDefs[id]
+                    if (def != null) def.name to value.toString() else null
+                }.toMap()
+
                 NodeDisplayItem(
                     id = entity.id,
                     label = if (compositeLabel.isNotBlank()) compositeLabel else "Entity",
                     displayProperty = displayProp,
-                    schemaId = primarySchema?.id ?: 0L
+                    schemaId = primarySchema?.id ?: 0L,
+                    properties = properties
                 )
             }
         } catch (e: Exception) {

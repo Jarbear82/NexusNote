@@ -21,7 +21,10 @@ enum class CodexPropertyDataTypes(val displayName: String) {
     IMAGE("Image"),
 
     @SerialName("Audio")
-    AUDIO("Audio");
+    AUDIO("Audio"),
+
+    @SerialName("Reference")
+    REFERENCE("Reference");
 
     override fun toString(): String {
         return displayName

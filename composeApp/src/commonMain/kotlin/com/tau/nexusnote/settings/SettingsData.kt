@@ -83,7 +83,8 @@ data class GraphRenderingSettings(
     val startSimulationOnLoad: Boolean = true,
     val showNodeLabels: Boolean = true,
     val showEdgeLabels: Boolean = true,
-    val showCrosshairs: Boolean = true
+    val showCrosshairs: Boolean = true,
+    val showAttributesAsNodes: Boolean = false
 ) {
     companion object {
         val Default = GraphRenderingSettings()

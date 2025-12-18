@@ -17,7 +17,8 @@ data class NodeDisplayItem(
     val displayProperty: String,
     val schemaId: Long,
     val parentId: Long? = null,
-    val isCollapsed: Boolean = false
+    val isCollapsed: Boolean = false,
+    val properties: Map<String, String> = emptyMap()
 )
 
 /**

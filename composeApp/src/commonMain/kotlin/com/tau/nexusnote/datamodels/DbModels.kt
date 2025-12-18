@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class DbValueType {
-    TEXT, INTEGER, REAL, BOOLEAN, LONG_TEXT, NUMBER, DATE, IMAGE, AUDIO
+    TEXT, INTEGER, REAL, BOOLEAN, LONG_TEXT, NUMBER, DATE, IMAGE, AUDIO, REFERENCE
 }
 
 /**
@@ -35,7 +35,8 @@ enum class SchemaKind {
 data class SchemaDefModel(
     val id: Long,
     val name: String,
-    val kind: SchemaKind
+    val kind: SchemaKind,
+    val canBePropertyType: Boolean = true
 )
 
 /**
@@ -46,7 +47,8 @@ data class AttributeDefModel(
     val id: Long,
     val schemaId: Long,
     val name: String,
-    val dataType: DbValueType
+    val dataType: DbValueType,
+    val referenceSchemaId: Long? = null
 )
 
 /**

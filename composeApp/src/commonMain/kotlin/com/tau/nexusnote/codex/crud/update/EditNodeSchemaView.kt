@@ -21,6 +21,8 @@ import com.tau.nexusnote.ui.components.FormActionRow
 import com.tau.nexusnote.utils.toCamelCase
 import com.tau.nexusnote.utils.toPascalCase
 
+import com.tau.nexusnote.datamodels.SchemaDefinition
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditNodeSchemaView(
@@ -29,11 +31,13 @@ fun EditNodeSchemaView(
     onPropertyChange: (Int, SchemaProperty) -> Unit,
     onAddProperty: (SchemaProperty) -> Unit,
     onRemoveProperty: (Int) -> Unit,
+    onCanBePropertyTypeChange: (Boolean) -> Unit,
     onSave: () -> Unit,
     onCancel: () -> Unit
 ) {
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
+    var newRefSchema by remember { mutableStateOf<SchemaDefinition?>(null) }
     var newIsDisplay by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
@@ -49,6 +53,12 @@ fun EditNodeSchemaView(
                 supportingText = { state.currentNameError?.let { Text(it) } },
                 singleLine = true
             )
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = state.canBePropertyType, onCheckedChange = onCanBePropertyTypeChange)
+                Text("Allow use as Attribute (Enum)", style = MaterialTheme.typography.bodyMedium)
+            }
+            
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Properties", style = MaterialTheme.typography.titleMedium)
@@ -58,7 +68,24 @@ fun EditNodeSchemaView(
                 Box(modifier = Modifier.weight(1f)) {
                     CodexDropdown("Type", CodexPropertyDataTypes.entries, newPropType, { newPropType = it }, { it.displayName })
                 }
-                IconButton(onClick = { onAddProperty(SchemaProperty(name = newPropName, type = newPropType, isDisplayProperty = newIsDisplay)); newPropName = "" }, enabled = newPropName.isNotBlank()) {
+                if (newPropType == CodexPropertyDataTypes.REFERENCE) {
+                     Spacer(modifier = Modifier.width(8.dp))
+                     Box(modifier = Modifier.weight(1f)) {
+                        CodexDropdown(
+                            label = "Target",
+                            options = state.allNodeSchemas.filter { it.canBePropertyType },
+                            selectedOption = newRefSchema,
+                            onOptionSelected = { newRefSchema = it },
+                            displayTransform = { it.name }
+                        )
+                    }
+                }
+                IconButton(onClick = { 
+                    onAddProperty(SchemaProperty(name = newPropName, type = newPropType, referenceSchemaId = newRefSchema?.id, isDisplayProperty = newIsDisplay))
+                    newPropName = ""
+                    newPropType = CodexPropertyDataTypes.TEXT 
+                    newRefSchema = null
+                }, enabled = newPropName.isNotBlank() && (newPropType != CodexPropertyDataTypes.REFERENCE || newRefSchema != null)) {
                     Icon(Icons.Default.Add, "Add")
                 }
             }
@@ -72,6 +99,20 @@ fun EditNodeSchemaView(
                     Spacer(modifier = Modifier.width(8.dp))
                     Box(modifier = Modifier.width(120.dp)) {
                         CodexDropdown("Type", CodexPropertyDataTypes.entries, property.type, { onPropertyChange(index, property.copy(type = it)) }, { it.displayName })
+                    }
+                    if (property.type == CodexPropertyDataTypes.REFERENCE) {
+                         Spacer(modifier = Modifier.width(8.dp))
+                         // Find current schema object if possible, or just use ID
+                         val currentRefSchema = state.allNodeSchemas.find { it.id == property.referenceSchemaId }
+                         Box(modifier = Modifier.width(120.dp)) {
+                            CodexDropdown(
+                                label = "Target",
+                                options = state.allNodeSchemas.filter { it.canBePropertyType },
+                                selectedOption = currentRefSchema,
+                                onOptionSelected = { onPropertyChange(index, property.copy(referenceSchemaId = it.id)) },
+                                displayTransform = { it.name }
+                            )
+                        }
                     }
                     Checkbox(checked = property.isDisplayProperty, onCheckedChange = { onPropertyChange(index, property.copy(isDisplayProperty = it)) })
                     IconButton(onClick = { onRemoveProperty(index) }) { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }

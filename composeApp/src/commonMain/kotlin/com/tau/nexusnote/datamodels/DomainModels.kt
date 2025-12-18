@@ -20,6 +20,7 @@ data class SchemaDefinition(
     val id: Long,
     val name: String,
     val isRelation: Boolean,
+    val canBePropertyType: Boolean = true,
     val properties: List<SchemaProperty>,
     val roles: List<RoleDefinition> = emptyList() // Only for Relations
 )
@@ -32,6 +33,7 @@ data class SchemaProperty(
     val id: Long = 0,
     val name: String,
     val type: CodexPropertyDataTypes,
+    val referenceSchemaId: Long? = null,
     val isDisplayProperty: Boolean = false
 )
 

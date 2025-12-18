@@ -14,12 +14,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tau.nexusnote.datamodels.CodexPropertyDataTypes
 import com.tau.nexusnote.datamodels.SchemaProperty
+import com.tau.nexusnote.datamodels.NodeDisplayItem
 
 @Composable
 fun CodexPropertyInput(
     property: SchemaProperty,
     currentValue: String,
     onValueChange: (String) -> Unit,
+    allNodes: List<NodeDisplayItem> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val commonModifier = modifier.fillMaxWidth().padding(vertical = 4.dp)
@@ -80,6 +82,18 @@ fun CodexPropertyInput(
                     Text("...")
                 }
             }
+        }
+        CodexPropertyDataTypes.REFERENCE -> {
+            val options = allNodes.filter { it.schemaId == property.referenceSchemaId }
+            val selectedOption = options.find { it.id.toString() == currentValue }
+            
+            CodexDropdown(
+                label = property.name,
+                options = options,
+                selectedOption = selectedOption,
+                onOptionSelected = { onValueChange(it.id.toString()) },
+                displayTransform = { it.displayProperty.ifBlank { "ID:${it.id}" } }
+            )
         }
         else -> { // Default "Text"
             OutlinedTextField(

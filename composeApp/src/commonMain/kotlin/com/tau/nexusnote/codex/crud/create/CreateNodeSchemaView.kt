@@ -22,6 +22,8 @@ import com.tau.nexusnote.ui.components.FormActionRow
 import com.tau.nexusnote.utils.toCamelCase
 import com.tau.nexusnote.utils.toPascalCase
 
+import com.tau.nexusnote.datamodels.SchemaDefinition
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateNodeSchemaView(
@@ -30,12 +32,14 @@ fun CreateNodeSchemaView(
     onAddProperty: (SchemaProperty) -> Unit,
     onRemoveProperty: (Int) -> Unit,
     onPropertyChange: (Int, SchemaProperty) -> Unit,
+    onCanBePropertyTypeChange: (Boolean) -> Unit,
     onCancel: () -> Unit,
     onCreate: (NodeSchemaCreationState) -> Unit
 ) {
     // --- Local state for the "Add Property" UI ---
     var newPropName by remember { mutableStateOf("") }
     var newPropType by remember { mutableStateOf(CodexPropertyDataTypes.TEXT) }
+    var newRefSchema by remember { mutableStateOf<SchemaDefinition?>(null) }
     var newIsDisplay by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
@@ -57,6 +61,12 @@ fun CreateNodeSchemaView(
                 supportingText = { state.tableNameError?.let { Text(it) } },
                 singleLine = true
             )
+            
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = state.canBePropertyType, onCheckedChange = onCanBePropertyTypeChange)
+                Text("Allow use as Attribute (Enum)", style = MaterialTheme.typography.bodyMedium)
+            }
+            
             Spacer(modifier = Modifier.height(16.dp))
 
             // --- Add Property Input Row ---
@@ -89,6 +99,19 @@ fun CreateNodeSchemaView(
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
+                
+                if (newPropType == CodexPropertyDataTypes.REFERENCE) {
+                     Box(modifier = Modifier.weight(1f)) {
+                        CodexDropdown(
+                            label = "Target",
+                            options = state.allNodeSchemas.filter { it.canBePropertyType },
+                            selectedOption = newRefSchema,
+                            onOptionSelected = { newRefSchema = it },
+                            displayTransform = { it.name }
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
 
                 // Display Checkbox
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -106,14 +129,16 @@ fun CreateNodeSchemaView(
                             SchemaProperty(
                                 name = newPropName,
                                 type = newPropType,
+                                referenceSchemaId = newRefSchema?.id,
                                 isDisplayProperty = newIsDisplay
                             )
                         )
                         newPropName = ""
                         newPropType = CodexPropertyDataTypes.TEXT
+                        newRefSchema = null
                         newIsDisplay = false
                     },
-                    enabled = newPropName.isNotBlank()
+                    enabled = newPropName.isNotBlank() && (newPropType != CodexPropertyDataTypes.REFERENCE || newRefSchema != null)
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add Property")
                 }

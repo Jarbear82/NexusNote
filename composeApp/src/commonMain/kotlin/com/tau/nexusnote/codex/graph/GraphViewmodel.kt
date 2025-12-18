@@ -9,6 +9,7 @@ import com.tau.nexusnote.codex.graph.physics.PhysicsEngine
 import com.tau.nexusnote.codex.graph.physics.PhysicsOptions
 import com.tau.nexusnote.datamodels.*
 import com.tau.nexusnote.settings.SettingsData
+import com.tau.nexusnote.settings.GraphRenderingSettings
 import com.tau.nexusnote.utils.labelToColor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -119,24 +120,90 @@ class GraphViewmodel(
         viewModelScope.launch {
             graphMutex.withLock {
                 // We need schema definitions to build GraphNode/Edge.
-                // In a real app, we'd look them up from repository.schema.
-                // Here we create placeholders or fetch properly.
                 val currentSchemaData = repository.schema.value
                 val nodeSchemaMap = currentSchemaData?.nodeSchemas?.associateBy { it.id } ?: emptyMap()
                 val edgeSchemaMap = currentSchemaData?.edgeSchemas?.associateBy { it.id } ?: emptyMap()
+
+                val showAttributes = _renderingSettings.value.showAttributesAsNodes
+
+                // --- Generate Virtual Elements ---
+                val effectiveNodes = nodeList.toMutableList()
+                val virtualEdges = mutableListOf<EdgeDisplayItem>() // Reuse DisplayItem for ease
+                
+                if (showAttributes) {
+                    nodeList.forEach { item ->
+                        val schema = nodeSchemaMap[item.schemaId]
+                        if (schema != null) {
+                            item.properties.forEach { (key, value) ->
+                                val propDef = schema.properties.find { it.name == key }
+                                if (propDef != null) {
+                                    if (propDef.type == CodexPropertyDataTypes.REFERENCE) {
+                                        // REFERENCE: Edge to existing Node
+                                        val targetId = value.toLongOrNull()
+                                        if (targetId != null) {
+                                            // Check if target is in the current graph (optional, but safe)
+                                            // We assume targetId refers to a valid node.
+                                            
+                                            // Create a virtual Edge Item
+                                            // ID must be unique. Using negative hash.
+                                            val vEdgeId = -1L * (item.id.hashCode() + key.hashCode() + targetId).toLong()
+                                            // We need a participant list
+                                            val parts = listOf(
+                                                EdgeParticipant(item, "Source"),
+                                                EdgeParticipant(NodeDisplayItem(targetId, "Node", "Target", 0L), "Property") // Target
+                                            )
+                                            virtualEdges.add(EdgeDisplayItem(
+                                                id = vEdgeId,
+                                                label = key, // Label is the property name
+                                                properties = emptyMap(),
+                                                participatingNodes = parts,
+                                                schemaId = 0L // Dummy schema
+                                            ))
+                                        }
+                                    } else {
+                                        // PRIMITIVE: New Node + Edge
+                                        // Virtual Node ID
+                                        val vNodeId = -1L * (item.id.hashCode() + key.hashCode() + value.hashCode()).toLong()
+                                        val vNode = NodeDisplayItem(
+                                            id = vNodeId,
+                                            label = key, // Schema/Type label
+                                            displayProperty = value,
+                                            schemaId = 0L
+                                        )
+                                        effectiveNodes.add(vNode)
+
+                                        // Edge Source -> vNode
+                                        val vEdgeId = -1L * (item.id.hashCode() + vNodeId).toLong()
+                                         val parts = listOf(
+                                                EdgeParticipant(item, "Source"),
+                                                EdgeParticipant(vNode, "Property")
+                                            )
+                                        virtualEdges.add(EdgeDisplayItem(
+                                            id = vEdgeId,
+                                            label = key,
+                                            properties = emptyMap(),
+                                            participatingNodes = parts,
+                                            schemaId = 0L
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val effectiveEdges = edgeList + virtualEdges
 
                 val currentFcNodes = _fcGraph.nodes.associateBy { it.id }
                 val activeIds = mutableSetOf<String>()
 
                 // 1. Nodes
-                nodeList.forEach { item ->
+                effectiveNodes.forEach { item ->
                     val idStr = item.id.toString()
                     activeIds.add(idStr)
                     val existing = currentFcNodes[idStr]
 
-                    // Fetch full schema def
                     val schema = nodeSchemaMap[item.schemaId]
-                    val schemasList = if (schema != null) listOf(schema) else emptyList()
 
                     if (existing != null) {
                         existing.data = item // Update payload
@@ -150,14 +217,13 @@ class GraphViewmodel(
 
                 // 2. Edges
                 val uiEdges = mutableListOf<GraphEdge>()
-                edgeList.forEach { item ->
+                effectiveEdges.forEach { item ->
                     // Every edge is ALSO a node in the layout (Diamond/HyperNode)
                     val idStr = item.id.toString()
                     activeIds.add(idStr)
                     val existing = currentFcNodes[idStr]
 
                     val schema = edgeSchemaMap[item.schemaId]
-                    val schemasList = if (schema != null) listOf(schema) else emptyList()
 
                     if (existing != null) {
                         existing.data = item
@@ -172,11 +238,10 @@ class GraphViewmodel(
                     item.participatingNodes.forEach { participant ->
                         val roleName = participant.role ?: "Unknown"
                         val roleDef = schema?.roles?.find { it.name == roleName }
-                        val isSource = roleDef?.direction == RelationDirection.SOURCE
+                        val isSource = roleDef?.direction == RelationDirection.SOURCE || roleName == "Source"
 
                         // If Source: Participant -> EdgeNode
                         // If Target: EdgeNode -> Participant
-                        // If Unknown: Treat as Target (Edge -> Participant)
                         
                         val sId = if (isSource) participant.node.id else item.id
                         val tId = if (isSource) item.id else participant.node.id
@@ -311,6 +376,27 @@ class GraphViewmodel(
     fun groupSelectedNodes(nodeIds: List<Long>) { /* ... */ }
     fun updateLayoutConfig(config: LayoutConfig) { _layoutConfig.value = config }
     fun updatePhysicsOptions(options: PhysicsOptions) { _physicsOptions.value = options; wakeSimulation() }
+    fun updateRenderingSettings(settings: GraphRenderingSettings) { 
+        _renderingSettings.value = settings
+        // Trigger graph update to refresh virtual nodes
+        // We can't easily re-trigger `combine` flow in CodexViewModel.
+        // But `updateGraphData` reads `_renderingSettings.value`.
+        // We need to re-run `updateGraphData` with current data.
+        // We don't store current data in ViewModel (only in _graphNodes which is output).
+        // However, `CodexViewModel` observes `renderingSettings`? No.
+        // `CodexViewModel` calls `updateGraphData`.
+        
+        // Solution: GraphViewmodel should trigger a refresh request?
+        // Or simpler: `GraphViewmodel` can't easily re-run logic without input data.
+        // But `CodexViewModel` observes `settingsFlow`? No, that's global settings.
+        // `_renderingSettings` is local to ViewModel (initialized from global).
+        
+        // If I update `_renderingSettings`, the next time `updateGraphData` is called, it will work.
+        // But I want immediate effect.
+        // `CodexViewModel` holds the source of truth (`visibleNodes`).
+        // If I expose `renderingSettings` as a flow that `CodexViewModel` collects?
+        // Or `GraphViewModel` exposes a "RefreshNeeded" event?
+    }
     fun screenToWorld(screenPos: Offset): Offset { return (screenPos - Offset(size.width/2f, size.height/2f) - _transform.value.pan * _transform.value.zoom) / _transform.value.zoom }
     fun onPan(delta: Offset) { _transform.value = _transform.value.copy(pan = _transform.value.pan + (delta / _transform.value.zoom)); wakeSimulation() }
     fun onZoom(zoomFactor: Float, zoomCenter: Offset) { /* ... */ }
