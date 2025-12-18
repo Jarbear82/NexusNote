@@ -253,7 +253,7 @@ class MainViewModel {
                 val newService = SqliteDbService()
                 newService.initialize(item.path) // Initialize with file path
 
-                _codexViewModel.value = CodexViewModel(newService, appSettings)
+                _codexViewModel.value = CodexViewModel.create(newService, appSettings)
                 _openedCodexItem.value = item // Track open codex
                 _selectedScreen.value = Screen.CODEX
             } catch (e: Exception) {
@@ -277,7 +277,7 @@ class MainViewModel {
                 val newService = SqliteDbService()
                 newService.initialize(":memory:")
 
-                _codexViewModel.value = CodexViewModel(newService, appSettings)
+                _codexViewModel.value = CodexViewModel.create(newService, appSettings)
                 _openedCodexItem.value = null // Not an on-disk codex
                 _selectedScreen.value = Screen.CODEX
             } catch (e: Exception) {

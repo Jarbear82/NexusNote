@@ -25,6 +25,9 @@ expect class SqliteDbService() {
 
     // --- Entities (Nodes & Edges) ---
     fun getAllEntities(): List<CodexEntity>
+    fun getEntitiesPaginated(limit: Long, offset: Long): List<CodexEntity>
+    fun getEntitiesByKindPaginated(kind: SchemaKind, limit: Long, offset: Long): List<CodexEntity>
+    fun countEntitiesByKind(kind: SchemaKind): Long
     fun createEntity(
         schemaIds: List<Long>,
         attributes: Map<Long, Any?>, // Map<AttributeDefID, Value>

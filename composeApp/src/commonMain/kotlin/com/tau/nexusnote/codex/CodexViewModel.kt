@@ -17,27 +17,19 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 
 class CodexViewModel(
     private val dbService: SqliteDbService,
-    private val settingsFlow: StateFlow<SettingsData>
+    private val settingsFlow: StateFlow<SettingsData>,
+    val repository: CodexRepository,
+    val schemaViewModel: SchemaViewModel,
+    val metadataViewModel: MetadataViewModel,
+    val editCreateViewModel: EditCreateViewModel,
+    val graphViewModel: GraphViewmodel
 ) {
-    private val viewModelScope = CoroutineScope(Dispatchers.Main)
-
-    // 1. Create the Repository
-    val repository = CodexRepository(dbService, viewModelScope)
-
-    // 2. Create child ViewModels
-    val schemaViewModel = SchemaViewModel(repository, viewModelScope)
-    val metadataViewModel = MetadataViewModel(repository, viewModelScope)
-    val editCreateViewModel = EditCreateViewModel(repository, viewModelScope, schemaViewModel, metadataViewModel)
-
-    // Phase 5 Update: Pass repository to GraphViewmodel
-    val graphViewModel = GraphViewmodel(
-        viewModelScope = viewModelScope,
-        settingsFlow = settingsFlow,
-        repository = repository
-    )
+    private val viewModelScope = repository.coroutineScope
 
     // Expose Repository Error Flow
     val errorFlow = repository.errorFlow
@@ -49,6 +41,7 @@ class CodexViewModel(
     val isDetailPaneOpen = _isDetailPaneOpen.asStateFlow()
 
     init {
+        // ...
         viewModelScope.launch {
             repository.refreshAll()
         }
@@ -153,6 +146,34 @@ class CodexViewModel(
         graphViewModel.onCleared()
         dbService.close()
         viewModelScope.cancel()
+    }
+
+    companion object {
+        fun create(
+            dbService: SqliteDbService,
+            settingsFlow: StateFlow<SettingsData>
+        ): CodexViewModel {
+            val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+            val repository = CodexRepository(dbService, scope)
+            val schemaViewModel = SchemaViewModel(repository, scope)
+            val metadataViewModel = MetadataViewModel(repository, scope)
+            val editCreateViewModel = EditCreateViewModel(repository, scope, schemaViewModel, metadataViewModel)
+            val graphViewModel = GraphViewmodel(
+                viewModelScope = scope,
+                settingsFlow = settingsFlow,
+                repository = repository
+            )
+
+            return CodexViewModel(
+                dbService,
+                settingsFlow,
+                repository,
+                schemaViewModel,
+                metadataViewModel,
+                editCreateViewModel,
+                graphViewModel
+            )
+        }
     }
 }
 

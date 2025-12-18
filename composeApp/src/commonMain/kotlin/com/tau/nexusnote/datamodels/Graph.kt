@@ -13,7 +13,7 @@ data class GraphNode(
     // Physical state
     var pos: Offset,
     var vel: Offset,
-    val mass: Float,
+    var mass: Float,
     val radius: Float,
     val width: Float,
     val height: Float,

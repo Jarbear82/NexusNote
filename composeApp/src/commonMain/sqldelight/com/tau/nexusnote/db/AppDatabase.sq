@@ -166,6 +166,9 @@ DELETE FROM RoleAllowedSchema WHERE role_id = ?;
 selectAllEntities:
 SELECT * FROM Entity;
 
+selectEntitiesPaginated:
+SELECT * FROM Entity LIMIT :limit OFFSET :offset;
+
 insertEntity:
 INSERT INTO Entity(created_at) VALUES (?);
 
@@ -175,8 +178,29 @@ SELECT * FROM Entity WHERE id = ?;
 deleteEntityById:
 DELETE FROM Entity WHERE id = ?;
 
-countEntities:
-SELECT COUNT(*) FROM Entity;
+countEntitiesByKind:
+SELECT COUNT(DISTINCT Entity.id)
+FROM Entity
+JOIN EntityType ON Entity.id = EntityType.entity_id
+JOIN SchemaDef ON EntityType.schema_id = SchemaDef.id
+WHERE SchemaDef.kind = ?;
+
+selectEntitiesByKindPaginated:
+SELECT DISTINCT Entity.*
+FROM Entity
+JOIN EntityType ON Entity.id = EntityType.entity_id
+JOIN SchemaDef ON EntityType.schema_id = SchemaDef.id
+WHERE SchemaDef.kind = ?
+LIMIT :limit OFFSET :offset;
+
+selectEntityTypesByEntityIds:
+SELECT * FROM EntityType WHERE entity_id IN :entityIds;
+
+selectAttributeValuesByEntityIds:
+SELECT * FROM AttributeValue WHERE entity_id IN :entityIds;
+
+selectRelationLinksByEntityIds:
+SELECT * FROM RelationLink WHERE relation_entity_id IN :entityIds OR player_entity_id IN :entityIds;
 
 -- EntityType Queries --
 selectAllEntityTypes:
@@ -187,20 +211,6 @@ INSERT INTO EntityType(entity_id, schema_id) VALUES (?, ?);
 
 deleteEntityTypes:
 DELETE FROM EntityType WHERE entity_id = ?;
-
--- Get all types (schemas) for a specific entity
-selectSchemasForEntity:
-SELECT SchemaDef.*
-FROM SchemaDef
-JOIN EntityType ON SchemaDef.id = EntityType.schema_id
-WHERE EntityType.entity_id = ?;
-
--- Get all entities that implement a specific schema
-selectEntitiesBySchema:
-SELECT Entity.*
-FROM Entity
-JOIN EntityType ON Entity.id = EntityType.entity_id
-WHERE EntityType.schema_id = ?;
 
 -- AttributeValue Queries --
 selectAllAttributeValues:

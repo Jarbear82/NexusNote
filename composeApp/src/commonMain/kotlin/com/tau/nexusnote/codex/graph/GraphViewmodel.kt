@@ -85,18 +85,22 @@ class GraphViewmodel(
                     val nodes = _graphNodes.value
                     val edges = _graphEdges.value
                     val options = _physicsOptions.value
-                    val updatedNodes = physicsEngine.update(nodes, edges, options, 0.016f)
+                    
+                    // Optimized: In-place mutation
+                    physicsEngine.update(nodes, edges, options, 0.016f)
 
                     var totalEnergy = 0.0
-                    updatedNodes.values.forEach { totalEnergy += it.vel.getDistance() }
+                    nodes.values.forEach { totalEnergy += it.vel.getDistance() }
 
                     if (totalEnergy < 0.5 && _draggedNodeId.value == null) {
                         _isSimulationPaused.value = true
                     }
 
-                    _graphNodes.value = updatedNodes
+                    // Trigger UI update with a shallow copy of the map
+                    _graphNodes.value = nodes.toMap()
+                    
                     if (graphMutex.tryLock()) {
-                        try { syncFcGraphFromUi(updatedNodes) } finally { graphMutex.unlock() }
+                        try { syncFcGraphFromUi(nodes) } finally { graphMutex.unlock() }
                     }
                 }
                 delay(16)

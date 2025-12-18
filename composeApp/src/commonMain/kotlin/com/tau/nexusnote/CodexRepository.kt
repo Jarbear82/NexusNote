@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
  */
 class CodexRepository(
     private val dbService: SqliteDbService,
-    private val coroutineScope: CoroutineScope
+    val coroutineScope: CoroutineScope
 ) {
 
     // --- State Flows ---
@@ -469,18 +469,69 @@ class CodexRepository(
         return 0L // TODO: Implement countEntitiesBySchema in DbService
     }
 
-    suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> {
-        val all = _nodeList.value
-        if (offset >= all.size) return emptyList()
-        val end = (offset + limit).toInt().coerceAtMost(all.size)
-        return all.subList(offset.toInt(), end)
+    suspend fun getNodesPaginated(offset: Long, limit: Long): List<NodeDisplayItem> = withContext(Dispatchers.Default) {
+        try {
+            val entities = dbService.getEntitiesByKindPaginated(SchemaKind.ENTITY, limit, offset)
+            entities.map { entity ->
+                val entitySchemas = entity.types
+                val primarySchema = entitySchemas.firstOrNull()
+                val compositeLabel = entitySchemas.map { it.name }.sorted().joinToString(", ")
+                
+                // Determine display text (reusing logic from loadGraph if possible, or keeping it simple)
+                val displayProp = entity.attributes.entries.firstOrNull()?.value?.toString() ?: "ID:${entity.id}"
+
+                NodeDisplayItem(
+                    id = entity.id,
+                    label = if (compositeLabel.isNotBlank()) compositeLabel else "Entity",
+                    displayProperty = displayProp,
+                    schemaId = primarySchema?.id ?: 0L
+                )
+            }
+        } catch (e: Exception) {
+            _errorFlow.value = "Error fetching paginated nodes: ${e.message}"
+            emptyList()
+        }
     }
 
-    suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> {
-        val all = _edgeList.value
-        if (offset >= all.size) return emptyList()
-        val end = (offset + limit).toInt().coerceAtMost(all.size)
-        return all.subList(offset.toInt(), end)
+    suspend fun getEdgesPaginated(offset: Long, limit: Long): List<EdgeDisplayItem> = withContext(Dispatchers.Default) {
+        try {
+            val entities = dbService.getEntitiesByKindPaginated(SchemaKind.RELATION, limit, offset)
+            val schemaData = _schema.value ?: run {
+                refreshSchema()
+                _schema.value ?: return@withContext emptyList()
+            }
+            val edgeSchemas = schemaData.edgeSchemas.associateBy { it.id }
+            val roleMap = schemaData.edgeSchemas.flatMap { it.roles }.associateBy { it.id }
+
+            entities.mapNotNull { edgeEntity ->
+                val primarySchema = edgeSchemas[edgeEntity.types.firstOrNull()?.id] ?: return@mapNotNull null
+                
+                val participants = edgeEntity.outgoingLinks.mapNotNull { link ->
+                    // Note: This might still trigger N+1 if we don't have node info.
+                    // For EdgeDisplayItem, we need NodeDisplayItem for participants.
+                    // In a paginated list, we might want to simplify this or fetch participant names.
+                    val roleName = roleMap[link.roleId]?.name ?: "Unknown"
+                    // Dummy node display for participant list (might need full hydration if UI depends on it)
+                    EdgeParticipant(NodeDisplayItem(link.playerId, "Node", "ID:${link.playerId}", 0L), roleName)
+                }
+
+                val properties = edgeEntity.attributes.mapNotNull { (attrId, value) ->
+                    val propDef = primarySchema.properties.find { it.id == attrId }
+                    if (propDef != null) propDef.name to value.toString() else null
+                }.toMap()
+
+                EdgeDisplayItem(
+                    id = edgeEntity.id,
+                    label = primarySchema.name,
+                    properties = properties,
+                    participatingNodes = participants,
+                    schemaId = primarySchema.id
+                )
+            }
+        } catch (e: Exception) {
+            _errorFlow.value = "Error fetching paginated edges: ${e.message}"
+            emptyList()
+        }
     }
 
     // --- Helpers ---
