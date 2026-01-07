@@ -97,8 +97,6 @@ class GraphViewmodel(
                         _isSimulationPaused.value = true
                     }
 
-                    // Map is no longer re-emitted; GraphNode.pos is MutableState
-                    
                     if (graphMutex.tryLock()) {
                         try { syncFcGraphFromUi(nodes) } finally { graphMutex.unlock() }
                     }
@@ -146,7 +144,7 @@ class GraphViewmodel(
                                                 
                                                 // Create a virtual Edge Item
                                                 // ID must be unique. Using negative hash.
-                                                val vEdgeId = -1L * (item.id.hashCode() + key.hashCode() + targetId).toLong()
+                                                val vEdgeId = -1L * (item.id.hashCode() + key.hashCode() + targetId)
                                                 // We need a participant list
                                                 val parts = listOf(
                                                     EdgeParticipant(item, "Source"),
