@@ -1,6 +1,7 @@
 package com.tau.nexusnote
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import app.cash.sqldelight.db.QueryResult
 import com.tau.nexusnote.datamodels.*
 import com.tau.nexusnote.db.AppDatabase
 import com.tau.nexusnote.db.LayoutConstraint
@@ -24,8 +25,19 @@ actual class SqliteDbService {
 
         driver = JdbcSqliteDriver(url, props)
 
-        // Create tables if they don't exist
-        AppDatabase.Schema.create(driver!!)
+        // Check if tables already exist
+        val schemaExists = driver!!.executeQuery(
+            identifier = null,
+            sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='SchemaDef';",
+            mapper = { cursor -> cursor.next() },
+            parameters = 0
+        ).value
+
+        if (!schemaExists) {
+            // Create tables if they don't exist
+            AppDatabase.Schema.create(driver!!)
+        }
+
         database = AppDatabase(
             driver = driver!!,
             LayoutConstraintAdapter = LayoutConstraint.Adapter(

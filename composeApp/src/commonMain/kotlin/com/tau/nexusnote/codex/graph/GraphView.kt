@@ -131,7 +131,7 @@ fun GraphView(
     ) {
         val edgeLabelStyle = TextStyle(
             fontFamily = FontFamily.Monospace,
-            fontSize = (10.sp.value / transform.zoom.coerceAtLeast(0.1f)).coerceIn(8.sp.value, 14.sp.value).sp,
+            fontSize = (10.sp.value / (if (transform.zoom.isNaN()) 1f else transform.zoom).coerceAtLeast(0.1f)).coerceIn(8.sp.value, 14.sp.value).sp,
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -259,6 +259,8 @@ private fun DrawScope.drawSelfLoop(node: GraphNode, edge: GraphEdge, idx: Int, t
 }
 
 private fun DrawScope.drawCurvedEdge(from: GraphNode, to: GraphNode, edge: GraphEdge, idx: Int, total: Int, tm: TextMeasurer, style: TextStyle, show: Boolean) {
+
+    if (!from.pos.isValid() || !to.pos.isValid()) return
 
     val color = edge.colorInfo.composeColor.copy(alpha = 0.7f)
 

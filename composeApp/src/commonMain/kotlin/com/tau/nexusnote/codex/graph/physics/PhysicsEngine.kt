@@ -34,7 +34,7 @@ class PhysicsEngine() {
         // 2. Apply forces
         // 2a. Gravity (pull to center 0,0)
         for (node in nodes.values) {
-            if (node.isFixed) continue
+            if (node.isFixed || node.isHyperNode) continue
 
             val gravityForce = -node.pos * options.gravity * node.mass
             forces[node.id] = forces[node.id]!! + gravityForce
